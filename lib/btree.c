@@ -200,10 +200,10 @@ done:
 }
 
 static int
-insert_split(EdBSearch *srch, EdBTree **leafp, EdAlloc alloc, void *ptr)
+insert_split(EdBSearch *srch, EdBTree **leafp, EdPgalloc *alloc)
 {
 	EdPg *pg[srch->nsplits+1];
-	int rc = alloc(ED_ALLOC, pg, srch->nsplits+1, ptr);
+	int rc = ed_pgalloc(alloc, pg, srch->nsplits+1);
 	if (rc < 0) { return rc; }
 
 	EdBTree *left = *leafp, *right = (EdBTree *)pg[0];
@@ -236,7 +236,7 @@ insert_split(EdBSearch *srch, EdBTree **leafp, EdAlloc alloc, void *ptr)
 }
 
 int
-ed_bsearch_ins(EdBSearch *srch, const void *entry, EdAlloc alloc, void *ptr)
+ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 {
 	if (ed_fetch64(entry) != srch->key) {
 		return ED_EINDEX_KEY_MATCH;
@@ -248,7 +248,7 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdAlloc alloc, void *ptr)
 	// If the root was NULL, create a new root node.
 	if (srch->nnodes == 0) {
 		EdPg *pg;
-		rc = alloc(ED_ALLOC, &pg, 1, ptr);
+		rc = ed_pgalloc(alloc, &pg, 1);
 		if (rc < 0) { goto done; }
 		leaf = (EdBTree *)pg;
 		ed_btree_init(leaf);
@@ -267,7 +267,7 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdAlloc alloc, void *ptr)
 			rc = insert_redistribute(srch, leaf);
 			if (rc < 0) { goto done; }
 			if (rc == 0) {
-				rc = insert_split(srch, &leaf, alloc, ptr);
+				rc = insert_split(srch, &leaf, alloc);
 				if (rc < 0) { goto done; }
 			}
 		}

@@ -6,6 +6,7 @@
 #include <stdatomic.h>
 #include <time.h>
 #include <unistd.h>
+#include <inttypes.h>
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -41,6 +42,8 @@
 
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
 
+#define ED_INLINE inline __attribute__((always_inline))
+
 #if BYTE_ORDER == LITTLE_ENDIAN
 # define ed_b16(v) __builtin_bswap16(v)
 # define ed_l16(v) (v)
@@ -59,6 +62,7 @@
 
 #define ed_ptr_b32(T, b, off) ((const T *)((const uint8_t *)(b) + ed_b32(off)))
 
+#define ED_PGINDEX     UINT32_C(0x998ddcb0)
 #define ED_PGFREE_HEAD UINT32_C(0xc3e873b2)
 #define ED_PGFREE_CHLD UINT32_C(0xea104f71)
 #define ED_PGBRANCH    UINT32_C(0x2c17687a)
@@ -78,7 +82,10 @@ typedef uint64_t EdHash;
 
 typedef struct EdPg EdPg;
 typedef struct EdPgfree EdPgfree;
-typedef struct EdAllocTail EdAllocTail;
+typedef struct EdPgtail EdPgtail;
+typedef struct EdPgalloc EdPgalloc;
+typedef struct EdPgallocHdr EdPgallocHdr;
+
 typedef struct EdBTree EdBTree;
 typedef struct EdBSearch EdBSearch;
 typedef struct EdNodePage EdNodePage;
@@ -94,25 +101,24 @@ typedef enum EdLock {
 } EdLock;
 
 struct EdPgalloc {
+	EdPgallocHdr *hdr;
+	void *pg;
 	EdPgfree *free;
-	void *page;
-	EdPgno count;
+	uint64_t flags;
 	int fd;
 	uint8_t dirty, free_dirty;
+	bool from_new;
 };
 
 struct EdIndex {
-	int fd;
-	uint8_t index_dirty, free_dirty;
+	EdPgalloc alloc;
 	uint64_t flags;
 	uint64_t seed;
 	int64_t epoch;
 	EdIndexHdr *hdr;
-	EdPgfree *free;
 	EdBTree *blocks;
 	EdBTree *keys;
 	pthread_rwlock_t rw;
-	off_t size;
 };
 
 struct EdCache {
@@ -164,6 +170,45 @@ struct EdPgfree {
 	EdPgno pages[ED_PGFREE_COUNT];
 };
 
+struct EdPgallocHdr {
+	uint16_t size_page;
+	uint16_t size_block;
+	EdPgno free_list;
+	_Atomic struct EdPgtail {
+		EdPgno start;
+		EdPgno off;
+	} tail;
+};
+
+struct EdIndexHdr {
+	EdPg base;
+	char magic[4];
+	char endian;
+	uint8_t mark;
+	uint16_t version;
+	uint32_t flags;
+	uint32_t pos;
+	EdPgno key_tree;
+	EdPgno block_tree;
+	uint64_t seed;
+	int64_t epoch;
+	EdPgallocHdr alloc;
+	uint64_t slab_ino;
+	EdPgno slab_page_count;
+	uint8_t size_align;
+	uint8_t alloc_count;
+	uint8_t _pad[2];
+};
+
+struct EdObjectHdr {
+	uint64_t hash;
+	uint32_t expiry;
+	uint32_t datalen;
+	uint16_t keylen;
+	uint16_t metalen;
+	uint32_t _pad;
+};
+
 struct EdBTree {
 	EdPg base;
 	EdPgno parent, right;
@@ -184,83 +229,40 @@ struct EdNodeKey {
 	EdBlkno slab;
 };
 
-struct EdIndexHdr {
-	char magic[4];
-	char endian;
-	uint8_t mark;
-	uint16_t version;
-	uint32_t flags;
-	uint32_t pos;
-	EdPgno key_tree;
-	EdPgno block_tree;
-	uint64_t seed;
-	int64_t epoch;
-	uint16_t size_page;
-	uint16_t size_block;
-	EdPgno free_list;
-	_Atomic struct EdAllocTail {
-		EdPgno start;
-		EdPgno off;
-	} tail;
-	uint64_t slab_ino;
-	EdPgno slab_page_count;
-	uint8_t size_align;
-	uint8_t alloc_count;
-	uint8_t _pad[2];
-};
-
-struct EdObjectHdr {
-	uint64_t hash;
-	uint32_t expiry;
-	uint32_t datalen;
-	uint16_t keylen;
-	uint16_t metalen;
-	uint32_t _pad;
-};
-
 #pragma GCC diagnostic pop
-
-
-
-static const EdIndexHdr ED_INDEX_HDR_DEFAULT = {
-	.magic = { 'E', 'D', 'D', 'Y' },
-#if BYTE_ORDER == LITTLE_ENDIAN
-	.endian = 'l',
-#elif BYTE_ORDER == BIG_ENDIAN
-	.endian = 'B',
-#else
-# error Unkown byte order
-#endif
-	.mark = 0xfc,
-	.version = 2,
-	.key_tree = ED_PAGE_NONE,
-	.block_tree = ED_PAGE_NONE,
-	.size_page = PAGESIZE,
-	.size_block = PAGESIZE,
-	.size_align = ED_MAX_ALIGN,
-	.alloc_count = ED_ALLOC_COUNT,
-};
 
 
 ED_LOCAL uint64_t ed_hash(const uint8_t *val, size_t len, uint64_t seed);
 
 
 /* Page Module */
-ED_LOCAL   void * ed_pgmap(int fd, EdPgno no, size_t n);
-ED_LOCAL      int ed_pgunmap(void *p, size_t n);
-ED_LOCAL      int ed_pgsync(void *p, size_t n, int flags, uint8_t lvl);
+ED_LOCAL   void * ed_pgmap(int fd, EdPgno no, EdPgno count);
+ED_LOCAL      int ed_pgunmap(void *p, EdPgno count);
+ED_LOCAL      int ed_pgsync(void *p, EdPgno count, int flags, uint8_t lvl);
 ED_LOCAL   void * ed_pgload(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pgmark(EdPg *pg, EdPgno *no, uint8_t *dirty);
+ED_LOCAL      int ed_pgalloc_new(EdPgalloc *, const char *, size_t meta);
+ED_LOCAL     void ed_pgalloc_init(EdPgalloc *, EdPgallocHdr *, int fd, uint64_t flags);
+ED_LOCAL     void ed_pgalloc_close(EdPgalloc *);
+ED_LOCAL     void ed_pgalloc_sync(EdPgalloc *);
+ED_LOCAL   void * ed_pgalloc_meta(EdPgalloc *alloc);
+ED_LOCAL      int ed_pgalloc(EdPgalloc *, EdPg **, EdPgno n);
+ED_LOCAL     void ed_pgfree(EdPgalloc *, EdPg **, EdPgno n);
+ED_LOCAL   void * ed_pgfree_list(EdPgalloc *);
+
+#if ED_MMAP_DEBUG
+ED_LOCAL     void ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count);
+ED_LOCAL     void ed_pguntrack(uint8_t *pg, EdPgno count);
+ED_LOCAL      int ed_pgcheck(void);
+#endif
 
 
 /* B+Tree Module */
-typedef enum EdAllocOp { ED_ALLOC, ED_FREE } EdAllocOp;
-typedef int (*EdAlloc)(EdAllocOp, EdPg **, EdPgno, void *);
 
 ED_LOCAL     void ed_btree_init(EdBTree *);
 ED_LOCAL      int ed_btree_search(EdBTree **, int fd, uint64_t key, size_t entry_size, EdBSearch *);
 ED_LOCAL      int ed_bsearch_next(EdBSearch *);
-ED_LOCAL      int ed_bsearch_ins(EdBSearch *, const void *entry, EdAlloc, void *);
+ED_LOCAL      int ed_bsearch_ins(EdBSearch *, const void *entry, EdPgalloc *);
 ED_LOCAL      int ed_bsearch_set(EdBSearch *, const void *entry);
 ED_LOCAL      int ed_bsearch_del(EdBSearch *);
 ED_LOCAL     void ed_bsearch_final(EdBSearch *);
@@ -273,9 +275,6 @@ ED_LOCAL      int ed_index_load_trees(EdIndex *);
 ED_LOCAL      int ed_index_save_trees(EdIndex *);
 ED_LOCAL      int ed_index_lock(EdIndex *, EdLock type, bool wait);
 ED_LOCAL      int ed_index_stat(EdIndex *, FILE *, int flags);
-
-ED_LOCAL      int ed_page_alloc(EdIndex *, EdPg **, EdPgno n, bool locked);
-ED_LOCAL     void ed_page_free(EdIndex *, EdPg **, EdPgno n, bool locked);
 
 
 /* Random Module */

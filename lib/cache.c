@@ -159,7 +159,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	printf("key=%.*s, hash: %llu\n", (int)len, key, h);
 	EdBSearch srch;
 	EdNodeKey *k;
-	rc = ed_btree_search(&cache->index.keys, cache->index.fd, h, sizeof(*k), &srch);
+	rc = ed_btree_search(&cache->index.keys, cache->index.alloc.fd, h, sizeof(*k), &srch);
 	if (rc == 1) {
 		k = srch.entry;
 		printf("get: hash=%llu, ttl=%ld\n", k->hash, ed_ttl_now(cache->index.epoch, k->exp));
@@ -168,19 +168,6 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	if (rc < 0) { return rc; }
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
-}
-
-static int
-cache_pgalloc(EdAllocOp t, EdPg **pg, EdPgno n, void *ptr)
-{
-	EdCache *cache = ptr;
-	switch (t) {
-	case ED_ALLOC: return ed_page_alloc(&cache->index, pg, n, false);
-	case ED_FREE:
-		ed_page_free(&cache->index, pg, n, false);
-		return 0;
-	}
-	return ed_esys(EINVAL);
 }
 
 int
@@ -195,15 +182,23 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 	};
 	printf("set: key=%.*s, hash=%llu, ttl=%ld\n", (int)attr->key_size, attr->key, key.hash, attr->expiry);
 
-	int rc = ed_index_load_trees(&cache->index);
-	if (rc < 0) { return rc; }
+	int rc;
 
-	rc = ed_btree_search(&cache->index.keys, cache->index.fd, key.hash, sizeof(key), &srch);
-	if (rc < 0) { return rc; }
-	rc = ed_bsearch_ins(&srch, &key, cache_pgalloc, cache);
+	rc = ed_index_lock(&cache->index, ED_LOCK_EX, true);
+	if (rc < 0) { return 0; }
+
+	rc = ed_index_load_trees(&cache->index);
+	if (rc < 0) { goto done; }
+
+	rc = ed_btree_search(&cache->index.keys, cache->index.alloc.fd, key.hash, sizeof(key), &srch);
+	if (rc < 0) { goto done; }
+	rc = ed_bsearch_ins(&srch, &key, &cache->index.alloc);
 	ed_bsearch_final(&srch);
-	if (rc < 0) { return rc; }
+	if (rc < 0) { goto done; }
+
+done:
 	ed_index_save_trees(&cache->index);
+	ed_index_lock(&cache->index, ED_LOCK_UN, true);
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
 }

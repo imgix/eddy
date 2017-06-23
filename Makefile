@@ -11,6 +11,7 @@ LIBNAME?= eddy
 BINNAME?= ed-
 BUILD?= release
 PREFIX?= /usr/local
+UNAME?=$(shell uname -s)
 BUILD_MIME?= yes
 PAGESIZE?=$(shell getconf PAGESIZE)
 ifneq ($(BUILD),debug)
@@ -27,22 +28,13 @@ ifdef OPT
 else
   CFLAGS?= -Wall -Wextra -pedantic -Werror
   DEBUG?= yes
-  STRIP:= @:
+  STRIP:= :
 endif
 ifndef $(GDB)
   GDB:=$(shell which lldb)
   ifeq ($(GDB),)
     GDB:=$(shell which gdb)
   endif
-endif
-
-# Append required flags.
-ifeq ($(DEBUG),yes)
-  CFLAGS+= -g
-endif
-CFLAGS+= -std=c11 -Ilib -fvisibility=hidden -pthread -D_GNU_SOURCE -D_BSD_SOURCE -DPAGESIZE=$(PAGESIZE)
-ifeq ($(LTO),yes)
-  LDFLAGS+=-flto
 endif
 
 # Select source files.
@@ -52,10 +44,33 @@ ifeq ($(BUILD_MIME),yes)
   LIBSRC+= lib/mime.c
   BINSRC+= bin/ed-mime.c
 endif
+ifeq ($(DEBUG_MMAP),yes)
+  LIBSRC+= lib/pgtrack.cc
+  CFLAGS+= -DED_MMAP_DEBUG=1
+endif
 ifeq ($(BUILD_DEV),yes)
   BINSRC+= bin/ed-alloc.c bin/ed-exec.c
 endif
 TESTSRC:= $(wildcard test/*.c)
+
+# Select compiler and linker.
+ifeq ($(findstring .cc,$(suffix $(LIBSRC))),.cc)
+  LD:=$(CXX)
+else
+  LD:=$(CC)
+endif
+CC:= $(CC) -std=c11
+CXX:= $(CXX) -std=c++11
+
+# Append required flags.
+ifeq ($(DEBUG),yes)
+  CFLAGS+= -g
+  LDFLAGS+= -g
+endif
+CFLAGS+= -Ilib -fvisibility=hidden -pthread -D_GNU_SOURCE -D_BSD_SOURCE -DPAGESIZE=$(PAGESIZE)
+ifeq ($(LTO),yes)
+  LDFLAGS+= -flto
+endif
 
 # Define build-specific directories.
 TMP:= build/$(BUILD)/tmp
@@ -66,40 +81,54 @@ TEST:= build/$(BUILD)/test
 # Build object file lists. When LTO is enabled, keep the OBJA list referencing
 # non-lto object files. For amalgamated builds, there is a single object file.
 ifeq ($(LTO),yes)
-  OBJ:= $(LIBSRC:lib/%.c=$(TMP)/%-lto.o)
-  OBJA:= $(TMP)/$(LIBNAME).o
-  OBJBIN:= $(OBJ) $(TMP)/util-lto.o
+  OBJEXT:=lto.o
+  OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
+  OBJA:= $(TMP)/$(LIBNAME).c.o
+  OBJBIN:= $(OBJ) $(TMP)/util.c.$(OBJEXT)
 else
+  OBJEXT:=o
   ifeq ($(LTO),amalg)
-    OBJ:= $(TMP)/$(LIBNAME).o
+    OBJ:= $(TMP)/$(LIBNAME).c.$(OBJEXT)
   else
-    OBJ:= $(LIBSRC:lib/%.c=$(TMP)/%.o)
+    OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
   endif
   OBJA:= $(OBJ)
-  OBJBIN:= $(OBJ) $(TMP)/util.o
+  OBJBIN:= $(OBJ) $(TMP)/util.c.$(OBJEXT)
 endif
 
 # Setup library names and additional flags.
 A:= lib$(LIBNAME).a
-ifeq ($(shell uname -s),Darwin)
-  SO:=lib$(LIBNAME).dylib
-  SOMAJ:=lib$(LIBNAME).$(VMAJ).dylib
-  SOMIN:=lib$(LIBNAME).$(VMAJ).$(VMIN).dylib
+ifeq ($(UNAME),Darwin)
+  SOEXT:=dylib
+  SOMAJ:=lib$(LIBNAME).$(VMAJ).$(SOEXT)
+  SOMIN:=lib$(LIBNAME).$(VMAJ).$(VMIN).$(SOEXT)
   SOFLAGS:= -dynamiclib -install_name $(PREFIX)/lib/$(SOMIN)
 else
-  SO:=lib$(LIBNAME).so
-  SOMAJ:=lib$(LIBNAME).so.$(VMAJ)
-  SOMIN:=lib$(LIBNAME).so.$(VMAJ).$(VMIN)
+  SOEXT:=so
+  SOMAJ:=lib$(LIBNAME).$(SOEXT).$(VMAJ)
+  SOMIN:=lib$(LIBNAME).$(SOEXT).$(VMAJ).$(VMIN)
   SOFLAGS:= -shared -Wl,-soname,$(SOMIN),-rpath,$(PREFIX)/lib/$(SOMIN)
 endif
+SO:=lib$(LIBNAME).$(SOEXT)
 
-INSTALL:= \
+PRODUCTS:= \
 	$(BINSRC:bin/ed-%.c=$(DESTDIR)$(PREFIX)/bin/$(BINNAME)%) \
+	$(DESTDIR)$(PREFIX)/include/eddy.h \
 	$(DESTDIR)$(PREFIX)/lib/$(A) \
-	$(DESTDIR)$(PREFIX)/lib/$(SO) \
-	$(DESTDIR)$(PREFIX)/lib/$(SOMAJ) \
 	$(DESTDIR)$(PREFIX)/lib/$(SOMIN) \
-	$(DESTDIR)$(PREFIX)/include/eddy.h
+	$(DESTDIR)$(PREFIX)/lib/$(SOMAJ) \
+	$(DESTDIR)$(PREFIX)/lib/$(SO)
+
+ifndef VERBOSE
+  COMPILE_PREFIX = @echo "$(word 1,$(1))\t$(2)" && 
+  LINK_PREFIX    = @echo "bin\t$(2)" && 
+  STATIC_PREFIX  = @echo "a\t$(2)" && 
+  DYNAMIC_PREFIX = @echo "$(SOEXT)\t$(2)" && 
+  SYMLINK_PREFIX = @echo "ln\t$(2) -> $(1)" && 
+  INSTALL_PREFIX = @echo "install\t$(2)" && 
+endif
+
+
 
 # Build only the executable tools.
 bin: $(BINSRC:bin/ed-%.c=$(BIN)/$(BINNAME)%)
@@ -114,90 +143,132 @@ static: $(LIB)/$(A)
 dynamic: $(LIB)/$(SOMIN) $(LIB)/$(SOMAJ) $(LIB)/$(SO)
 
 # Build and run tests.
-test: $(TESTSRC:test/%.c=$(TEST)/%)
-	@for f in $^; do ./$$f; done
+test: $(TESTSRC:test/%.c=test-%)
 
 # Build and run a single test.
 test-%: $(TEST)/%
 	@./$<
 
-# Build and run a single test.
+# Build and run a single test in a debugger.
 debug-%: $(TEST)/%
 	MU_NOFORK=1 $(GDB) ./$<
 
 # Copy files into destination
-install: $(INSTALL)
+install: $(PRODUCTS)
 
 # Remove files from destination
 uninstall:
-	rm -f $(INSTALL)
+	rm -f $(PRODUCTS)
 
 # Remove all build files.
 clean:
 	rm -rf build
 
+
+
+# Executable linking template.
+ifeq ($(DEBUG)-$(UNAME),yes-Dawin)
+  LINK= $(LINK_PREFIX)$(LD) $(LDFLAGS) $(1) -o $(2) && dsymutil $(2)
+else
+  LINK= $(LINK_PREFIX)$(LD) $(LDFLAGS) $(1) -o $(2)
+endif
+
 # Generate and strip statically linked executable.
-$(BIN)/$(BINNAME)%: bin/ed-%.c $(OBJBIN) | $(BIN)
-	$(CC) $< $(OBJBIN) $(CFLAGS) $(LDFLAGS) -MMD -MF $(TMP)/ed-$*.d -o $@
-	$(STRIP) $@
+$(BIN)/$(BINNAME)%: $(TMP)/ed-%.c.$(OBJEXT) $(OBJBIN) | $(BIN)
+	$(call LINK,$^,$@)
+	@$(STRIP) $@
+
+# Generate statically linked test executable.
+$(TEST)/%: $(TMP)/test-%.c.$(OBJEXT) $(OBJ) | $(TEST)
+	$(call LINK,$^,$@)
+
+
+
+# Static library archiving template.
+STATIC= $(STATIC_PREFIX)$(AR) rcus $(2) $(1)
 
 # Generate static library from non-lto object(s).
 $(LIB)/$(A): $(OBJA) | $(LIB)
-	$(AR) rcus $@ $^
+	$(call STATIC,$^,$@)
+
+
+
+# Shared library linking template.
+DYNAMIC= $(DYNAMIC_PREFIX)$(LD) $(LDFLAGS) $(SOFLAGS) $(1) -o $(2)
 
 # Generate shared library.
 $(LIB)/$(SOMIN): $(OBJ) | $(LIB)
-	$(CC) $(LDFLAGS) $(SOFLAGS) $^ -o $@
+	$(call DYNAMIC,$^,$@)
 
-# Generate statically linked test executable.
-$(TEST)/%: test/%.c $(OBJ) | $(TEST)
-	$(CC) $< $(OBJ) $(CFLAGS) $(LDFLAGS) -MMD -MF $(TMP)/test-$*.d -o $@
 
-# Create versioned symlink for shared library.
-$(LIB)/$(SOMAJ) $(LIB)/$(SO): $(LIB)/$(SOMIN)
-	cd $(LIB) && ln -s $(SOMIN) $(notdir $@)
 
-# Build source files in lib without lto.
-$(TMP)/%.o: lib/%.c Makefile | $(TMP)
-	$(CC) $(CFLAGS) -fPIC -MMD -c -o $@ $<
+# Compiler template.
+COMPILE= $(COMPILE_PREFIX)$(1) $(CFLAGS) -fPIC -MMD -c \
+	$(2) -o $(3) $(subst .lto.o,-flto,$(findstring .lto.o,$(3)))
 
-# Build intermediate source files without lto.
-$(TMP)/%.o: $(TMP)/%.c Makefile | $(TMP)
-	$(CC) $(CFLAGS) -fPIC -MMD -c -o $@ $<
+# Build C source files in lib.
+$(TMP)/%.c.$(OBJEXT): lib/%.c | $(TMP)
+	$(call COMPILE,$(CC),$<,$@)
 
-# Build source files in lib with lto.
-$(TMP)/%-lto.o: lib/%.c Makefile | $(TMP)
-	$(CC) $(CFLAGS) -flto -fPIC -MMD -c -o $@ $<
+# Build C++ source files in lib.
+$(TMP)/%.cc.$(OBJEXT): lib/%.cc | $(TMP)
+	$(call COMPILE,$(CXX),$<,$@)
 
-# Build intermediate source files with lto.
-$(TMP)/%-lto.o: $(TMP)/%.c Makefile | $(TMP)
-	$(CC) $(CFLAGS) -flto -fPIC -MMD -c -o $@ $<
+# Build C source files in bin.
+$(TMP)/%.c.$(OBJEXT): bin/%.c | $(TMP)
+	$(call COMPILE,$(CC),$<,$@)
+
+# Build C source files in test.
+$(TMP)/test-%.c.$(OBJEXT): test/%.c | $(TMP)
+	$(call COMPILE,$(CC),$<,$@)
+
+# Build intermediate C source files.
+$(TMP)/%.c.o: $(TMP)/%.c | $(TMP)
+	$(call COMPILE,$(CC),$<,$@)
 
 # Produce amalgamated intermediate source file.
 $(TMP)/$(LIBNAME).c: $(LIBSRC) | $(TMP)
+	@echo "amalg\t$@"
 	@date +"/*  $(LIBNAME): %Y-%m-%d %T %Z */" > $@
 	@for f in $^; do cat $$f >> $@; done
 
+
+
 # Create build directories.
 $(TMP) $(LIB) $(BIN) $(TEST) $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib $(DESTDIR)$(PREFIX)/include:
-	mkdir -p $@
+	@mkdir -p $@
+
+
+
+# Symlink template.
+SYMLINK= $(SYMLINK_PREFIX)cd $(dir $(2)) && ln -s $(1) $(notdir $(2))
+
+# Create versioned symlink for shared library.
+$(LIB)/$(SOMAJ) $(LIB)/$(SO):
+	$(call SYMLINK,$(SOMIN),$@)
+
+# Install versioned symlink for shared library.
+$(DESTDIR)$(PREFIX)/lib/$(SOMAJ) $(DESTDIR)$(PREFIX)/lib/$(SO):
+	$(call SYMLINK,$(SOMIN),$@)
+
+# Install template.
+INSTALL= $(INSTALL_PREFIX)cp $(1) $(2)
 
 # Install executable tools.
 $(DESTDIR)$(PREFIX)/bin/%: $(BIN)/% | $(DESTDIR)$(PREFIX)/bin
-	cp $< $@
-
-# Install versioned symlink for shared library.
-$(DESTDIR)$(PREFIX)/lib/$(SOMAJ) $(DESTDIR)$(PREFIX)/lib/$(SO): $(DESTDIR)$(PREFIX)/lib/$(SOMIN)
-	cd $(DESTDIR)$(PREFIX)/lib && ln -s $(SOMIN) $(notdir $@)
+	$(call INSTALL,$<,$@)
 
 # Install libraries.
 $(DESTDIR)$(PREFIX)/lib/%: $(LIB)/% | $(DESTDIR)$(PREFIX)/lib
-	cp $< $@
+	$(call INSTALL,$<,$@)
 
 # Install headers.
 $(DESTDIR)$(PREFIX)/include/%.h: lib/%.h | $(DESTDIR)$(PREFIX)/include
-	cp $< $@
+	$(call INSTALL,$<,$@)
+
+
 
 .PHONY: all bin lib static dynamic test install uninstall clean
+.SECONDARY:
 
 -include $(OBJ:%.o=%.d) $(BINSRC:bin/%.c=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/test-%.d)

@@ -52,6 +52,9 @@ static struct mu_counts *mu_counts = &mu_counts_start;
 static bool mu_fork = true;
 static bool mu_tty = false;
 
+static void mu_noop(void) {}
+static void (*mu_teardown)(void) = mu_noop;
+
 #define MU_CAT2(n, v) n##v
 #define MU_CAT(n, v) MU_CAT2(n, v)
 #define MU_TMP(n) MU_CAT(mu_tmp_##n, __LINE__)
@@ -214,6 +217,8 @@ mu_run (void (*fn) (void))
 	mu_setup ();
 	if (!mu_fork) {
 		fn ();
+		mu_teardown ();
+		mu_teardown = mu_noop;
 		return;
 	}
 	pid_t pid = fork ();
@@ -224,6 +229,8 @@ mu_run (void (*fn) (void))
 	if (pid == 0) {
 		mu_register = 2;
 		fn ();
+		mu_teardown ();
+		mu_teardown = mu_noop;
 		exit (0);
 	}
 	else {

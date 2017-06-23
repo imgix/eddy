@@ -43,12 +43,12 @@ task(void *data)
 
 	for (int x = 0; x < sets; x++) {
 		ed_index_lock(&cache->index, ED_LOCK_EX, true);
-		rc = ed_page_alloc(&cache->index, p, pages, true);
+		rc = ed_pgalloc(&cache->index.alloc, p, pages);
 		if (rc < 0) {
 			warnx("failed to allocate page: %s", ed_strerror(rc));
 			break;
 		}
-		ed_page_free(&cache->index, p, rc, true);
+		ed_pgfree(&cache->index.alloc, p, rc);
 		ed_index_lock(&cache->index, ED_LOCK_UN, true);
 		/*
 		long n = pages - lose;

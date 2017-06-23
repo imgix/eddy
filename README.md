@@ -30,6 +30,7 @@ make dynamic # build only the dynamic library and version symlinks
 | `OPT` | Optimization level of the build. | `3` for `release`, unset for `debug` |
 | `LTO` | Enable link time optimizations. Additionally, this may be set to `amalg` which will produce an amalgamated source build rather than using the compiler LTO. The amalgamated build is always used for the static library any time LTO is enabled. | `yes` for `release`, `no` for `debug` |
 | `DEBUG` | Build with debugging symbols. This allows `release` builds to retain debugging symbols. | `no` for optimized, `yes` otherwise |
+| `DEBUG_MMAP` | Build with `mmap` tracking. | `no` |
 | `CFLAGS` | The base compiler flags. These will be mixed into the required flags. | `-O$(OPT) -DNDEBUG` optimized, `-Wall -Werror` otherwise |
 | `LDFLAGS` | The base linker flags. These will be mixed into the required flags.  | _no default_ |
 | `PREFIX` | Base install directory. | `/usr/local` |
