@@ -158,7 +158,8 @@ install: $(PRODUCTS)
 
 # Remove files from destination
 uninstall:
-	rm -f $(PRODUCTS)
+	@rm -f $(PRODUCTS)
+	@for f in $(PRODUCTS); do echo "remove\t$$f"; done
 
 # Remove all build files.
 clean:
