@@ -32,7 +32,9 @@ _Static_assert(sizeof(EdBTree) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE
 #define BITNSLOTS(nb) ((nb + 8 - 1) / 8)
 
 #define PG_ROOT_FREE 1
-#define PG_FIXED (PG_ROOT_FREE + 1)
+#define PG_NHDR 1
+#define PG_NEXTRA 1
+#define PG_NINIT (PG_NHDR + PG_NEXTRA)
 
 
 static const EdIndexHdr INDEX_DEFAULT = {
@@ -106,7 +108,7 @@ ed_index_open(EdIndex *index, const char *path,
 	hdrnew.slab_ino = ino;
 	hdrnew.slab_page_count = slabsize/PAGESIZE;
 	hdrnew.alloc.free_list = PG_ROOT_FREE;
-	hdrnew.alloc.tail = (EdPgtail){ PG_FIXED, 0 };
+	hdrnew.alloc.tail = (EdPgtail){ PG_NINIT, 0 };
 
 	if (ed_rnd_u64(&hdrnew.seed) <= 0) {
 		return ED_EINDEX_RANDOM;
@@ -115,7 +117,7 @@ ed_index_open(EdIndex *index, const char *path,
 	fd = open(path, O_CLOEXEC|O_RDWR|O_CREAT, 0600);
 	if (fd < 0) { return ED_ERRNO; }
 
-	hdr = ed_pgmap(fd, 0, PG_FIXED);
+	hdr = ed_pgmap(fd, 0, PG_NINIT);
 	if (hdr == MAP_FAILED) { close(fd); return ED_ERRNO; }
 
 	EdPgfree *free_list = (EdPgfree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
@@ -130,7 +132,7 @@ ed_index_open(EdIndex *index, const char *path,
 				if (rc == 0 || !(flags & ED_FREBUILD)) { break; }
 			}
 
-			size_t size = PG_FIXED * PAGESIZE;
+			size_t size = PG_NINIT * PAGESIZE;
 			rc = ed_mkfile(fd, size + (ED_ALLOC_COUNT * PAGESIZE));
 			if (rc == 0) {
 				memset(hdr, 0, size);
@@ -147,7 +149,7 @@ ed_index_open(EdIndex *index, const char *path,
 	}
 
 	if (rc < 0) {
-		if (hdr != MAP_FAILED) { ed_pgunmap(hdr, PG_FIXED); }
+		if (hdr != MAP_FAILED) { ed_pgunmap(hdr, PG_NINIT); }
 		close(fd);
 	}
 	else {
@@ -170,7 +172,7 @@ ed_index_close(EdIndex *index)
 {
 	if (index == NULL) { return; }
 	ed_pgalloc_close(&index->alloc);
-	ed_pgunmap(index->hdr, PG_FIXED);
+	ed_pgunmap(index->hdr, PG_NHDR);
 	index->hdr = NULL;
 }
 
@@ -298,19 +300,19 @@ ed_index_stat(EdIndex *index, FILE *out, int flags)
 		"  size: %zu\n"
 		"  pages:\n"
 		"    count: %zu\n"
-		"    fixed: %zu\n"
+		"    header: %zu\n"
 		"    dynamic: %zu\n",
 		(size_t)s.st_size,
 		(size_t)pgno,
-		(size_t)PG_FIXED,
-		(size_t)(pgno - PG_FIXED)
+		(size_t)PG_NHDR,
+		(size_t)(pgno - PG_NHDR)
 	);
 
 	if (flags & ED_FSTAT_EXTEND) {
 		uint8_t vec[(pgno/8)+1];
 		memset(vec, 0, (pgno/8)+1);
 
-		for (EdPgno i = 0; i < PG_FIXED; i++) {
+		for (EdPgno i = 0; i < PG_NHDR; i++) {
 			BITSET(vec, i);
 		}
 
@@ -320,6 +322,7 @@ ed_index_stat(EdIndex *index, FILE *out, int flags)
 		rc = ed_index_lock(index, ED_LOCK_EX, true);
 		if (rc < 0) { goto done; }
 
+		BITSET(vec, index->alloc.hdr->free_list);
 		rc = stat_free(index, vec, ed_pgfree_list(&index->alloc), out);
 
 		ed_index_lock(index, ED_LOCK_UN, true);

@@ -101,6 +101,9 @@ open_cache:
 
 	ed_cache_close(&cache);
 
-	return 0;
+#if ED_MMAP_DEBUG
+	if (ed_pgcheck() > 0) { return EXIT_FAILURE; }
+#endif
+	return EXIT_SUCCESS;
 }
 

@@ -115,6 +115,7 @@ ed_cache_close(EdCache **cachep)
 	if (cache != NULL) {
 		*cachep = NULL;
 		if (atomic_fetch_sub(&cache->ref, 1) == 1) {
+			ed_index_close(&cache->index);
 			close(cache->fd);
 			free(cache);
 		}

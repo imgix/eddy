@@ -71,6 +71,9 @@ main(int argc, char **argv)
 	*/
 
 	ed_cache_close(&cache);
+#if ED_MMAP_DEBUG
+	if (ed_pgcheck() > 0) { return EXIT_FAILURE; }
+#endif
 	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

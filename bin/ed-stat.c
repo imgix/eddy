@@ -53,6 +53,9 @@ main(int argc, char **argv)
 	if (rc < 0) { errx(1, "failed to verify: %s", ed_strerror(rc)); }
 
 	ed_cache_close(&cache);
+#if ED_MMAP_DEBUG
+	if (ed_pgcheck() > 0) { return EXIT_FAILURE; }
+#endif
 	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
