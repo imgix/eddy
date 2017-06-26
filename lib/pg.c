@@ -324,13 +324,17 @@ page_alloc_free_or_expand(EdPgalloc *alloc, EdPg **p, EdPgno n)
 // a page will be pulled from the free list. If no page is available, the
 // file will be expanded.
 int
-ed_pgalloc(EdPgalloc *alloc, EdPg **pages, EdPgno n)
+ed_pgalloc(EdPgalloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 {
+	// Try the lock-free allocation from the tail pages.
+	if (!exclusive) { return page_alloc_tail(alloc, pages, n); }
+
 	int rc = 0;
 	EdPgno rem = n;
 	EdPg **p = pages;
 
-	// Try the lock-free allocation from the tail pages.
+	// First take from the tail. It may be preferrable to leave tail pages for
+	// unlocked allocations, but currently that is rarely used.
 	rc = page_alloc_tail(alloc, p, rem);
 	if (rc >= 0) {
 		p += rc; rem -= rc;

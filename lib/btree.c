@@ -203,7 +203,7 @@ static int
 insert_split(EdBSearch *srch, EdBTree **leafp, EdPgalloc *alloc)
 {
 	EdPg *pg[srch->nsplits+1];
-	int rc = ed_pgalloc(alloc, pg, srch->nsplits+1);
+	int rc = ed_pgalloc(alloc, pg, srch->nsplits+1, true);
 	if (rc < 0) { return rc; }
 
 	EdBTree *left = *leafp, *right = (EdBTree *)pg[0];
@@ -248,7 +248,7 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 	// If the root was NULL, create a new root node.
 	if (srch->nnodes == 0) {
 		EdPg *pg;
-		rc = ed_pgalloc(alloc, &pg, 1);
+		rc = ed_pgalloc(alloc, &pg, 1, true);
 		if (rc < 0) { goto done; }
 		leaf = (EdBTree *)pg;
 		ed_btree_init(leaf);

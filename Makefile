@@ -252,6 +252,8 @@ $(LIB)/$(SOMAJ) $(LIB)/$(SO):
 $(DESTDIR)$(PREFIX)/lib/$(SOMAJ) $(DESTDIR)$(PREFIX)/lib/$(SO):
 	$(call SYMLINK,$(SOMIN),$@)
 
+
+
 # Install template.
 INSTALL= $(INSTALL_PREFIX)cp $(1) $(2)
 
@@ -272,4 +274,4 @@ $(DESTDIR)$(PREFIX)/include/%.h: lib/%.h | $(DESTDIR)$(PREFIX)/include
 .PHONY: all bin lib static dynamic test install uninstall clean
 .SECONDARY:
 
--include $(OBJ:%.o=%.d) $(BINSRC:bin/%.c=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/test-%.d)
+-include $(OBJ:%.o=%.d) $(BINSRC:bin/%.c=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/test-%.c.d)

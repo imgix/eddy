@@ -24,7 +24,7 @@ test_basic(void)
 	EdPgfree *free;
 	EdPgtail tail;
 
-	mu_assert_int_eq(ed_pgalloc(&alloc, pages, ed_len(pages)), ed_len(pages));
+	mu_assert_int_eq(ed_pgalloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 
 	tail = alloc.hdr->tail;
 	mu_assert_int_eq(tail.off, 2);
