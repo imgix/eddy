@@ -45,8 +45,11 @@ ifeq ($(BUILD_MIME),yes)
   BINSRC+= bin/ed-mime.c
 endif
 ifeq ($(DEBUG_MMAP),yes)
-  LIBSRC+= lib/pgtrack.cc
-  CFLAGS+= -DED_MMAP_DEBUG=1
+  LIBSRC+= lib/pgtrack.cc lib/backtrace.c
+  CFLAGS+= -DED_MMAP_DEBUG=1 -DED_BACKTRACE=1
+  ifneq ($(UNAME),Darwin)
+    LDFLAGS+= -lexecinfo -ldl
+  endif
 endif
 ifeq ($(BUILD_DEV),yes)
   BINSRC+= bin/ed-alloc.c bin/ed-exec.c
@@ -168,7 +171,7 @@ clean:
 
 
 # Executable linking template.
-ifeq ($(DEBUG)-$(UNAME),yes-Dawin)
+ifeq ($(DEBUG)-$(UNAME),yes-Darwin)
   LINK= $(LINK_PREFIX)$(LD) $(LDFLAGS) $(1) -o $(2) && dsymutil $(2)
 else
   LINK= $(LINK_PREFIX)$(LD) $(LDFLAGS) $(1) -o $(2)

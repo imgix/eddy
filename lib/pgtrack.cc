@@ -6,27 +6,29 @@
 
 extern "C" {
 #include "eddy-private.h"
+#include <pthread.h>
 }
 
 struct EdPgstack {
-	void *symbols[15];
-	int frames;
+	EdBacktrace *bt;
+	int rc;
 
 	ED_INLINE EdPgstack() {
-		void *sym[ed_len(symbols) + 1];
-		int f = backtrace(sym, ed_len(sym));
-		if (f > 0) {
-			memcpy(symbols, sym+1, f*sizeof(*sym));
-			frames = f - 1;
-		}
-		else {
-			frames = 0;
-		}
+		rc = ed_backtrace_new(&bt);
+	}
+
+	~EdPgstack() {
+		ed_backtrace_free(&bt);
 	}
 
 	void print() {
-		if (frames > 0) {
-			backtrace_symbols_fd(symbols, frames, STDERR_FILENO);
+		if (rc >= 0) {
+			int idx = ed_backtrace_index(bt, "ed_pguntrack");
+			if (idx < 0) {
+				idx = ed_backtrace_index(bt, "ed_pgtrack");
+			}
+			idx = idx < 0 ? 0 : idx + 1;
+			ed_backtrace_print(bt, idx, stderr);
 		}
 	}
 };

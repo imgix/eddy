@@ -12,7 +12,7 @@ typedef struct {
 
 typedef struct {
 	uint64_t key;
-	char name[8];
+	char name[16];
 } Entry;
 
 static void
@@ -46,6 +46,7 @@ test_basic(void)
 		sprintf(ent.name, "a%d", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
 	}
 	mu_assert_ptr_ne(bt, NULL);
 	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 1, sizeof(Entry), &srch), 1);
@@ -56,6 +57,7 @@ test_basic(void)
 	found = srch.entry;
 	mu_assert_uint_eq(found->key, 1);
 	mu_assert_str_eq(found->name, "a1");
+	mu_assert_ptr_eq(srch.entry, bt->data);
 
 	ed_pgunmap(bt, 1);
 	bt = NULL;
@@ -68,10 +70,45 @@ test_basic(void)
 	mu_assert_ptr_ne(bt, NULL);
 
 	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 1, sizeof(Entry), &srch), 1);
+	ed_bsearch_final(&srch);
 
 	found = srch.entry;
 	mu_assert_uint_eq(found->key, 1);
 	mu_assert_str_eq(found->name, "a1");
+	ed_pgunmap(bt, 1);
+}
+
+static void
+test_split(void)
+{
+	mu_teardown = cleanup;
+
+	//Entry *found = NULL;
+	Tree *t = NULL;
+	EdBTree *bt = NULL;
+	EdBSearch srch;
+
+	unlink(path);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+
+	t = ed_pgalloc_meta(&alloc);
+	t->head = ED_PAGE_NONE;
+
+	for (unsigned seed = 0, i = 0; i < 400; i++) {
+		int k = rand_r(&seed);
+		Entry ent = { .key = k };
+		sprintf(ent.name, "a%u", k);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	for (unsigned seed = 0, i = 0; i < 200; i++) {
+		int k = rand_r(&seed);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		ed_bsearch_final(&srch);
+	}
+
 	ed_pgunmap(bt, 1);
 }
 
@@ -80,6 +117,7 @@ main(void)
 {
 	mu_init("btree");
 	mu_run(test_basic);
+	mu_run(test_split);
 	return 0;
 }
 

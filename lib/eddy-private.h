@@ -212,7 +212,7 @@ struct EdObjectHdr {
 struct EdBTree {
 	EdPg base;
 	EdPgno parent, right;
-	uint32_t count;
+	uint32_t nkeys;
 	uint8_t data[PAGESIZE - sizeof(EdPg) - 2*sizeof(EdPgno) - 4];
 };
 
@@ -253,6 +253,16 @@ ED_LOCAL   void * ed_pgfree_list(EdPgalloc *);
 ED_LOCAL     void ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count);
 ED_LOCAL     void ed_pguntrack(uint8_t *pg, EdPgno count);
 ED_LOCAL      int ed_pgcheck(void);
+#endif
+
+
+#if ED_BACKTRACE
+typedef struct EdBacktrace EdBacktrace;
+
+ED_LOCAL      int ed_backtrace_new(EdBacktrace **);
+ED_LOCAL     void ed_backtrace_free(EdBacktrace **);
+ED_LOCAL     void ed_backtrace_print(EdBacktrace *, int skip, FILE *);
+ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
 #endif
 
 
