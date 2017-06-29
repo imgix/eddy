@@ -307,7 +307,7 @@ ED_LOCAL     bool ed_expired_now(int64_t epoch, uint32_t exp);
 ED_LOCAL      int ed_mkfile(int fd, off_t size);
 
 
-static inline uint64_t __attribute__((unused))
+static inline uint32_t __attribute__((unused))
 ed_fetch32(const void *p)
 {
 	uint32_t val;
