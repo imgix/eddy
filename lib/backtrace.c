@@ -34,12 +34,16 @@ _Static_assert(sizeof(EdBacktrace) < 4096, "EdBacktrace too big");
 static bool
 has_debug(EdSymbol *sym)
 {
+#if __APPLE__
 	char buf[4096];
-	size_t len = strnlen(sym->info.dli_fname, sizeof(buf) - 4);
-	if (len > sizeof(buf) - 5) { return false; }
+	size_t len = strnlen(sym->info.dli_fname, sizeof(buf) - 5);
+	if (len > sizeof(buf) - 6) { return false; }
 	memcpy(buf, sym->info.dli_fname, len);
-	memcpy(buf+len, ".dSYM", 5);
+	memcpy(buf+len, ".dSYM", 6);
 	return access(buf, R_OK) == 0;
+#else
+	return true;
+#endif
 }
 
 static void
@@ -79,10 +83,10 @@ int
 ed_backtrace_new(EdBacktrace **btp)
 {
 	EdBacktrace *bt = calloc(1, sizeof(*bt));
-	if (bt == NULL) { return -1; } // TODO ED_ERRNO
+	if (bt == NULL) { return ED_ERRNO; }
 	if ((bt->nframes = backtrace(bt->frames, MAX_SYMBOLS)) < 0) {
 		free(bt);
-		return -1; // TODO ED_ERRNO
+		return ED_ERRNO;
 	}
 	bt->nsyms = -1;
 	*btp = bt;
@@ -103,11 +107,12 @@ void
 ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 {
 	FILE *procs[bt->nimages];
-	int nprocs = 0, cproc = 0;
+	int nprocs = 0;
 
 	if (bt->nsyms < 0) { collect_symbols(bt); }
 	if (bt->nsyms < 1) { goto fallback; }
 
+#if __APPLE__
 	for (int i = 0; i < bt->nimages; i++) {
 		EdImage *image = &bt->images[i];
 		if (!image->has_debug) { continue; }
@@ -133,10 +138,10 @@ ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 		procs[nprocs++] = p;
 	}
 
-	for (int i = 0; i < bt->nimages; i++) {
+	for (int i = 0, pi = 0; i < bt->nimages && pi < nprocs; i++, pi++) {
 		EdImage *image = &bt->images[i];
 		if (!image->has_debug) { continue; }
-		FILE *p = procs[cproc++];
+		FILE *p = procs[pi];
 		for (int i = 0; i < image->nsyms; i++) {
 			char buf[4096];
 			if (fgets(buf, sizeof(buf), p) == NULL) { break; }
@@ -149,6 +154,7 @@ ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 			}
 		}
 	}
+#endif
 
 fallback:
 	for (int i = 0; i < nprocs; i++) {
