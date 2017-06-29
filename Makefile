@@ -45,7 +45,7 @@ ifeq ($(BUILD_MIME),yes)
   BINSRC+= bin/ed-mime.c
 endif
 ifeq ($(DEBUG_MMAP),yes)
-  LIBSRC+= lib/pgtrack.cc lib/backtrace.c
+  LIBSRC+= lib/pgtrack.cc lib/backtrace.cc
   CFLAGS+= -DED_MMAP_DEBUG=1 -DED_BACKTRACE=1
   ifneq ($(UNAME),Darwin)
     LDFLAGS+= -lexecinfo -ldl

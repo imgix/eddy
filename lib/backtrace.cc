@@ -1,7 +1,8 @@
+extern "C" {
 #include "eddy-private.h"
+}
 
-// TODO: move into c++ for better data structures and abi::__cxa_demangle
-
+#include <cxxabi.h>
 #include <execinfo.h>
 #include <dlfcn.h>
 
@@ -28,6 +29,7 @@ struct EdImage {
 struct EdSymbol {
 	void *frame;
 	Dl_info info;
+	char *name;
 #if HAS_SOURCE_LINE
 	EdImage *image;
 	char *source;
@@ -46,8 +48,6 @@ struct EdBacktrace {
 #endif
 	bool has_symbols;
 };
-
-_Static_assert(sizeof(EdBacktrace) < 4096, "EdBacktrace too big");
 
 #if HAS_SOURCE_LINE
 
@@ -93,7 +93,7 @@ collect_source(EdBacktrace *bt)
 
 	if (bt->nsyms < 1) { return; }
 
-	FILE *procs[bt->nimages];
+	FILE *procs[MAX_IMAGES];
 	int nprocs = 0;
 
 	for (int i = 0; i < bt->nimages; i++) {
@@ -162,10 +162,17 @@ collect_symbols(EdBacktrace *bt)
 	for (int i = 0; i < bt->nframes; i++) {
 		EdSymbol *sym = &bt->syms[bt->nsyms];
 		int rc = dladdr(bt->frames[i], &sym->info);
+
+		if (rc > 0) {
+			sym->name = abi::__cxa_demangle(sym->info.dli_sname, nullptr, nullptr, &rc);
 #if HAS_SOURCE_LINE
-		if (rc > 0) { set_image(bt, sym); }
+			set_image(bt, sym);
 #endif
-		if (rc <= 0) { memset(&sym->info, 0, sizeof(sym->info)); }
+		}
+		else {
+			sym->name = NULL;
+			memset(&sym->info, 0, sizeof(sym->info));
+		}
 		sym->frame = bt->frames[i];
 		bt->nsyms++;
 	}
@@ -174,7 +181,7 @@ collect_symbols(EdBacktrace *bt)
 int
 ed_backtrace_new(EdBacktrace **btp)
 {
-	EdBacktrace *bt = calloc(1, sizeof(*bt));
+	EdBacktrace *bt = (EdBacktrace *)calloc(1, sizeof(*bt));
 	if (bt == NULL) { return ED_ERRNO; }
 	if ((bt->nframes = backtrace(bt->frames, MAX_SYMBOLS)) < 0) {
 		free(bt);
@@ -190,11 +197,12 @@ ed_backtrace_free(EdBacktrace **btp)
 	EdBacktrace *bt = *btp;
 	if (bt != NULL) {
 		*btp = NULL;
-#if HAS_SOURCE_LINE
 		for (int i = 0; i < bt->nsyms; i++) {
+			free(bt->syms[i].name);
+#if HAS_SOURCE_LINE
 			free(bt->syms[i].source);
-		}
 #endif
+		}
 		free(bt);
 	}
 }
@@ -202,10 +210,10 @@ ed_backtrace_free(EdBacktrace **btp)
 void
 ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 {
-	bool new = false;
+	bool isnew = false;
 	if (bt == NULL) {
 		if (ed_backtrace_new(&bt) < 0) { return; }
-		new = true;
+		isnew = true;
 	}
 
 	collect_symbols(bt);
@@ -221,18 +229,19 @@ ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 			fname = fname ? fname+1 : sym->info.dli_fname;
 		}
 		ssize_t diff = (uint8_t *)sym->frame - (uint8_t *)sym->info.dli_saddr;
+		const char *name = sym->name ? sym->name : sym->info.dli_sname;
 		fprintf(out, "%-3d %-36s0x%016zx %s + %zd",
 				i - skip,
 				fname,
 				(size_t)sym->info.dli_saddr + diff,
-				sym->info.dli_sname ? sym->info.dli_sname : "?",
+				name ? name : "?",
 				diff);
 #if HAS_SOURCE_LINE
 		if (sym->source) { fprintf(out, " (%s)", sym->source); }
 #endif
 		fputc('\n', out);
 	}
-	if (new) { ed_backtrace_free(&bt); }
+	if (isnew) { ed_backtrace_free(&bt); }
 }
 
 int
