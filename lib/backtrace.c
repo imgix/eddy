@@ -4,7 +4,13 @@
 #include <dlfcn.h>
 
 #define MAX_SYMBOLS 32
-#define MAX_IMAGES 7
+
+#if __APPLE__ || __linux__
+# define HAS_SOURCE_LINE 1
+# define MAX_IMAGES 7
+#else
+# define HAS_SOURCE_LINE 0
+#endif
 
 typedef struct EdImage EdImage;
 typedef struct EdSymbol EdSymbol;
@@ -12,24 +18,34 @@ typedef struct EdSymbol EdSymbol;
 struct EdImage {
 	EdSymbol *syms[MAX_SYMBOLS];
 	int nsyms;
+#if HAS_SOURCE_LINE
 	bool has_debug;
+#endif
 };
 
 struct EdSymbol {
 	void *frame;
 	Dl_info info;
+#if HAS_SOURCE_LINE
 	EdImage *image;
 	char *source;
+#endif
 };
 
 struct EdBacktrace {
 	void *frames[MAX_SYMBOLS];
 	EdSymbol syms[MAX_SYMBOLS];
+	int nframes;
+	int nsyms;
+#if HAS_SOURCE_LINE
 	EdImage images[MAX_IMAGES];
-	int nframes, nsyms, nimages;
+	int nimages;
+#endif
 };
 
 _Static_assert(sizeof(EdBacktrace) < 4096, "EdBacktrace too big");
+
+#if HAS_SOURCE_LINE
 
 static bool
 has_debug(EdSymbol *sym)
@@ -65,15 +81,19 @@ done:
 	bt->images[i].syms[bt->images[i].nsyms++] = sym;
 }
 
+#endif
+
 static void
 collect_symbols(EdBacktrace *bt)
 {
 	bt->nsyms = 0;
 	for (int i = 0; i < bt->nframes; i++) {
 		EdSymbol *sym = &bt->syms[bt->nsyms];
-		if (dladdr(bt->frames[i], &sym->info) > 0) {
-			set_image(bt, sym);
-		}
+		int rc = dladdr(bt->frames[i], &sym->info);
+#if HAS_SOURCE_LINE
+		if (rc > 0) { set_image(bt, sym); }
+#endif
+		if (rc <= 0) { memset(&sym->info, 0, sizeof(sym->info)); }
 		sym->frame = bt->frames[i];
 		bt->nsyms++;
 	}
@@ -106,24 +126,33 @@ ed_backtrace_free(EdBacktrace **btp)
 void
 ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 {
+	bool new = false;
+	if (bt == NULL) {
+		if (ed_backtrace_new(&bt) < 0) { return; }
+		new = true;
+	}
+
+	if (bt->nsyms < 0) { collect_symbols(bt); }
+
+#if HAS_SOURCE_LINE
 	FILE *procs[bt->nimages];
 	int nprocs = 0;
 
-	if (bt->nsyms < 0) { collect_symbols(bt); }
 	if (bt->nsyms < 1) { goto fallback; }
 
-#if __APPLE__
 	for (int i = 0; i < bt->nimages; i++) {
 		EdImage *image = &bt->images[i];
 		if (!image->has_debug) { continue; }
 
 		char buf[16384];
-		int len;
+		int len = -1;
 
+#if __APPLE__
 		len = snprintf(buf, sizeof(buf),
 				"atos -o %s -l 0x%" PRIxPTR,
 				image->syms[0]->info.dli_fname,
 				(uintptr_t)image->syms[0]->info.dli_fbase);
+#endif
 
 		if (len < 0 || len > (int)sizeof(buf)) { goto fallback; }
 
@@ -143,23 +172,28 @@ ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 		if (!image->has_debug) { continue; }
 		FILE *p = procs[pi];
 		for (int i = 0; i < image->nsyms; i++) {
-			char buf[4096];
+			char buf[4096], *start;
 			if (fgets(buf, sizeof(buf), p) == NULL) { break; }
 			size_t len = strnlen(buf, sizeof(buf));
-			if (len < sizeof(buf) && buf[len-2] == ')') {
-				char *end = strrchr(buf, '(');
-				if (end) {
-					image->syms[i]->source = strndup(end, len - (end - buf) - 1);
-				}
-			}
+			if (len >= sizeof(buf)) { continue; }
+#if __APPLE__
+			if (buf[len-2] != ')' || (start = strrchr(buf, '(')) == NULL) { continue; }
+			start++;
+			len = len - (start - buf) - 2;
+#else
+			start = buf;
+			len--;
+#endif
+			image->syms[i]->source = strndup(start, len);
 		}
 	}
-#endif
 
 fallback:
 	for (int i = 0; i < nprocs; i++) {
 		pclose(procs[i]);
 	}
+#endif
+
 	for (int i = skip; i < bt->nsyms; i++) {
 		EdSymbol *sym = &bt->syms[i];
 		const char *fname = "???";
@@ -168,14 +202,18 @@ fallback:
 			fname = fname ? fname+1 : sym->info.dli_fname;
 		}
 		ssize_t diff = (uint8_t *)sym->frame - (uint8_t *)sym->info.dli_saddr;
-		fprintf(out, "%-3d %-36s0x%016zx %s + %zd %s\n",
+		fprintf(out, "%-3d %-36s0x%016zx %s + %zd",
 				i - skip,
 				fname,
 				(size_t)sym->info.dli_saddr + diff,
 				sym->info.dli_sname ? sym->info.dli_sname : "?",
-				diff,
-				sym->source ? sym->source : "");
+				diff);
+#if HAS_SOURCE_LINE
+		if (sym->source) { fprintf(out, " (%s)", sym->source); }
+#endif
+		fputc('\n', out);
 	}
+	if (new) { ed_backtrace_free(&bt); }
 }
 
 int
