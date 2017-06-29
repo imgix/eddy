@@ -3,9 +3,10 @@
 /*
  * For branch nodes, the layout of the data segment looks like:
  *
- * +---------+--------+---------+--------+-----+----------+---------+
- * | Pgno[0] | Key[0] | Pgno[1] | Key[1] | ... | Key[N-1] | Pgno[N] |
- * +---------+--------+---------+--------+-----+----------+---------+
+ * 0      4         12     16         24
+ * +------+----------+------+----------+-----+------------+------+
+ * | P[0] | Key64[0] | P[1] | Key64[1] | ... | Key64[N-1] | P[N] |
+ * +------+----------+------+----------+-----+------------+------+
  *
  * The Pgno values are 32-bit numbers for the page numbers for the child page.
  * These values are guaranteed to have 4-byte alignment and do not need special
@@ -22,8 +23,8 @@ _Static_assert(sizeof(EdBTree) == PAGESIZE,
 
 #define BRANCH_KEY_SIZE 8
 #define BRANCH_PTR_SIZE (sizeof(EdPgno))
-#define BRANCH_FIRST(n) ((EdPgno *)(n)->data)
 #define BRANCH_ENTRY_SIZE (BRANCH_PTR_SIZE + BRANCH_KEY_SIZE)
+#define BRANCH_FIRST(n) ((EdPgno *)(n)->data)
 #define BRANCH_NEXT(pg) ((EdPgno *)((uint8_t *)(pg) + BRANCH_ENTRY_SIZE))
 
 #define BRANCH_ORDER \
@@ -240,8 +241,37 @@ done:
 #endif
 }
 
+#if 0
+static void
+print_branch(EdBTree *branch, FILE *out)
+{
+	fprintf(out, "0   %4zu", BRANCH_PTR_SIZE);
+	for (uint32_t i = 0; i < branch->nkeys; i++) {
+		fprintf(out, "          %4zu   %4zu",
+				i*BRANCH_ENTRY_SIZE + BRANCH_ENTRY_SIZE,
+				i*BRANCH_ENTRY_SIZE + BRANCH_ENTRY_SIZE + BRANCH_PTR_SIZE);
+	}
+	fprintf(out, "\n+------+");
+	for (uint32_t i = 0; i < branch->nkeys; i++) {
+		fprintf(out, "-------------+------+");
+	}
+	uint8_t *p = branch->data;
+	fprintf(out, "\n| p%-3u |", ed_fetch32(p));
+	p += BRANCH_PTR_SIZE;
+	for (uint32_t i = 0; i < branch->nkeys; i++, p += BRANCH_ENTRY_SIZE) {
+		fprintf(out, " %-11llu |", ed_fetch64(p));
+		fprintf(out, " p%-3u |", ed_fetch32(p+BRANCH_KEY_SIZE));
+	}
+	fprintf(out, "\n+------+");
+	for (uint32_t i = 0; i < branch->nkeys; i++) {
+		fprintf(out, "-------------+------+");
+	}
+	fprintf(out, "\n");
+}
+#endif
+
 static EdPgno
-insert_into_parent(EdBSearch *srch, EdBTree *left, EdBTree *right, EdPg **pg, EdPgno no)
+insert_into_parent(EdBSearch *srch, EdBTree *left, EdBTree *right, uint64_t rkey, EdPg **pg, EdPgno no)
 {
 	// No parent, so create new root node.
 	if (left->parent == ED_PAGE_NONE) {
@@ -252,23 +282,32 @@ insert_into_parent(EdBSearch *srch, EdBTree *left, EdBTree *right, EdPg **pg, Ed
 		root->parent = ED_PAGE_NONE;
 		root->right = ED_PAGE_NONE;
 		memcpy(root->data, &left->base.no, BRANCH_PTR_SIZE);
-		memcpy(root->data+BRANCH_PTR_SIZE, right->data, BRANCH_KEY_SIZE);
+		memcpy(root->data+BRANCH_PTR_SIZE, &rkey, BRANCH_KEY_SIZE);
 		memcpy(root->data+BRANCH_ENTRY_SIZE, &right->base.no, BRANCH_PTR_SIZE);
 		left->parent = root->base.no;
 		right->parent = root->base.no;
+
+		assert(srch->nnodes == 1);
+		srch->nodes[1] = srch->nodes[0];
 		srch->nodes[0] = root;
+		srch->nnodes++;
+
 		return 1;
 	}
 
 	EdBTree *parent = get_mapped_node(srch, left->parent);
+	assert(parent != NULL);
 	uint32_t index = branch_index(parent, left->base.no);
 
 	if (!IS_BRANCH_FULL(parent)) {
 		uint8_t *p = parent->data;
 		size_t rpos = BRANCH_PTR_SIZE + index*BRANCH_ENTRY_SIZE;
 		memmove(p+rpos+BRANCH_ENTRY_SIZE, p+rpos, (parent->nkeys-index)*BRANCH_ENTRY_SIZE);
-		memcpy(p+rpos, right->data, BRANCH_KEY_SIZE);
-		memcpy(p+rpos+BRANCH_PTR_SIZE, &right->base.no, BRANCH_PTR_SIZE);
+		memcpy(p+rpos, &rkey, BRANCH_KEY_SIZE);
+		memcpy(p+rpos+BRANCH_KEY_SIZE, &right->base.no, BRANCH_PTR_SIZE);
+		parent->nkeys++;
+		right->parent = parent->base.no;
+
 		return 0;
 	}
 
@@ -296,23 +335,25 @@ insert_split(EdBSearch *srch, EdBTree **leafp, EdPgalloc *alloc)
 	right->right = left->right;
 	memcpy(right->data, left->data+off, sizeof(left->data) - off);
 
-	used += insert_into_parent(srch, left, right, pg+used, npg-used);
+	used += insert_into_parent(srch, left, right, ed_fetch64(right->data), pg+used, npg-used);
 
 	// Ideally there should be no pages left.
 	if (npg > used) { fprintf(stderr, "allocated too much! %u -> %u\n", npg, used); }
 	ed_pgfree(alloc, pg + used, npg - used);
 
+	assert(srch->nodes[srch->nnodes-1] == left);
 	if (srch->entry_index < mid) {
 		*leafp = left;
-		ed_pgunmap(right, 1);
+		srch->nodes[srch->nnodes + srch->nextra++] = right;
 	}
 	else {
 		*leafp = right;
-		ed_pgunmap(left, 1);
 		srch->entry_index -= mid;
 		srch->entry = right->data + srch->entry_index*srch->entry_size;
+		srch->nodes[srch->nnodes-1] = right;
+		srch->nodes[srch->nnodes + srch->nextra++] = left;
 	}
-	srch->nodes[srch->nnodes++] = *leafp;
+
 	return 0;
 }
 
@@ -361,10 +402,9 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 	leaf->nkeys++;
 	ed_pgsync(leaf, 1, 0, 1);
 	*srch->root = srch->nodes[0];
-	rc = 0;
-
 	srch->nsplits = 0;
 	srch->match = 1;
+	rc = 0;
 
 done:
 	return rc;

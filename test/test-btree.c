@@ -94,7 +94,7 @@ test_split(void)
 	t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
 
-	for (unsigned seed = 0, i = 0; i < 400; i++) {
+	for (unsigned seed = 0, i = 0; i < 800; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
 		sprintf(ent.name, "a%u", k);
@@ -103,7 +103,7 @@ test_split(void)
 		ed_bsearch_final(&srch);
 	}
 
-	for (unsigned seed = 0, i = 0; i < 200; i++) {
+	for (unsigned seed = 0, i = 0; i < 800; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
 		ed_bsearch_final(&srch);
