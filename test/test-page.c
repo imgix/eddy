@@ -9,7 +9,9 @@ cleanup(void)
 {
 	ed_pgalloc_close(&alloc);
 	unlink(path);
+#if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pgcheck(), 0);
+#endif
 }
 
 static void

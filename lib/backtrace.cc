@@ -3,8 +3,6 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 
-
-
 int
 ed_backtrace_new(EdBacktrace **btp)
 {
@@ -46,8 +44,6 @@ ed_backtrace_index(EdBacktrace *bt, const char *name)
 {
 	return bt->Find(name);
 }
-
-
 
 EdBacktrace::EdBacktrace(void **frames, int nframes)
 {
@@ -127,8 +123,6 @@ void EdBacktrace::CollectSource(void)
 #endif
 }
 
-
-
 EdBacktrace::Symbol::~Symbol()
 {
 	free(name);
@@ -173,8 +167,6 @@ void EdBacktrace::Symbol::Print(int idx, FILE *out)
 	if (source) { fprintf(out, " (%s)", source); }
 	fputc('\n', out);
 }
-
-
 
 EdBacktrace::Image::Image(Dl_info &info)
 {
