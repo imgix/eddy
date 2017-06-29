@@ -1,43 +1,28 @@
 #include <map>
 #include <set>
-#include <execinfo.h>
 
 #undef ED_MMAP_DEBUG
 #define ED_MMAP_DEBUG 1
 
+#include "eddy-backtrace.hh"
+
 extern "C" {
-#include "eddy-private.h"
 #include <pthread.h>
 }
 
-struct EdPgstack {
-	EdBacktrace *bt;
-	int rc;
-
-	ED_INLINE EdPgstack() {
-		rc = ed_backtrace_new(&bt);
-	}
-
-	~EdPgstack() {
-		ed_backtrace_free(&bt);
-	}
-
-	void print() {
-		if (rc >= 0) {
-			int idx = ed_backtrace_index(bt, "ed_pguntrack");
-			if (idx < 0) {
-				idx = ed_backtrace_index(bt, "ed_pgtrack");
-			}
-			idx = idx < 0 ? 0 : idx + 1;
-			ed_backtrace_print(bt, idx, stderr);
-		}
-	}
-};
+void PrintStack(EdBacktrace *bt)
+{
+	int idx = bt->Find("ed_pguntrack");
+	if (idx < 0) { idx = bt->Find("ed_pgtrack"); }
+	bt->Print(idx < 0 ? 0 : idx + 1, stderr);
+}
 
 struct EdPgstate {
 	EdPgno no;
 	bool active;
-	std::shared_ptr<EdPgstack> stack;
+	std::shared_ptr<EdBacktrace> stack;
+
+	void Print() { PrintStack(stack.get()); }
 };
 
 typedef std::map<uintptr_t, EdPgstate> EdPgtrack;
@@ -59,19 +44,21 @@ ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count)
 	try {
 		if (track == NULL) { track = new EdPgtrack(); }
 
-		auto stack = std::make_shared<EdPgstack>();
+		auto stack = std::make_shared<EdBacktrace>();
+		stack->Load();
+
 		uintptr_t k = (uintptr_t)pg, ke = k+(count*PAGESIZE);
 		auto start = track->lower_bound(k);
 		auto end = track->upper_bound(ke-PAGESIZE);
 
-		for (auto it = start; it != end; ++it) {
+		for (auto &it = start; it != end; ++it) {
 			if (it->second.active) {
 				fprintf(stderr, "*** address mapped multiple times: 0x%012" PRIxPTR "/%u\n",
 						k, it->second.no);
 				fprintf(stderr, "*** allocation stack:\n");
-				it->second.stack->print();
+				it->second.Print();
 				fprintf(stderr, "*** current stack:\n");
-				stack->print();
+				PrintStack(stack.get());
 				fprintf(stderr, "\n");
 				track_errors++;
 			}
@@ -103,12 +90,12 @@ ed_pguntrack(uint8_t *pg, EdPgno count)
 	}
 
 	try {
-		auto stack = std::make_shared<EdPgstack>();
+		auto stack = std::make_shared<EdBacktrace>();
 		uintptr_t k = (uintptr_t)pg, ke = k+(count*PAGESIZE);
 		if (track == NULL) {
 			fprintf(stderr, "*** uninitialized address unmapped: 0x%012" PRIxPTR "/%u\n",
 					k, *(EdPgno *)pg);
-			stack->print();
+			PrintStack(stack.get());
 			fprintf(stderr, "\n");
 			track_errors++;
 		}
@@ -117,14 +104,14 @@ ed_pguntrack(uint8_t *pg, EdPgno count)
 			auto end = track->upper_bound(ke-PAGESIZE);
 
 			std::set<uintptr_t> skip = {};
-			for (auto it = start; it != end; ++it) {
+			for (auto &it = start; it != end; ++it) {
 				if (!it->second.active) {
 					fprintf(stderr, "*** address unmapped multiple times: 0x%012" PRIxPTR "/%u\n",
 							it->first, it->second.no);
 					fprintf(stderr, "*** deallocation stack:\n");
-					it->second.stack->print();
+					it->second.Print();
 					fprintf(stderr, "*** current stack:\n");
-					stack->print();
+					PrintStack(stack.get());
 					fprintf(stderr, "\n");
 					track_errors++;
 					skip.emplace(it->first);
@@ -165,7 +152,7 @@ ed_pgcheck(void)
 				fprintf(stderr, "*** address leaked: 0x%012" PRIxPTR "/%u\n",
 						it->first, it->second.no);
 				fprintf(stderr, "*** allocation stack:\n");
-				it->second.stack->print();
+				it->second.Print();
 				fprintf(stderr, "\n");
 				rc++;
 			}
