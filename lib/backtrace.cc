@@ -1,4 +1,4 @@
-#include "eddy-backtrace.hh"
+#include "eddy-backtrace.h"
 
 #include <cxxabi.h>
 #include <execinfo.h>
@@ -9,7 +9,7 @@ int
 ed_backtrace_new(EdBacktrace **btp)
 {
 	EdBacktrace *bt = new (std::nothrow) EdBacktrace();
-	if (bt == NULL) { return ED_ERRNO; }
+	if (bt == nullptr) { return ED_ERRNO; }
 	int rc = bt->Load();
 	if (rc < 0) {
 		delete bt;
@@ -23,8 +23,8 @@ void
 ed_backtrace_free(EdBacktrace **btp)
 {
 	EdBacktrace *bt = *btp;
-	if (bt != NULL) {
-		*btp = NULL;
+	if (bt != nullptr) {
+		*btp = nullptr;
 		delete bt;
 	}
 }
@@ -33,7 +33,7 @@ void
 ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 {
 	bool isnew = false;
-	if (bt == NULL) {
+	if (bt == nullptr) {
 		if (ed_backtrace_new(&bt) < 0) { return; }
 		isnew = true;
 	}
@@ -73,6 +73,18 @@ void EdBacktrace::Load(void **frames, int nframes)
 	}
 }
 
+void EdBacktrace::Print(int skip, FILE *out)
+{
+	if (out == nullptr) { out = stderr; }
+
+	CollectSymbols();
+	CollectSource();
+	int i = 0;
+	for (auto it = syms.begin() + skip, end = syms.end(); it != end; ++it) {
+		it->Print(i++, out);
+	}
+}
+
 int EdBacktrace::Find(const char *name)
 {
 	CollectSymbols();
@@ -84,16 +96,6 @@ int EdBacktrace::Find(const char *name)
 		i++;
 	}
 	return -1;
-}
-
-void EdBacktrace::Print(int skip, FILE *out)
-{
-	CollectSymbols();
-	CollectSource();
-	int i = 0;
-	for (auto it = syms.begin() + skip, end = syms.end(); it != end; ++it) {
-		it->Print(i++, out);
-	}
 }
 
 void EdBacktrace::CollectSymbols(void)
@@ -127,7 +129,6 @@ void EdBacktrace::CollectSource(void)
 
 
 
-
 EdBacktrace::Symbol::~Symbol()
 {
 	free(name);
@@ -153,7 +154,7 @@ void EdBacktrace::Symbol::SetInfo(Dl_info &info)
 void EdBacktrace::Symbol::SetSource(const char *line, size_t len)
 {
 	free(source);
-	source = NULL;
+	source = nullptr;
 
 	const char *start = line;
 	if (line[len-1] == '\n') { len--; }
@@ -181,7 +182,7 @@ EdBacktrace::Image::Image(Dl_info &info)
 
 	base = info.dli_fbase;
 	path = info.dli_fname;
-	proc = NULL;
+	proc = nullptr;
 #if ED_BACKTRACE_SOURCE
 # if __APPLE__
 	char buf[4096];
@@ -232,7 +233,7 @@ bool EdBacktrace::Image::Open()
 		len += n;
 	}
 	proc = popen(buf, "r");
-	return proc != NULL;
+	return proc != nullptr;
 #else
 	return false;
 #endif
@@ -242,13 +243,13 @@ void EdBacktrace::Image::Close()
 {
 	if (proc) {
 		pclose(proc);
-		proc = NULL;
+		proc = nullptr;
 	}
 }
 
 void EdBacktrace::Image::Apply(void)
 {
-	if (proc == NULL) { return; }
+	if (proc == nullptr) { return; }
 	for (auto &sym : syms) {
 		char buf[4096];
 		if (fgets(buf, sizeof(buf), proc)) {

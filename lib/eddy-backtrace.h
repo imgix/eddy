@@ -1,5 +1,5 @@
-#ifndef INCLUDED_EDDY_BACKTRACE_HH
-#define INCLUDED_EDDY_BACKTRACE_HH
+#ifndef INCLUDED_EDDY_BACKTRACE_H
+#define INCLUDED_EDDY_BACKTRACE_H
 
 #include <vector>
 #include <unordered_map>
@@ -24,7 +24,7 @@ struct EdBacktrace {
 		char *source;
 
 		Symbol(const void *frm)
-			: frame(frm), addr(NULL), name(NULL), fname(NULL), source(NULL) {}
+			: frame(frm), addr(nullptr), name(nullptr), fname(nullptr), source(nullptr) {}
 		~Symbol();
 
 		void Print(int idx, FILE *out);

@@ -4,7 +4,7 @@
 #undef ED_MMAP_DEBUG
 #define ED_MMAP_DEBUG 1
 
-#include "eddy-backtrace.hh"
+#include "eddy-backtrace.h"
 
 extern "C" {
 #include <pthread.h>
