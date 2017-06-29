@@ -1,4 +1,5 @@
 #include <map>
+#include <set>
 #include <execinfo.h>
 
 #undef ED_MMAP_DEBUG
@@ -115,22 +116,24 @@ ed_pguntrack(uint8_t *pg, EdPgno count)
 			auto start = track->lower_bound(k);
 			auto end = track->upper_bound(ke-PAGESIZE);
 
+			std::set<uintptr_t> skip = {};
 			for (auto it = start; it != end; ++it) {
 				if (!it->second.active) {
 					fprintf(stderr, "*** address unmapped multiple times: 0x%012" PRIxPTR "/%u\n",
-							k, it->second.no);
+							it->first, it->second.no);
 					fprintf(stderr, "*** deallocation stack:\n");
 					it->second.stack->print();
 					fprintf(stderr, "*** current stack:\n");
 					stack->print();
 					fprintf(stderr, "\n");
 					track_errors++;
+					skip.emplace(it->first);
 				}
 			}
 
-			EdPgno no = ((EdPg *)pg)->no;
-			for (; k < ke; k += PAGESIZE, no++) {
-				EdPgstate state = { no, false, stack };
+			for (; k < ke; k += PAGESIZE) {
+				if (skip.find(k) != skip.end()) { continue; }
+				EdPgstate state = { ((EdPg *)k)->no, false, stack };
 				auto result = track->emplace(k, state);
 				if (!result.second) {
 					result.first->second = state;
