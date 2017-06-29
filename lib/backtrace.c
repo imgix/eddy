@@ -1,5 +1,7 @@
 #include "eddy-private.h"
 
+// TODO: move into c++ for better data structures and abi::__cxa_demangle
+
 #include <execinfo.h>
 #include <dlfcn.h>
 
@@ -40,7 +42,9 @@ struct EdBacktrace {
 #if HAS_SOURCE_LINE
 	EdImage images[MAX_IMAGES];
 	int nimages;
+	bool has_source;
 #endif
+	bool has_symbols;
 };
 
 _Static_assert(sizeof(EdBacktrace) < 4096, "EdBacktrace too big");
@@ -81,64 +85,16 @@ done:
 	bt->images[i].syms[bt->images[i].nsyms++] = sym;
 }
 
-#endif
-
 static void
-collect_symbols(EdBacktrace *bt)
+collect_source(EdBacktrace *bt)
 {
-	bt->nsyms = 0;
-	for (int i = 0; i < bt->nframes; i++) {
-		EdSymbol *sym = &bt->syms[bt->nsyms];
-		int rc = dladdr(bt->frames[i], &sym->info);
-#if HAS_SOURCE_LINE
-		if (rc > 0) { set_image(bt, sym); }
-#endif
-		if (rc <= 0) { memset(&sym->info, 0, sizeof(sym->info)); }
-		sym->frame = bt->frames[i];
-		bt->nsyms++;
-	}
-}
+	if (bt->has_source) { return; }
+	bt->has_source = true;
 
-int
-ed_backtrace_new(EdBacktrace **btp)
-{
-	EdBacktrace *bt = calloc(1, sizeof(*bt));
-	if (bt == NULL) { return ED_ERRNO; }
-	if ((bt->nframes = backtrace(bt->frames, MAX_SYMBOLS)) < 0) {
-		free(bt);
-		return ED_ERRNO;
-	}
-	bt->nsyms = -1;
-	*btp = bt;
-	return 0;
-}
+	if (bt->nsyms < 1) { return; }
 
-void
-ed_backtrace_free(EdBacktrace **btp)
-{
-	EdBacktrace *bt = *btp;
-	if (bt != NULL) {
-		*btp = NULL;
-		free(bt);
-	}
-}
-
-void
-ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
-{
-	bool new = false;
-	if (bt == NULL) {
-		if (ed_backtrace_new(&bt) < 0) { return; }
-		new = true;
-	}
-
-	if (bt->nsyms < 0) { collect_symbols(bt); }
-
-#if HAS_SOURCE_LINE
 	FILE *procs[bt->nimages];
 	int nprocs = 0;
-
-	if (bt->nsyms < 1) { goto fallback; }
 
 	for (int i = 0; i < bt->nimages; i++) {
 		EdImage *image = &bt->images[i];
@@ -154,16 +110,16 @@ ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 				(uintptr_t)image->syms[0]->info.dli_fbase);
 #endif
 
-		if (len < 0 || len > (int)sizeof(buf)) { goto fallback; }
+		if (len < 0 || len > (int)sizeof(buf)) { goto done; }
 
 		for (int i = 0; i < image->nsyms; i++) {
 			int n = snprintf(buf+len, sizeof(buf) - len, " %p",
 				(void *)((uint8_t *)image->syms[i]->frame-1));
-			if (n < 0 || n > (int)(sizeof(buf) - len)) { goto fallback; }
+			if (n < 0 || n > (int)(sizeof(buf) - len)) { goto done; }
 			len += n;
 		}
 		FILE *p = popen(buf, "r");
-		if (p == NULL) { goto fallback; }
+		if (p == NULL) { goto done; }
 		procs[nprocs++] = p;
 	}
 
@@ -188,10 +144,73 @@ ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 		}
 	}
 
-fallback:
+done:
 	for (int i = 0; i < nprocs; i++) {
 		pclose(procs[i]);
 	}
+}
+
+#endif
+
+static void
+collect_symbols(EdBacktrace *bt)
+{
+	if (bt->has_symbols) { return; }
+	bt->has_symbols = true;
+
+	bt->nsyms = 0;
+	for (int i = 0; i < bt->nframes; i++) {
+		EdSymbol *sym = &bt->syms[bt->nsyms];
+		int rc = dladdr(bt->frames[i], &sym->info);
+#if HAS_SOURCE_LINE
+		if (rc > 0) { set_image(bt, sym); }
+#endif
+		if (rc <= 0) { memset(&sym->info, 0, sizeof(sym->info)); }
+		sym->frame = bt->frames[i];
+		bt->nsyms++;
+	}
+}
+
+int
+ed_backtrace_new(EdBacktrace **btp)
+{
+	EdBacktrace *bt = calloc(1, sizeof(*bt));
+	if (bt == NULL) { return ED_ERRNO; }
+	if ((bt->nframes = backtrace(bt->frames, MAX_SYMBOLS)) < 0) {
+		free(bt);
+		return ED_ERRNO;
+	}
+	*btp = bt;
+	return 0;
+}
+
+void
+ed_backtrace_free(EdBacktrace **btp)
+{
+	EdBacktrace *bt = *btp;
+	if (bt != NULL) {
+		*btp = NULL;
+#if HAS_SOURCE_LINE
+		for (int i = 0; i < bt->nsyms; i++) {
+			free(bt->syms[i].source);
+		}
+#endif
+		free(bt);
+	}
+}
+
+void
+ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
+{
+	bool new = false;
+	if (bt == NULL) {
+		if (ed_backtrace_new(&bt) < 0) { return; }
+		new = true;
+	}
+
+	collect_symbols(bt);
+#if HAS_SOURCE_LINE
+	collect_source(bt);
 #endif
 
 	for (int i = skip; i < bt->nsyms; i++) {
@@ -219,7 +238,8 @@ fallback:
 int
 ed_backtrace_index(EdBacktrace *bt, const char *name)
 {
-	if (bt->nsyms < 0) { collect_symbols(bt); }
+	collect_symbols(bt);
+
 	for (int i = 0; i < bt->nsyms; i++) {
 		if (strcmp(bt->syms[i].info.dli_sname, name) == 0) {
 			return i;
