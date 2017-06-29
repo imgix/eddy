@@ -146,14 +146,14 @@ static: $(LIB)/$(A)
 dynamic: $(LIB)/$(SOMIN) $(LIB)/$(SOMAJ) $(LIB)/$(SO)
 
 # Build and run tests.
-test: $(TESTSRC:test/%.c=test-%)
+test: $(TESTSRC:test/test-%.c=test-%)
 
 # Build and run a single test.
-test-%: $(TEST)/%
+test-%: $(TEST)/test-%
 	@./$<
 
 # Build and run a single test in a debugger.
-debug-%: $(TEST)/%
+debug-%: $(TEST)/test-%
 	MU_NOFORK=1 $(GDB) ./$<
 
 # Copy files into destination
@@ -183,7 +183,7 @@ $(BIN)/$(BINNAME)%: $(TMP)/ed-%.c.$(OBJEXT) $(OBJBIN) | $(BIN)
 	@$(STRIP) $@
 
 # Generate statically linked test executable.
-$(TEST)/%: $(TMP)/test-%.c.$(OBJEXT) $(OBJ) | $(TEST)
+$(TEST)/test-%: $(TMP)/test-%.c.$(OBJEXT) $(OBJ) | $(TEST)
 	$(call LINK,$^,$@)
 
 
@@ -223,7 +223,7 @@ $(TMP)/%.c.$(OBJEXT): bin/%.c | $(TMP)
 	$(call COMPILE,$(CC),$<,$@)
 
 # Build C source files in test.
-$(TMP)/test-%.c.$(OBJEXT): test/%.c | $(TMP)
+$(TMP)/test-%.c.$(OBJEXT): test/test-%.c | $(TMP)
 	$(call COMPILE,$(CC),$<,$@)
 
 # Build intermediate C source files.
