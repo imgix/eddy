@@ -497,7 +497,7 @@ insert_into_parent(EdBSearch *srch, EdBNode *left, EdBNode *right, uint64_t rkey
 			rc += insert_into_parent(srch, leftb, rightb, rbkey, pg+rc, no-rc);
 		}
 
-		// The parent has space, so redistribute.
+		// The parent has space, so shift space for the right node.
 		pos = BRANCH_PTR_SIZE + index*BRANCH_ENTRY_SIZE;
 		memmove(p->data+pos+BRANCH_ENTRY_SIZE, p->data+pos,
 				(p->nkeys-index)*BRANCH_ENTRY_SIZE);
