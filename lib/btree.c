@@ -328,26 +328,30 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 
 	EdBNode *left, *right;
 
+	// If the entry will stay in the left node, make the right node from exta.
 	if (srch->entry_index < mid) {
 		left = leaf;
 		right = &srch->nodes[srch->nnodes + srch->nextra++];
 		right->tree = r;
 		right->parent = left->parent;
-		right->pindex = left->pindex + 1;
 	}
+	// Otherwise swap the leaf to take the right node and put left in extra.
 	else {
 		right = leaf;
 		right->tree = r;
 		left = &srch->nodes[srch->nnodes + srch->nextra++];
 		left->tree = l;
 		left->parent = right->parent;
-		left->pindex = right->pindex++;
+		left->pindex = right->pindex;
+
+		// Update the entry to reference the right node.
 		srch->entry_index -= mid;
 		srch->entry = r->data + srch->entry_index*srch->entry_size;
 	}
 
 	left->dirty = 1;
 	right->dirty = 1;
+	right->pindex = left->pindex + 1;
 
 	used += insert_into_parent(srch, left, right, key, pg+used, npg-used);
 	// Any EdBNode could be invalid now.
