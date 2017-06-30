@@ -147,7 +147,7 @@ struct EdBSearch {
 	EdBTree **root;       // indirect reference to the root node
 	struct EdBNode {
 		EdBTree *tree;      // tree page
-		EdBTree *parent;    // parent tree page
+		EdBNode *parent;    // parent node entry
 		uint8_t dirty;      // dirty state of the tree page
 		uint16_t pindex;    // index of tree in the parent
 	} nodes[24];          // node path to the leaf
