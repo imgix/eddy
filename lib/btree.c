@@ -47,7 +47,7 @@ ed_btree_init(EdBTree *bt)
 	bt->right = ED_PAGE_NONE;
 }
 
-static EdPgno
+static EdPgno *
 search_branch(EdBTree *node, uint64_t key)
 {
 	EdPgno *ptr = (EdPgno *)node->data;
@@ -57,16 +57,7 @@ search_branch(EdBTree *node, uint64_t key)
 		if (key < cmp) { break; }
 		ptr = BRANCH_NEXT(ptr);
 	}
-	return *ptr;
-}
-
-static uint32_t
-branch_index(EdBTree *node, EdPgno no)
-{
-	EdPgno *ptr = (EdPgno *)node->data;
-	uint32_t i = 0;
-	for (uint32_t n = node->nkeys; i <= n && *ptr != no; i++, ptr = BRANCH_NEXT(ptr)) {}
-	return i;
+	return ptr;
 }
 
 int
@@ -103,9 +94,11 @@ ed_btree_search(EdBTree **root, int fd, uint64_t key, size_t esize, EdBSearch *s
 			goto done;
 		}
 		if (IS_BRANCH_FULL(node)) { srch->nsplits++; }
-		node = ed_pgmap(fd, search_branch(node, key), 1);
+		EdPgno *ptr = search_branch(parent, key);
+		node = ed_pgmap(fd, *ptr, 1);
 		if (node == MAP_FAILED) { rc = ED_ERRNO; goto done; }
-		srch->nodes[srch->nnodes++] = (EdBNode){ node, parent, false };
+		srch->nodes[srch->nnodes++] = (EdBNode){ node, parent, 0,
+			((uint8_t *)ptr - parent->data) / BRANCH_ENTRY_SIZE };
 		parent = node;
 	}
 
@@ -155,7 +148,7 @@ ed_bsearch_next(EdBSearch *srch)
 			rc = ED_ERRNO;
 			goto done;
 		}
-		srch->nodes[srch->nnodes++] = (EdBNode){ leaf, node->parent, false };
+		srch->nodes[srch->nnodes++] = (EdBNode){ leaf, node->parent, 0, 0 };
 		p = leaf->data;
 		i = 0;
 	}
@@ -281,13 +274,15 @@ insert_into_parent(EdBSearch *srch, EdBNode *left, EdBNode *right, uint64_t rkey
 
 		// Insert the new parent into the list.
 		left->parent = parent;
+		left->pindex = 0;
 		right->parent = parent;
+		right->pindex = 1;
 		memmove(srch->nodes+1, srch->nodes, sizeof(srch->nodes[0]) * (srch->nnodes+srch->nextra));
-		srch->nodes[0] = (EdBNode) { parent, NULL, true };
+		srch->nodes[0] = (EdBNode){ parent, NULL, 1, 0 };
 		srch->nnodes++;
 	}
 	else {
-		uint32_t index = branch_index(parent, left->tree->base.no);
+		uint32_t index = left->pindex;
 
 		// The parent branch is full, so it gets split.
 		if (IS_BRANCH_FULL(parent)) {
@@ -338,6 +333,7 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 		right = &srch->nodes[srch->nnodes + srch->nextra++];
 		right->tree = r;
 		right->parent = left->parent;
+		right->pindex = left->pindex + 1;
 	}
 	else {
 		right = leaf;
@@ -345,12 +341,13 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 		left = &srch->nodes[srch->nnodes + srch->nextra++];
 		left->tree = l;
 		left->parent = right->parent;
+		left->pindex = right->pindex++;
 		srch->entry_index -= mid;
 		srch->entry = r->data + srch->entry_index*srch->entry_size;
 	}
 
-	left->dirty = true;
-	right->dirty = true;
+	left->dirty = 1;
+	right->dirty = 1;
 
 	used += insert_into_parent(srch, left, right, key, pg+used, npg-used);
 	// Any EdBNode could be invalid now.
@@ -380,7 +377,7 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 		rc = ed_pgalloc(alloc, &pg, 1, true);
 		if (rc < 0) { goto done; }
 		leaf = &srch->nodes[0];
-		*leaf = (EdBNode){ (EdBTree *)pg, NULL, false };
+		*leaf = (EdBNode){ (EdBTree *)pg, NULL, 0, 0 };
 		ed_btree_init(leaf->tree);
 		srch->entry = leaf->tree->data;
 		srch->entry_index = 0;

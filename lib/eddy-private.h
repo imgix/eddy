@@ -145,9 +145,10 @@ struct EdObject {
 struct EdBSearch {
 	EdBTree **root;       // indirect reference to the root node
 	struct EdBNode {
-		EdBTree *tree, *parent;
-		bool dirty;
-		// TODO add index and change dirty to uint8_t
+		EdBTree *tree;      // tree page
+		EdBTree *parent;    // parent tree page
+		uint8_t dirty;      // dirty state of the tree page
+		uint16_t pindex;    // index of tree in the parent
 	} nodes[24];          // node path to the leaf
 	uint64_t key;         // key searched for
 	void *entry;          // pointer to the entry in the leaf
