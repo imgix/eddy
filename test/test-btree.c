@@ -1,7 +1,7 @@
 #include "eddy-private.h"
 #include "mu.h"
 
-#define SPLIT_COUNT 10000
+#define SPLIT_COUNT 60000
 
 static EdPgalloc alloc;
 static const char *path = "/tmp/eddy_test_btree";
@@ -199,6 +199,8 @@ main(void)
 	mu_run(test_split);
 	mu_run(test_split_sequential);
 	mu_run(test_split_sequential_reverse);
+	//TODO mu_run(test_split_middle_leaf);
+	//TODO mu_run(test_split_middle_branch);
 	return 0;
 }
 

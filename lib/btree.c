@@ -424,17 +424,18 @@ insert_into_parent(EdBSearch *srch, EdBNode *left, EdBNode *right, uint64_t rkey
 		p->nkeys = 0;
 		p->right = ED_PAGE_NONE;
 
-		// Assign the left pointer.
+		// Assign the left pointer. (right is assigned below)
 		pos = BRANCH_PTR_SIZE;
 		memcpy(p->data, &left->tree->base.no, BRANCH_PTR_SIZE);
 
 		// Insert the new parent into the list.
-		parent = srch->nodes;
 		left->pindex = 0;
 		right->pindex = 1;
 		memmove(srch->nodes+1, srch->nodes, sizeof(srch->nodes[0]) * (srch->nnodes+srch->nextra));
 		srch->nodes[0] = (EdBNode){ p, NULL, 1, 0 };
 		srch->nnodes++;
+
+		// Bump parent references to the next node slot after shifting.
 		for (uint32_t i = srch->nnodes + srch->nextra - 1; i > 0; i--) {
 			if (srch->nodes[i].parent) {
 				srch->nodes[i].parent++;
@@ -447,24 +448,53 @@ insert_into_parent(EdBSearch *srch, EdBNode *left, EdBNode *right, uint64_t rkey
 
 		// The parent branch is full, so it gets split.
 		if (IS_BRANCH_FULL(p)) {
-#if 0
-			// TODO
 			assert(no > rc);
 
-			EdBTree *lb = parent, *rb = (EdBTree *)pg[rc++];
+			EdBTree *lb = p, *rb = (EdBTree *)pg[rc++];
 			uint32_t n = lb->nkeys;
-			uint32_t mid = n / 2;
+			uint32_t mid = (n+1) / 2;
+			uint64_t rbkey = branch_key(lb, mid);
 
 			rb->base.type = ED_PGBRANCH;
-			rb->nkeys = 0;
+			rb->nkeys = n - mid;
 			rb->right = lb->right;
+			lb->nkeys = mid - 1;
 			lb->right = rb->base.no;
 
+			size_t off = mid * BRANCH_ENTRY_SIZE;
+			memcpy(rb->data, lb->data+off, sizeof(lb->data) - off);
+
+			EdBNode *leftb, *rightb;
+
+			// If the entry will stay in the left node, make the right node from exta.
+			if (rkey < rbkey) {
+				leftb = parent;
+				rightb = &srch->nodes[srch->nnodes + srch->nextra++];
+				rightb->tree = rb;
+				rightb->parent = leftb->parent;
+				rightb->pindex = leftb->pindex + 1;
+
+				p = lb;
+			}
+			// Otherwise swap the branch to take the right node and put left in extra.
+			else {
+				rightb = parent;
+				rightb->tree = rb;
+				leftb = &srch->nodes[srch->nnodes + srch->nextra++];
+				leftb->tree = lb;
+				leftb->parent = rightb->parent;
+				leftb->pindex = rightb->pindex;
+				rightb->pindex++;
+
+				index -= mid;
+
+				p = rb;
+			}
+
+			leftb->dirty = 1;
+			rightb->dirty = 1;
+
 			rc += insert_into_parent(srch, leftb, rightb, rbkey, pg+rc, no-rc);
-#else
-			fprintf(stderr, "Not Implemented!\n");
-			abort();
-#endif
 		}
 
 		// The parent has space, so redistribute.
@@ -492,7 +522,6 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 	EdBTree *l = leaf->tree, *r = (EdBTree *)pg[0];
 	uint32_t n = l->nkeys;
 	uint32_t mid = n / 2;
-	size_t off = mid * srch->entry_size;
 
 	r->base.type = ED_PGLEAF;
 	r->nkeys = n - mid;
@@ -500,6 +529,7 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 	l->nkeys = mid;
 	l->right = r->base.no;
 
+	size_t off = mid * srch->entry_size;
 	memcpy(r->data, l->data+off, sizeof(l->data) - off);
 
 	uint64_t key = mid == srch->entry_index ? srch->key : ed_fetch64(r->data);
@@ -512,6 +542,7 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 		right = &srch->nodes[srch->nnodes + srch->nextra++];
 		right->tree = r;
 		right->parent = left->parent;
+		right->pindex = left->pindex + 1;
 	}
 	// Otherwise swap the leaf to take the right node and put left in extra.
 	else {
@@ -521,6 +552,7 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 		left->tree = l;
 		left->parent = right->parent;
 		left->pindex = right->pindex;
+		right->pindex++;
 
 		// Update the entry to reference the right node.
 		srch->entry_index -= mid;
@@ -529,7 +561,6 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 
 	left->dirty = 1;
 	right->dirty = 1;
-	right->pindex = left->pindex + 1;
 
 	used += insert_into_parent(srch, left, right, key, pg+used, npg-used);
 	// Any EdBNode could be invalid now.
