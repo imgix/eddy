@@ -53,7 +53,7 @@ ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count)
 
 		for (auto &it = start; it != end; ++it) {
 			if (it->second.active) {
-				fprintf(stderr, "*** address mapped multiple times: 0x%012" PRIxPTR "/%u\n",
+				fprintf(stderr, "*** page address mapped multiple times: 0x%012" PRIxPTR "/%u\n",
 						k, it->second.no);
 				fprintf(stderr, "*** allocation stack:\n");
 				it->second.Print();
@@ -93,7 +93,7 @@ ed_pguntrack(uint8_t *pg, EdPgno count)
 		auto stack = std::make_shared<EdBacktrace>();
 		uintptr_t k = (uintptr_t)pg, ke = k+(count*PAGESIZE);
 		if (track == NULL) {
-			fprintf(stderr, "*** uninitialized address unmapped: 0x%012" PRIxPTR "/%u\n",
+			fprintf(stderr, "*** uninitialized page address unmapped: 0x%012" PRIxPTR "/%u\n",
 					k, *(EdPgno *)pg);
 			PrintStack(stack.get());
 			fprintf(stderr, "\n");
@@ -106,7 +106,7 @@ ed_pguntrack(uint8_t *pg, EdPgno count)
 			std::set<uintptr_t> skip = {};
 			for (auto &it = start; it != end; ++it) {
 				if (!it->second.active) {
-					fprintf(stderr, "*** address unmapped multiple times: 0x%012" PRIxPTR "/%u\n",
+					fprintf(stderr, "*** page address unmapped multiple times: 0x%012" PRIxPTR "/%u\n",
 							it->first, it->second.no);
 					fprintf(stderr, "*** deallocation stack:\n");
 					it->second.Print();
@@ -149,7 +149,7 @@ ed_pgcheck(void)
 	if (track != NULL) {
 		for (auto it = track->begin(); it != track->end(); it++) {
 			if (it->second.active) {
-				fprintf(stderr, "*** address leaked: 0x%012" PRIxPTR "/%u\n",
+				fprintf(stderr, "*** page address leaked: 0x%012" PRIxPTR "/%u\n",
 						it->first, it->second.no);
 				fprintf(stderr, "*** allocation stack:\n");
 				it->second.Print();
