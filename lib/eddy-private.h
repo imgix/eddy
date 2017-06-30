@@ -88,6 +88,7 @@ typedef struct EdPgallocHdr EdPgallocHdr;
 
 typedef struct EdBTree EdBTree;
 typedef struct EdBSearch EdBSearch;
+typedef struct EdBNode EdBNode;
 typedef struct EdNodePage EdNodePage;
 typedef struct EdNodeKey EdNodeKey;
 typedef struct EdIndex EdIndex;
@@ -143,7 +144,11 @@ struct EdObject {
 
 struct EdBSearch {
 	EdBTree **root;       // indirect reference to the root node
-	EdBTree *nodes[24];   // node path to the leaf
+	struct EdBNode {
+		EdBTree *tree, *parent;
+		bool dirty;
+		// TODO add index and change dirty to uint8_t
+	} nodes[24];          // node path to the leaf
 	uint64_t key;         // key searched for
 	void *entry;          // pointer to the entry in the leaf
 	size_t entry_size;    // size in bytes of the entry
@@ -211,9 +216,10 @@ struct EdObjectHdr {
 
 struct EdBTree {
 	EdPg base;
-	EdPgno parent, right;
-	uint32_t nkeys;
-	uint8_t data[PAGESIZE - sizeof(EdPg) - 2*sizeof(EdPgno) - 4];
+	EdPgno right;
+	uint16_t vers;
+	uint16_t nkeys;
+	uint8_t data[PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 4];
 };
 
 struct EdNodePage {

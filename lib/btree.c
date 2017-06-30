@@ -39,14 +39,11 @@ _Static_assert(sizeof(EdBTree) == PAGESIZE,
 #define IS_LEAF_FULL(n, ent) ((n)->nkeys == LEAF_ORDER(ent))
 #define IS_FULL(n, ent) (IS_BRANCH(n) ? IS_BRANCH_FULL(n) : IS_LEAF_FULL(n, ent))
 
-//static bool isroot(const EdBTree *bt) { return bt->base.no == bt->parent; }
-
 void
 ed_btree_init(EdBTree *bt)
 {
 	bt->base.type = ED_PGLEAF;
 	bt->nkeys = 0;
-	bt->parent = ED_PAGE_NONE;
 	bt->right = ED_PAGE_NONE;
 }
 
@@ -78,18 +75,20 @@ ed_btree_search(EdBTree **root, int fd, uint64_t key, size_t esize, EdBSearch *s
 	int rc = 0;
 	uint32_t i = 0, n = 0;
 	uint8_t *data = NULL;
-	EdBTree *node = *root;
+	EdBTree *node = *root, *parent = node;
+
+	memset(srch, 0, sizeof(*srch));
 
 	srch->root = root;
-	srch->nodes[0] = node;
 	srch->key = key;
 	srch->entry_size = esize;
 	srch->fd = fd;
-	srch->nnodes = node != NULL;
-	srch->nextra = 0;
-
-	// The NULL node is an empty tree.
-	if (node == NULL) {
+	if (node) {
+		srch->nodes[0].tree = node;
+		srch->nnodes = 1;
+	}
+	else {
+		// The NULL node is an empty tree.
 		srch->nsplits = 1;
 		goto done;
 	}
@@ -103,13 +102,11 @@ ed_btree_search(EdBTree **root, int fd, uint64_t key, size_t esize, EdBSearch *s
 			rc = ED_EINDEX_DEPTH;
 			goto done;
 		}
-		EdPgno ptr = search_branch(node, key);
-		node = ed_pgmap(fd, ptr, 1);
+		if (IS_BRANCH_FULL(node)) { srch->nsplits++; }
+		node = ed_pgmap(fd, search_branch(node, key), 1);
 		if (node == MAP_FAILED) { rc = ED_ERRNO; goto done; }
-		srch->nodes[srch->nnodes++] = node;
-		if (IS_BRANCH_FULL(node)) {
-			srch->nsplits++;
-		}
+		srch->nodes[srch->nnodes++] = (EdBNode){ node, parent, false };
+		parent = node;
 	}
 
 	srch->nsplits += IS_LEAF_FULL(node, esize);
@@ -143,7 +140,8 @@ ed_bsearch_next(EdBSearch *srch)
 	if (srch->match != 1) { return srch->match; }
 
 	int rc = 0;
-	EdBTree *leaf = srch->nodes[srch->nnodes-1];
+	EdBNode *node = &srch->nodes[srch->nnodes-1];
+	EdBTree *leaf = node->tree;
 	uint8_t *p = srch->entry;
 	uint32_t i = srch->entry_index;
 	if (i == leaf->nkeys-1) {
@@ -157,7 +155,7 @@ ed_bsearch_next(EdBSearch *srch)
 			rc = ED_ERRNO;
 			goto done;
 		}
-		srch->nodes[srch->nnodes++] = leaf;
+		srch->nodes[srch->nnodes++] = (EdBNode){ leaf, node->parent, false };
 		p = leaf->data;
 		i = 0;
 	}
@@ -172,17 +170,6 @@ ed_bsearch_next(EdBSearch *srch)
 done:
 	srch->match = rc;
 	return rc;
-}
-
-static EdBTree *
-get_mapped_node(EdBSearch *srch, EdPgno no)
-{
-	for (int i = srch->nnodes + srch->nextra - 1; i >= 0; i--) {
-		if (srch->nodes[i]->base.no == no) {
-			return srch->nodes[i];
-		}
-	}
-	return NULL;
 }
 
 #if 0
@@ -210,7 +197,7 @@ map_extra(EdBSearch *srch, EdBTree **p, EdPgno no)
 #endif
 
 static int
-insert_redistribute(EdBSearch *srch, EdBTree *leaf)
+insert_redistribute(EdBSearch *srch, EdBNode *leaf)
 {
 #if 0
 	EdBTree *right, *parent;
@@ -271,87 +258,107 @@ print_branch(EdBTree *branch, FILE *out)
 #endif
 
 static EdPgno
-insert_into_parent(EdBSearch *srch, EdBTree *left, EdBTree *right, uint64_t rkey, EdPg **pg, EdPgno no)
+insert_into_parent(EdBSearch *srch, EdBNode *left, EdBNode *right, uint64_t rkey, EdPg **pg, EdPgno no)
 {
+	EdBTree *parent = left->parent;
+	EdPgno r = right->tree->base.no, rc = 0;
+	size_t pos;
+
 	// No parent, so create new root node.
-	if (left->parent == ED_PAGE_NONE) {
-		assert(no == 1);
-		EdBTree *root = (EdBTree *)pg[0];
-		root->base.type = ED_PGBRANCH;
-		root->nkeys = 1;
-		root->parent = ED_PAGE_NONE;
-		root->right = ED_PAGE_NONE;
-		memcpy(root->data, &left->base.no, BRANCH_PTR_SIZE);
-		memcpy(root->data+BRANCH_PTR_SIZE, &rkey, BRANCH_KEY_SIZE);
-		memcpy(root->data+BRANCH_ENTRY_SIZE, &right->base.no, BRANCH_PTR_SIZE);
-		left->parent = root->base.no;
-		right->parent = root->base.no;
+	if (parent == NULL) {
+		assert(no > 0);
 
-		assert(srch->nnodes == 1);
-		srch->nodes[1] = srch->nodes[0];
-		srch->nodes[0] = root;
+		// Initialize new parent node from the allocation array.
+		parent = (EdBTree *)pg[0];
+		parent->base.type = ED_PGBRANCH;
+		parent->nkeys = 0;
+		parent->right = ED_PAGE_NONE;
+		rc++;
+
+		// Assign the left pointer.
+		pos = BRANCH_PTR_SIZE;
+		memcpy(parent->data, &left->tree->base.no, BRANCH_PTR_SIZE);
+
+		// Insert the new parent into the list.
+		left->parent = parent;
+		right->parent = parent;
+		memmove(srch->nodes+1, srch->nodes, sizeof(srch->nodes[0]) * (srch->nnodes+srch->nextra));
+		srch->nodes[0] = (EdBNode) { parent, NULL, true };
 		srch->nnodes++;
+	}
+	else {
+		uint32_t index = branch_index(parent, left->tree->base.no);
 
-		return 1;
+		// The parent branch is full, so it gets split.
+		if (IS_BRANCH_FULL(parent)) {
+			return 0;
+		}
+
+		// The existing parent has space, so redistribute.
+		pos = BRANCH_PTR_SIZE + index*BRANCH_ENTRY_SIZE;
+		memmove(parent->data+pos+BRANCH_ENTRY_SIZE, parent->data+pos,
+				(parent->nkeys-index)*BRANCH_ENTRY_SIZE);
 	}
 
-	EdBTree *parent = get_mapped_node(srch, left->parent);
-	assert(parent != NULL);
-	uint32_t index = branch_index(parent, left->base.no);
+	// Insert the new right node.
+	memcpy(parent->data+pos, &rkey, BRANCH_KEY_SIZE);
+	memcpy(parent->data+pos+BRANCH_KEY_SIZE, &r, BRANCH_PTR_SIZE);
+	parent->nkeys++;
 
-	if (!IS_BRANCH_FULL(parent)) {
-		uint8_t *p = parent->data;
-		size_t rpos = BRANCH_PTR_SIZE + index*BRANCH_ENTRY_SIZE;
-		memmove(p+rpos+BRANCH_ENTRY_SIZE, p+rpos, (parent->nkeys-index)*BRANCH_ENTRY_SIZE);
-		memcpy(p+rpos, &rkey, BRANCH_KEY_SIZE);
-		memcpy(p+rpos+BRANCH_KEY_SIZE, &right->base.no, BRANCH_PTR_SIZE);
-		parent->nkeys++;
-		right->parent = parent->base.no;
-
-		return 0;
-	}
-
-	return 0;
+	return rc;
 }
 
 static int
-insert_split(EdBSearch *srch, EdBTree **leafp, EdPgalloc *alloc)
+insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 {
 	EdPgno npg = srch->nsplits, used = 1;
 	EdPg *pg[npg];
 	int rc = ed_pgalloc(alloc, pg, npg, true);
 	if (rc < 0) { return rc; }
 
-	EdBTree *left = *leafp, *right = (EdBTree *)pg[0];
-	ed_btree_init(right);
+	EdBTree *l = leaf->tree, *r = (EdBTree *)pg[0];
+	ed_btree_init(r);
 
-	uint32_t n = left->nkeys;
+	uint32_t n = l->nkeys;
 	uint32_t mid = n / 2;
 	size_t off = mid * srch->entry_size;
-	left->nkeys = mid;
-	left->right = right->base.no;
-	right->base.type = ED_PGLEAF;
-	right->nkeys = n - mid;
-	right->right = left->right;
-	memcpy(right->data, left->data+off, sizeof(left->data) - off);
+	r->base.type = ED_PGLEAF;
+	r->nkeys = n - mid;
+	r->right = l->right;
+	l->nkeys = mid;
+	l->right = r->base.no;
+	memcpy(r->data, l->data+off, sizeof(l->data) - off);
 
-	used += insert_into_parent(srch, left, right, ed_fetch64(right->data), pg+used, npg-used);
+	uint64_t key = mid == srch->entry_index ? srch->key : ed_fetch64(r->data);;
 
-	// Ideally there should be no pages left.
-	if (npg > used) { fprintf(stderr, "allocated too much! %u -> %u\n", npg, used); }
-	ed_pgfree(alloc, pg + used, npg - used);
+	EdBNode *left, *right;
 
-	assert(srch->nodes[srch->nnodes-1] == left);
 	if (srch->entry_index < mid) {
-		*leafp = left;
-		srch->nodes[srch->nnodes + srch->nextra++] = right;
+		left = leaf;
+		right = &srch->nodes[srch->nnodes + srch->nextra++];
+		right->tree = r;
+		right->parent = left->parent;
 	}
 	else {
-		*leafp = right;
+		right = leaf;
+		right->tree = r;
+		left = &srch->nodes[srch->nnodes + srch->nextra++];
+		left->tree = l;
+		left->parent = right->parent;
 		srch->entry_index -= mid;
-		srch->entry = right->data + srch->entry_index*srch->entry_size;
-		srch->nodes[srch->nnodes-1] = right;
-		srch->nodes[srch->nnodes + srch->nextra++] = left;
+		srch->entry = r->data + srch->entry_index*srch->entry_size;
+	}
+
+	left->dirty = true;
+	right->dirty = true;
+
+	used += insert_into_parent(srch, left, right, key, pg+used, npg-used);
+	// Any EdBNode could be invalid now.
+
+	// Ideally there should be no pages left.
+	if (npg > used) {
+		fprintf(stderr, "allocated too much! %u -> %u\n", npg, used);
+		ed_pgfree(alloc, pg + used, npg - used);
 	}
 
 	return 0;
@@ -364,7 +371,7 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 		return ED_EINDEX_KEY_MATCH;
 	}
 
-	EdBTree *leaf = NULL;
+	EdBNode *leaf;
 	int rc = 0;
 
 	// If the root was NULL, create a new root node.
@@ -372,36 +379,38 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 		EdPg *pg;
 		rc = ed_pgalloc(alloc, &pg, 1, true);
 		if (rc < 0) { goto done; }
-		leaf = (EdBTree *)pg;
-		ed_btree_init(leaf);
-		srch->nodes[0] = leaf;
-		srch->entry = leaf->data;
+		leaf = &srch->nodes[0];
+		*leaf = (EdBNode){ (EdBTree *)pg, NULL, false };
+		ed_btree_init(leaf->tree);
+		srch->entry = leaf->tree->data;
 		srch->entry_index = 0;
 		srch->nnodes = 1;
 	}
 	// Otherwise use the leaf from the search.
 	else {
-		leaf = srch->nodes[srch->nnodes-1];
+		leaf = &srch->nodes[srch->nnodes-1];
 
 		// If the leaf is full, it needs to be redistributed or split.
-		if (IS_LEAF_FULL(leaf, srch->entry_size)) {
+		if (IS_LEAF_FULL(leaf->tree, srch->entry_size)) {
 			rc = insert_redistribute(srch, leaf);
 			if (rc < 0) { goto done; }
 			if (rc == 0) {
-				rc = insert_split(srch, &leaf, alloc);
+				rc = insert_split(srch, leaf, alloc);
 				if (rc < 0) { goto done; }
 			}
 		}
+
+		// An insert may have moved the leaf node.
+		leaf = &srch->nodes[srch->nnodes-1];
 	}
 
 	// Insert the new entry before the current entry position.
 	uint8_t *p = srch->entry;
 	size_t esize = srch->entry_size;
-	memmove(p+esize, p, (leaf->nkeys - srch->entry_index) * esize);
+	memmove(p+esize, p, (leaf->tree->nkeys - srch->entry_index) * esize);
 	memcpy(p, entry, esize);
-	leaf->nkeys++;
-	ed_pgsync(leaf, 1, 0, 1);
-	*srch->root = srch->nodes[0];
+	leaf->tree->nkeys++;
+	*srch->root = srch->nodes[0].tree;
 	srch->nsplits = 0;
 	srch->match = 1;
 	rc = 0;
@@ -420,14 +429,16 @@ ed_bsearch_set(EdBSearch *srch, const void *entry)
 void
 ed_bsearch_final(EdBSearch *srch)
 {
-	if (srch->nnodes > 0) {
+	int n = srch->nnodes + srch->nextra;
+	if (n > 0) {
 		// Don't unmap the first node.
-		for (int i = srch->nnodes + srch->nextra - 1; i > 0; i--) {
-			ed_pgunmap(srch->nodes[i], 1);
-			srch->nodes[i] = NULL;
+		for (int i = 1; i < n; i++) {
+			ed_pgunmap(srch->nodes[i].tree, 1);
 		}
+		memset(srch->nodes, 0, sizeof(srch->nodes));
+		srch->nnodes = 0;
+		srch->nextra = 0;
 	}
-	srch->nnodes = 0;
 	srch->match = 0;
 	// TODO: make insert impossible
 }
