@@ -1,6 +1,8 @@
 #include "eddy-private.h"
 #include "mu.h"
 
+#define SPLIT_COUNT 10000
+
 static EdPgalloc alloc;
 static const char *path = "/tmp/eddy_test_btree";
 
@@ -96,7 +98,7 @@ test_split(void)
 	t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
 
-	for (unsigned seed = 0, i = 0; i < 10000; i++) {
+	for (unsigned seed = 0, i = 0; i < SPLIT_COUNT; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
 		sprintf(ent.name, "a%u", k);
@@ -105,9 +107,73 @@ test_split(void)
 		ed_bsearch_final(&srch);
 	}
 
-	for (unsigned seed = 0, i = 0; i < 10000; i++) {
+	for (unsigned seed = 0, i = 0; i < SPLIT_COUNT; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		ed_bsearch_final(&srch);
+	}
+
+	ed_pgunmap(bt, 1);
+}
+
+static void
+test_split_sequential(void)
+{
+	mu_teardown = cleanup;
+
+	//Entry *found = NULL;
+	Tree *t = NULL;
+	EdBTree *bt = NULL;
+	EdBSearch srch;
+
+	unlink(path);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+
+	t = ed_pgalloc_meta(&alloc);
+	t->head = ED_PAGE_NONE;
+
+	for (unsigned i = 0; i < SPLIT_COUNT; i++) {
+		Entry ent = { .key = i };
+		sprintf(ent.name, "a%u", i);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	for (unsigned i = 0; i < SPLIT_COUNT; i++) {
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
+		ed_bsearch_final(&srch);
+	}
+
+	ed_pgunmap(bt, 1);
+}
+
+static void
+test_split_sequential_reverse(void)
+{
+	mu_teardown = cleanup;
+
+	//Entry *found = NULL;
+	Tree *t = NULL;
+	EdBTree *bt = NULL;
+	EdBSearch srch;
+
+	unlink(path);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+
+	t = ed_pgalloc_meta(&alloc);
+	t->head = ED_PAGE_NONE;
+
+	for (unsigned i = SPLIT_COUNT; i > 0; i--) {
+		Entry ent = { .key = i };
+		sprintf(ent.name, "a%u", i);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	for (unsigned i = SPLIT_COUNT; i > 0; i--) {
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
 		ed_bsearch_final(&srch);
 	}
 
@@ -120,6 +186,8 @@ main(void)
 	mu_init("btree");
 	mu_run(test_basic);
 	mu_run(test_split);
+	mu_run(test_split_sequential);
+	mu_run(test_split_sequential_reverse);
 	return 0;
 }
 
