@@ -5,6 +5,7 @@
 
 #include <stdatomic.h>
 #include <time.h>
+#include <math.h>
 #include <unistd.h>
 #include <inttypes.h>
 #include <string.h>
@@ -285,6 +286,7 @@ ED_LOCAL     void ed_bsearch_final(EdBSearch *);
 
 
 /* Index Module */
+ED_LOCAL   size_t ed_btree_capacity(size_t esize, size_t depth);
 ED_LOCAL      int ed_index_open(EdIndex *, const char *path, int64_t slabsize, uint64_t flags, uint64_t ino);
 ED_LOCAL     void ed_index_close(EdIndex *);
 ED_LOCAL      int ed_index_load_trees(EdIndex *);

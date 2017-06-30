@@ -28,6 +28,15 @@ cleanup(void)
 }
 
 static void
+test_capacity(void)
+{
+	mu_assert_uint_eq(ed_btree_capacity(sizeof(Entry), 1),        170);
+	mu_assert_uint_eq(ed_btree_capacity(sizeof(Entry), 2),      57800);
+	mu_assert_uint_eq(ed_btree_capacity(sizeof(Entry), 3),   19652000);
+	mu_assert_uint_eq(ed_btree_capacity(sizeof(Entry), 4), 6681680000);
+}
+
+static void
 test_basic(void)
 {
 	mu_teardown = cleanup;
@@ -183,7 +192,9 @@ test_split_sequential_reverse(void)
 int
 main(void)
 {
+
 	mu_init("btree");
+	mu_run(test_capacity);
 	mu_run(test_basic);
 	mu_run(test_split);
 	mu_run(test_split_sequential);
