@@ -86,7 +86,7 @@ int EdBacktrace::Find(const char *name)
 	CollectSymbols();
 	int i = 0;
 	for (auto &sym : syms) {
-		if (strcmp(name, sym.name) == 0) {
+		if (sym.name && strcmp(name, sym.name) == 0) {
 			return i;
 		}
 		i++;
