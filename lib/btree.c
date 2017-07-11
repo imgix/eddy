@@ -30,54 +30,7 @@ _Static_assert(sizeof(EdBTree) == PAGESIZE,
 #define INS_SHIFT 1
 #define INS_NOSHIFT 2
 
-#define unused __attribute__((unused))
-
-static inline unused uint64_t
-branch_key(EdBTree *b, uint16_t idx)
-{
-	assert(idx <= b->nkeys);
-	if (idx == 0) { return 0; }
-	return ed_fetch64(b->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE);
-}
-
-static inline unused void
-branch_set_key(EdBTree *b, uint16_t idx, uint64_t val)
-{
-	assert(idx <= b->nkeys);
-	if (idx == 0) { return; }
-	memcpy(b->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE, &val, sizeof(val));
-}
-
-static inline unused EdPgno
-branch_ptr(EdBTree *b, uint16_t idx)
-{
-	assert(idx <= b->nkeys);
-	return ed_fetch32(b->data + idx*BRANCH_ENTRY_SIZE);
-}
-
-static inline unused void
-branch_set_ptr(EdBTree *b, uint16_t idx, EdPgno val)
-{
-	assert(idx <= b->nkeys);
-	memcpy(b->data + idx*BRANCH_ENTRY_SIZE, &val, sizeof(val));
-}
-
-static inline unused uint64_t
-leaf_key(EdBTree *l, uint16_t idx, size_t esize)
-{
-	assert(idx < l->nkeys);
-	return ed_fetch64(l->data + idx*esize);
-}
-
-static inline unused uint16_t
-branch_index(EdBTree *node, EdPgno *ptr)
-{
-	assert(node->data <= (uint8_t *)ptr);
-	assert((uint8_t *)ptr < node->data + BRANCH_ORDER*BRANCH_ENTRY_SIZE);
-	return ((uint8_t *)ptr - node->data) / BRANCH_ENTRY_SIZE;
-}
-
-#define MAP_NODE_NO(s, par, idx, no, name) do { \
+#define MAP_PAGE(s, par, idx, no, name) do { \
 	if (s->n##name == (int)ed_len(s->name)) { return ED_EINDEX_DEPTH; } \
 	EdPg *pg = ed_pgmap(s->fd, no, 1); \
 	if (pg == MAP_FAILED) { return ED_ERRNO; } \
@@ -85,28 +38,57 @@ branch_index(EdBTree *node, EdPgno *ptr)
 	return s->n##name++; \
 } while (0)
 
-#define MAP_NODE(s, par, idx, name) do { \
-	assert(idx <= parent->tree->nkeys); \
-	EdPgno no = ed_fetch32(parent->tree->data + idx*BRANCH_ENTRY_SIZE); \
-	MAP_NODE_NO(s, par, idx, no, name); \
-} while (0)
-
 static int
 map_node_no(EdBSearch *srch, EdBNode *parent, uint16_t idx, EdPgno no)
 {
-	MAP_NODE_NO(srch, parent, idx, no, nodes);
+	MAP_PAGE(srch, parent, idx, no, nodes);
 }
 
 static int
 map_node(EdBSearch *srch, EdBNode *parent, uint16_t idx)
 {
-	MAP_NODE(srch, parent, idx, nodes);
+	assert(idx <= parent->tree->nkeys);
+	EdPgno no = ed_fetch32(parent->tree->data + idx*BRANCH_ENTRY_SIZE);
+	MAP_PAGE(srch, parent, idx, no, nodes);
 }
 
 static int
 map_extra(EdBSearch *srch, EdBNode *parent, uint16_t idx)
 {
-	MAP_NODE(srch, parent, idx, extra);
+	assert(idx <= parent->tree->nkeys);
+	EdPgno no = ed_fetch32(parent->tree->data + idx*BRANCH_ENTRY_SIZE);
+	MAP_PAGE(srch, parent, idx, no, extra);
+}
+
+static inline uint64_t
+branch_key(EdBTree *b, uint16_t idx)
+{
+	assert(idx <= b->nkeys);
+	if (idx == 0) { return 0; }
+	return ed_fetch64(b->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE);
+}
+
+static inline void
+branch_set_key(EdBTree *b, uint16_t idx, uint64_t val)
+{
+	assert(idx <= b->nkeys);
+	if (idx == 0) { return; }
+	memcpy(b->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE, &val, sizeof(val));
+}
+
+static inline uint64_t
+leaf_key(EdBTree *l, uint16_t idx, size_t esize)
+{
+	assert(idx < l->nkeys);
+	return ed_fetch64(l->data + idx*esize);
+}
+
+static inline uint16_t
+branch_index(EdBTree *node, EdPgno *ptr)
+{
+	assert(node->data <= (uint8_t *)ptr);
+	assert((uint8_t *)ptr < node->data + BRANCH_ORDER*BRANCH_ENTRY_SIZE);
+	return ((uint8_t *)ptr - node->data) / BRANCH_ENTRY_SIZE;
 }
 
 
