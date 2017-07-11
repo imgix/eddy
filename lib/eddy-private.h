@@ -68,6 +68,7 @@
 #define ED_PGFREE_CHLD UINT32_C(0xea104f71)
 #define ED_PGBRANCH    UINT32_C(0x2c17687a)
 #define ED_PGLEAF      UINT32_C(0x2dd39a85)
+#define ED_PGOVERFLOW  UINT32_C(0x09c2fd2f)
 
 #define ED_NODE_PAGE_COUNT ((PAGESIZE - sizeof(EdBTree)) / sizeof(EdNodePage))
 #define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBTree)) / sizeof(EdNodeKey))
@@ -150,7 +151,8 @@ struct EdBSearch {
 		EdBNode *parent;    // parent node entry
 		uint8_t dirty;      // dirty state of the tree page
 		uint16_t pindex;    // index of tree in the parent
-	} nodes[24];          // node path to the leaf
+	} nodes[16],            // node path to the leaf
+	  extra[16];            // additional mapped nodes
 	uint64_t key;         // key searched for
 	void *entry;          // pointer to the entry in the leaf
 	size_t entry_size;    // size in bytes of the entry
@@ -160,6 +162,7 @@ struct EdBSearch {
 	int nsplits;          // number of nodes requiring splits for an insert
 	int nextra;           // number of extra nodes stashed in the node array
 	int match;            // return code of the search
+	int nmatches;         // number of matched keys so far
 };
 
 #pragma GCC diagnostic push
@@ -276,6 +279,7 @@ ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
 
 /* B+Tree Module */
 
+ED_LOCAL   size_t ed_btree_capacity(size_t esize, size_t depth);
 ED_LOCAL     void ed_btree_init(EdBTree *);
 ED_LOCAL      int ed_btree_search(EdBTree **, int fd, uint64_t key, size_t entry_size, EdBSearch *);
 ED_LOCAL      int ed_bsearch_next(EdBSearch *);
@@ -284,9 +288,13 @@ ED_LOCAL      int ed_bsearch_set(EdBSearch *, const void *entry);
 ED_LOCAL      int ed_bsearch_del(EdBSearch *);
 ED_LOCAL     void ed_bsearch_final(EdBSearch *);
 
+typedef void (*EdBTreePrint)(const void *, char *buf, size_t len);
+ED_LOCAL     void ed_btree_print_node(EdBTree *, size_t esize, FILE *, EdBTreePrint);
+ED_LOCAL     void ed_btree_print(EdBTree *, int fd, size_t esize, FILE *, EdBTreePrint);
+ED_LOCAL      int ed_btree_verify(EdBTree *, int fd, size_t esize, FILE *);
+
 
 /* Index Module */
-ED_LOCAL   size_t ed_btree_capacity(size_t esize, size_t depth);
 ED_LOCAL      int ed_index_open(EdIndex *, const char *path, int64_t slabsize, uint64_t flags, uint64_t ino);
 ED_LOCAL     void ed_index_close(EdIndex *);
 ED_LOCAL      int ed_index_load_trees(EdIndex *);

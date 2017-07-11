@@ -38,7 +38,16 @@ ifndef $(GDB)
 endif
 
 # Select source files.
-LIBSRC:= lib/cache.c lib/error.c lib/rnd.c lib/hash.c lib/pg.c lib/btree.c lib/index.c lib/mkfile.c lib/time.c
+LIBSRC:= lib/cache.c \
+	lib/error.c \
+	lib/rnd.c \
+	lib/hash.c \
+	lib/pg.c \
+	lib/btree.c \
+	lib/butil.c \
+	lib/index.c \
+	lib/mkfile.c \
+	lib/time.c
 BINSRC:= bin/ed-new.c bin/ed-stat.c bin/ed-get.c bin/ed-set.c
 ifeq ($(BUILD_MIME),yes)
   LIBSRC+= lib/mime.c
@@ -277,4 +286,4 @@ $(DESTDIR)$(PREFIX)/include/%.h: lib/%.h | $(DESTDIR)$(PREFIX)/include
 .PHONY: all bin lib static dynamic test install uninstall clean
 .SECONDARY:
 
--include $(OBJ:%.o=%.d) $(BINSRC:bin/%.c=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/test-%.c.d)
+-include $(OBJ:%.o=%.d) $(BINSRC:bin/%.c=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/%.c.d)

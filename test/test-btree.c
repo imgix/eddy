@@ -19,6 +19,13 @@ typedef struct {
 	char name[56];
 } Entry;
 
+static void __attribute__((unused))
+print_entry(const void *ent, char *buf, size_t len)
+{
+	const Entry *e = ent;
+	snprintf(buf, len, "%2llu:%s", e->key, e->name);
+}
+
 static void
 cleanup(void)
 {
@@ -58,12 +65,13 @@ test_basic(void)
 
 	for (int i = 1; i <= 10; i++) {
 		Entry ent = { i, "a1" };
-		sprintf(ent.name, "a%d", i);
+		snprintf(ent.name, sizeof(ent.name), "a%d", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
 	}
 	mu_assert_ptr_ne(bt, NULL);
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
 	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 1, sizeof(Entry), &srch), 1);
 
 	ed_pgmark(&bt->base, &t->head, &alloc.dirty);
@@ -94,6 +102,56 @@ test_basic(void)
 }
 
 static void
+test_repeat(void)
+{
+	mu_teardown = cleanup;
+
+	Tree *t = NULL;
+	EdBTree *bt = NULL;
+	EdBSearch srch;
+
+	unlink(path);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+
+	t = ed_pgalloc_meta(&alloc);
+	t->head = ED_PAGE_NONE;
+
+	{
+		Entry ent = { .key = 0, .name = "a1" };
+		mu_assert_int_ge(ed_btree_search(&bt, alloc.fd, 0, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+	}
+
+	{
+		Entry ent = { .key = 20, .name = "a2" };
+		mu_assert_int_ge(ed_btree_search(&bt, alloc.fd, 20, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+	}
+
+	for (unsigned i = 0; i < 200; i++) {
+		Entry ent = { .key = 10 };
+		snprintf(ent.name, sizeof(ent.name), "b%u", i);
+		mu_assert_int_ge(ed_btree_search(&bt, alloc.fd, 10, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 0, sizeof(Entry), &srch), 1);
+	ed_bsearch_final(&srch);
+	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 20, sizeof(Entry), &srch), 1);
+	ed_bsearch_final(&srch);
+
+	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 10, sizeof(Entry), &srch), 1);
+	for (unsigned i = 1; i < 200; i++) {
+		mu_assert_int_eq(ed_bsearch_next(&srch), 1);
+	}
+	ed_bsearch_final(&srch);
+
+	ed_pgunmap(bt, 1);
+}
+
+static void
 test_large(void)
 {
 	mu_teardown = cleanup;
@@ -111,11 +169,13 @@ test_large(void)
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
-		sprintf(ent.name, "a%u", k);
+		snprintf(ent.name, sizeof(ent.name), "a%u", k);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
 	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
@@ -143,11 +203,13 @@ test_large_sequential(void)
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		Entry ent = { .key = i };
-		sprintf(ent.name, "a%u", i);
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
 	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -174,11 +236,13 @@ test_large_sequential_reverse(void)
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		Entry ent = { .key = i };
-		sprintf(ent.name, "a%u", i);
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
 	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -208,7 +272,7 @@ test_split_leaf_middle_left(void)
 	for (size_t i = 0; i <= n; i++) {
 		if (i == mid) { i++; }
 		Entry ent = { .key = i };
-		sprintf(ent.name, "a%zu", i);
+		snprintf(ent.name, sizeof(ent.name), "a%zu", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
@@ -216,11 +280,13 @@ test_split_leaf_middle_left(void)
 
 	{
 		Entry ent = { .key = mid };
-		sprintf(ent.name, "a%zu", mid);
+		snprintf(ent.name, sizeof(ent.name), "a%zu", mid);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, mid, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
 	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
 
 	for (size_t i = 0; i <= n; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -250,7 +316,7 @@ test_split_leaf_middle_right(void)
 	for (size_t i = 0; i <= n; i++) {
 		if (i == mid) { i++; }
 		Entry ent = { .key = i };
-		sprintf(ent.name, "a%zu", i);
+		snprintf(ent.name, sizeof(ent.name), "a%zu", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
@@ -258,11 +324,13 @@ test_split_leaf_middle_right(void)
 
 	{
 		Entry ent = { .key = mid };
-		sprintf(ent.name, "a%zu", mid);
+		snprintf(ent.name, sizeof(ent.name), "a%zu", mid);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, mid, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
 	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
 
 	for (size_t i = 0; i <= n; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -275,10 +343,10 @@ test_split_leaf_middle_right(void)
 int
 main(void)
 {
-
 	mu_init("btree");
 	mu_run(test_capacity);
 	mu_run(test_basic);
+	mu_run(test_repeat);
 	mu_run(test_large);
 	mu_run(test_large_sequential);
 	mu_run(test_large_sequential_reverse);
