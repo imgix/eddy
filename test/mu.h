@@ -46,11 +46,10 @@ struct mu_counts {
 };
 
 static const char *mu_name = "test";
-static int mu_register = 0;
-static struct mu_counts mu_counts_start = { 0, 0 };
-static struct mu_counts *mu_counts = &mu_counts_start;
-static bool mu_fork = true;
-static bool mu_tty = false;
+static int mu_register;
+static bool mu_main = true, mu_fork = true, mu_tty;
+static const char *mu_skip, *mu_run;
+static struct mu_counts mu_counts_start, *mu_counts = &mu_counts_start;
 
 static void mu_noop(void) {}
 static void (*mu_teardown)(void) = mu_noop;
@@ -66,7 +65,7 @@ static void (*mu_teardown)(void) = mu_noop;
 	if (!(exp)) { \
 		__sync_fetch_and_add (&mu_counts->failures, 1); \
 		fprintf (stderr, __FILE__ ":" MU_STR(__LINE__) " " __VA_ARGS__); \
-		mu_exit (); \
+		exit (0); \
 	} \
 } while (0);
 
@@ -141,7 +140,6 @@ mu_final (void)
 	static const char *failed[2] = { "failed", "\x1B[1;31mfailed\x1B[0m" };
 
 	__sync_synchronize ();
-	if (mu_register == 2) { return 0; }
 	uintptr_t asserts = mu_counts->asserts, fails = mu_counts->failures;
 	const char *name = mu_name;
 	mu_set (uintptr_t, mu_counts->asserts, 0);
@@ -179,10 +177,10 @@ mu_final (void)
 	return rc;
 }
 
-static void __attribute__((noreturn))
+static void
 mu_exit (void)
 {
-	_exit (mu_final ());
+	if (mu_main) { _exit (mu_final ()); }
 }
 
 static void
@@ -196,6 +194,8 @@ mu_setup (void)
 			exit (1);
 		}
 		if (getenv ("MU_NOFORK") != NULL) { mu_fork = false; }
+		mu_skip = getenv ("MU_SKIP");
+		mu_run = getenv ("MU_RUN");
 		mu_tty = isatty (STDERR_FILENO);
 		memcpy (mu_counts, &mu_counts_start, sizeof (mu_counts_start));
 		atexit (mu_exit);
@@ -211,53 +211,65 @@ mu_init (const char *name)
 	mu_set (uintptr_t, mu_counts->failures, 0);
 }
 
+#define mu_run(fn) mu__run(__FILE__, __LINE__, #fn, fn)
+
+static bool
+mu__match (const char *list, const char *name)
+{
+	char *m = strstr (list, name);
+	size_t n = strlen (name);
+	return m && (m == list || m[-1] == ':') && (m[n] == '\0' || m[n] == ':');
+}
+
 static void __attribute__ ((unused))
-mu_run (void (*fn) (void))
+mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 {
 	mu_setup ();
+
+	if (mu_skip != NULL && mu__match (mu_skip, fname)) { return; }
+	if (mu_run != NULL && !mu__match (mu_run, fname)) { return; }
 	if (!mu_fork) {
 		fn ();
 		mu_teardown ();
 		mu_teardown = mu_noop;
-		return;
-	}
-	pid_t pid = fork ();
-	if (pid < 0) {
-		fprintf (stderr, "failed fork: %s\n", strerror (errno));
-		exit (1);
-	}
-	if (pid == 0) {
-		mu_register = 2;
-		fn ();
-		mu_teardown ();
-		mu_teardown = mu_noop;
-		exit (0);
 	}
 	else {
-		int stat;
-		do {
-			pid_t p = waitpid (pid, &stat, 0);
-			if (p >= 0) { break; }
-			if (p < 0 && errno != EINTR) {
-				fprintf (stderr, "failed waitpid: %s\n", strerror (errno));
-				exit (1);
-			}
-		} while (1);
-		if (WIFEXITED (stat)) {
-			int exit_status = WEXITSTATUS (stat);
-			if (exit_status != 0) {
-				__sync_fetch_and_add (&mu_counts->asserts, 1);
-				__sync_fetch_and_add (&mu_counts->failures, 1);
-				fprintf (stderr, "test has non-zero exit: %d\n", exit_status);
-			}
+		int stat = 0, exitstat = 0, termsig = 0;
+		pid_t pid = fork ();
+		if (pid < 0) {
+			fprintf (stderr, "%s:%d: %s failed fork '%s'\n",
+					file, line, fname, strerror (errno));
+			exit (1);
 		}
-		if (WIFSIGNALED (stat)) {
-			int exit_signal = WTERMSIG (stat);
-			if (exit_signal != 0) {
-				__sync_fetch_and_add (&mu_counts->asserts, 1);
-				__sync_fetch_and_add (&mu_counts->failures, 1);
-				fprintf (stderr, "test recieved signal: %d\n", exit_signal);
-			}
+		if (pid == 0) {
+			mu_main = false;
+			fn ();
+			mu_teardown ();
+			mu_teardown = mu_noop;
+			exit (0);
+		}
+		else {
+			do {
+				pid_t p = waitpid (pid, &stat, 0);
+				if (p >= 0) { break; }
+				if (p < 0 && errno != EINTR) {
+					fprintf (stderr, "%s:%d: %s failed waitpid '%s'\n",
+							file, line, fname, strerror (errno));
+					exit (1);
+				}
+			} while (1);
+		}
+		if (WIFEXITED (stat) && (exitstat = WEXITSTATUS (stat))) {
+			__sync_fetch_and_add (&mu_counts->asserts, 1);
+			__sync_fetch_and_add (&mu_counts->failures, 1);
+			fprintf (stderr, "%s:%d: %s non-zero exit (%d)\n",
+					file, line, fname, exitstat);
+		}
+		if (WIFSIGNALED (stat) && (termsig = WTERMSIG (stat))) {
+			__sync_fetch_and_add (&mu_counts->asserts, 1);
+			__sync_fetch_and_add (&mu_counts->failures, 1);
+			fprintf (stderr, "%s:%d: %s recieved signal (%d)\n",
+					file, line, fname, termsig);
 		}
 	}
 }
