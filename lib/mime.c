@@ -259,6 +259,7 @@ ed_mime_open(EdMime **dbp, const char *path, int flags)
 
 	int rc = ed_mime_load(dbp, data, stat.st_size, flags);
 	if (rc == 0) {
+		if (*dbp == NULL) { return ed_esys(EFAULT); }
 		(*dbp)->mapped = true;
 	}
 	return rc;

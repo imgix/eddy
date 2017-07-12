@@ -80,19 +80,20 @@ ed_pgalloc_new(EdPgalloc *alloc, const char *path, size_t meta)
 	if (fd < 0) { return ED_ERRNO; }
 
 	int rc = 0;
+	uint8_t *map = MAP_FAILED;
 	struct stat stat;
+
 	if (fstat(fd, &stat) < 0) {
 		rc = ED_ERRNO;
 		goto done;
 	}
 
-	uint8_t *map = ed_pgmap(fd, 0, 2);
-	if (map == MAP_FAILED) {
+	if ((map = ed_pgmap(fd, 0, 2)) == MAP_FAILED) {
 		rc = ED_ERRNO;
 		goto done;
 	}
 
-	EdPg *top = (EdPg *)map;;
+	EdPg *top = (EdPg *)map;
 	EdPgallocHdr *hdr = (EdPgallocHdr *)(map + 16);
 	off_t hdrpages = (16 + sizeof(*hdr) + meta + (PAGESIZE-1)) / PAGESIZE;
 	off_t allpages = hdrpages + 1 + ED_ALLOC_COUNT;
@@ -124,9 +125,7 @@ ed_pgalloc_new(EdPgalloc *alloc, const char *path, size_t meta)
 
 done:
 	if (rc < 0) {
-		if (hdr != NULL && hdr != MAP_FAILED) {
-			ed_pgunmap(hdr, 2);
-		}
+		if (map != MAP_FAILED) { ed_pgunmap(map, 2); }
 		close(fd);
 	}
 	return rc;
@@ -358,7 +357,7 @@ ed_pgalloc(EdPgalloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 void
 ed_pgfree(EdPgalloc *alloc, EdPg **pages, EdPgno n)
 {
-	for (; *pages == NULL && n > 0; pages++, n--) {}
+	for (; n > 0 && *pages == NULL; pages++, n--) {}
 	if (n == 0) { return; }
 
 	EdPgfree *fs = ed_pgfree_list(alloc);

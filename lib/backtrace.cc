@@ -33,6 +33,7 @@ ed_backtrace_print(EdBacktrace *bt, int skip, FILE *out)
 	bool isnew = false;
 	if (bt == nullptr) {
 		if (ed_backtrace_new(&bt) < 0) { return; }
+		if (bt == nullptr) { return; }
 		isnew = true;
 	}
 	bt->Print(skip, out);

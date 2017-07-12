@@ -88,8 +88,13 @@ verify_overflow(EdBTree *o, size_t esize, FILE *out, uint64_t expect)
 static int
 verify_leaf(EdBTree *l, int fd, size_t esize, FILE *out, uint64_t min, uint64_t max)
 {
+	if (l->nkeys == 0) {
+		if (out != NULL) { fprintf(out, "leaf has no keys\n"); }
+		return -1;
+	}
+
 	uint8_t *p = l->data;
-	uint64_t first, last;
+	uint64_t last;
 	for (uint32_t i = 0; i < l->nkeys; i++, p += esize) {
 		uint64_t key = ed_fetch64(p);
 		if (key < min || key > max) {
@@ -106,7 +111,6 @@ verify_leaf(EdBTree *l, int fd, size_t esize, FILE *out, uint64_t min, uint64_t 
 			}
 			return -1;
 		}
-		if (i == 0) { first = key; }
 		last = key;
 	}
 
