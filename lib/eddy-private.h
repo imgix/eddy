@@ -259,7 +259,7 @@ ED_LOCAL     void ed_pgalloc_sync(EdPgalloc *);
 ED_LOCAL   void * ed_pgalloc_meta(EdPgalloc *alloc);
 ED_LOCAL      int ed_pgalloc(EdPgalloc *, EdPg **, EdPgno n, bool exclusive);
 ED_LOCAL     void ed_pgfree(EdPgalloc *, EdPg **, EdPgno n);
-ED_LOCAL   void * ed_pgfree_list(EdPgalloc *);
+ED_LOCAL EdPgfree * ed_pgfree_list(EdPgalloc *);
 #if ED_MMAP_DEBUG
 ED_LOCAL     void ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count);
 ED_LOCAL     void ed_pguntrack(uint8_t *pg, EdPgno count);

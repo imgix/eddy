@@ -412,7 +412,7 @@ ed_pgfree(EdPgalloc *alloc, EdPg **pages, EdPgno n)
 	ed_pgalloc_sync(alloc);
 }
 
-void *
+EdPgfree *
 ed_pgfree_list(EdPgalloc *alloc)
 {
 	return ed_pgload(alloc->fd, (EdPg **)&alloc->free, alloc->hdr->free_list);
