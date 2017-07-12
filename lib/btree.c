@@ -193,7 +193,6 @@ ed_bsearch_next(EdBSearch *srch)
 	if (srch->match != 1) { return srch->match; }
 
 	int rc = 0;
-	// FIXME: overflow nodes are going into extra and not getting picked up
 	EdBNode *node = &srch->nodes[srch->nnodes-1];
 	EdBTree *leaf = node->tree;
 	uint8_t *p = srch->entry;
@@ -230,6 +229,7 @@ done:
 static int
 redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 {
+	return INS_NONE;
 	// If the leaf is the first child, don't redistribute.
 	if (leaf->pindex == 0) { return INS_NONE; }
 	// Don't move left if the new insert is at the beggining.
@@ -275,9 +275,11 @@ redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 static int
 redistribute_leaf_right(EdBSearch *srch, EdBNode *leaf)
 {
+	return INS_NONE;
 	// If the leaf is the last child, don't redistribute.
 	if (leaf->pindex == leaf->parent->tree->nkeys) { return INS_NONE; }
-	uint16_t ord = LEAF_ORDER(srch->entry_size);
+	size_t esize = srch->entry_size;
+	uint16_t ord = LEAF_ORDER(esize);
 	// Don't move right if the insert is at the end.
 	if (srch->entry_index == ord) { return INS_NONE; }
 
@@ -296,10 +298,10 @@ redistribute_leaf_right(EdBSearch *srch, EdBNode *leaf)
 	if (n > max) { n = max; }
 
 	// Move upper range of leaf into the start of right.
-	size_t size = n * srch->entry_size;
-	uint8_t *src = leaf->tree->data + srch->entry_size*(ord - n);
+	size_t size = n * esize;
+	uint8_t *src = leaf->tree->data + esize*(ord - n);
 	uint8_t *dst = r->data;
-	memmove(dst+size, dst, r->nkeys*srch->entry_size);
+	memmove(dst+size, dst, r->nkeys*esize);
 	memcpy(dst, src, size);
 	branch_set_key(leaf->parent->tree, leaf->pindex+1, ed_fetch64(dst));
 
@@ -316,9 +318,6 @@ redistribute_leaf_right(EdBSearch *srch, EdBNode *leaf)
 static int
 redistribute_leaf(EdBSearch *srch, EdBNode *leaf)
 {
-	// TODO: fix redistribution for repeat keys
-	return INS_NONE;
-
 	if (leaf->parent == NULL) { return INS_NONE; }
 
 	int rc = redistribute_leaf_right(srch, leaf);
@@ -438,7 +437,6 @@ insert_into_parent(EdBSearch *srch, EdBNode *left, EdBNode *right, uint64_t rkey
 static int
 split_point(EdBSearch *srch, EdBTree *l)
 {
-	// TODO: this information is needed for redistribution candidates
 	uint16_t n = l->nkeys, mid = n/2, min, max;
 	uint64_t key;
 	size_t esize = srch->entry_size;
@@ -508,28 +506,23 @@ done:
 }
 
 static int
-insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
+split_leaf(EdBSearch *srch, EdBNode *leaf, int mid, EdPgalloc *alloc)
 {
 	EdBTree *l = leaf->tree;
-	int mid = split_point(srch, l);
-	if (mid < 0) {
-		return overflow_leaf(srch, leaf, alloc);
-	}
-
 	EdPgno npg = srch->nsplits, used = 1;
 	EdPg *pg[npg];
 	int rc = ed_pgalloc(alloc, pg, npg, true);
 	if (rc < 0) { return rc; }
 
 	EdBTree *r = (EdBTree *)pg[0];
-	size_t esz = srch->entry_size;
+	size_t esize = srch->entry_size;
 	uint32_t n = l->nkeys;
-	size_t off = mid * esz;
+	size_t off = mid * esize;
 
 	// If the new key will be the first entry on right, use the search key.
 	uint64_t rkey = (uint16_t)mid == srch->entry_index ? srch->key : ed_fetch64(l->data+off);
 
-	assert(ed_fetch64(l->data + off - esz) < rkey);
+	assert(ed_fetch64(l->data + off - esize) < rkey);
 	assert(rkey <= ed_fetch64(l->data + off));
 
 	r->base.type = ED_PGLEAF;
@@ -561,7 +554,7 @@ insert_split(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
 
 		// Update the entry to reference the right node.
 		srch->entry_index -= mid;
-		srch->entry = r->data + srch->entry_index*esz;
+		srch->entry = r->data + srch->entry_index*esize;
 	}
 
 	left->dirty = 1;
@@ -587,21 +580,23 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 	}
 
 	EdBNode *leaf;
-	int rc = 0;
+	int rc = INS_SHIFT;
 	size_t esize = srch->entry_size;
 
 	// If the root was NULL, create a new root node.
 	if (srch->nnodes == 0) {
-		EdPg *pg;
-		rc = ed_pgalloc(alloc, &pg, 1, true);
+		EdBTree *l;
+		rc = ed_pgalloc(alloc, (EdPg **)&l, 1, true);
 		if (rc < 0) { goto done; }
 		leaf = &srch->nodes[0];
-		*leaf = (EdBNode){ (EdBTree *)pg, NULL, 0, 0 };
-		ed_btree_init(leaf->tree);
+		*leaf = (EdBNode){ l, NULL, 0, 0 };
+		l->base.type = ED_PGLEAF;
+		l->nkeys = 1;
+		l->right = ED_PAGE_NONE;
 		srch->entry = leaf->tree->data;
 		srch->entry_index = 0;
 		srch->nnodes = 1;
-		rc = INS_SHIFT;
+		rc = 0;
 	}
 	// Otherwise use the leaf from the search.
 	else {
@@ -612,15 +607,18 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 			rc = redistribute_leaf(srch, leaf);
 			if (rc < 0) { goto done; }
 			if (rc == INS_NONE) {
-				rc = insert_split(srch, leaf, alloc);
-				if (rc < 0) { goto done; }
+				int mid = split_point(srch, leaf->tree);
+				if (mid < 0) {
+					rc = overflow_leaf(srch, leaf, alloc);
+					if (rc < 0) { goto done; }
+				}
+				else {
+					rc = split_leaf(srch, leaf, mid, alloc);
+					if (rc < 0) { goto done; }
+					// TODO: mark parent as dirty
+					leaf = &srch->nodes[srch->nnodes-1];
+				}
 			}
-			// TODO: mark parent as dirty
-
-			leaf = &srch->nodes[srch->nnodes-1];
-		}
-		else {
-			rc = INS_SHIFT;
 		}
 	}
 
