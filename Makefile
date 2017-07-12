@@ -14,7 +14,7 @@ PREFIX?= /usr/local
 UNAME?=$(shell uname -s)
 BUILD_MIME?= yes
 PAGESIZE?=$(shell getconf PAGESIZE)
-ifneq ($(BUILD),debug)
+ifeq ($(BUILD),release)
   OPT?= 3
   LTO?= yes
 else
@@ -153,6 +153,12 @@ static: $(LIB)/$(A)
 
 # Build the shared library and version symlinks.
 dynamic: $(LIB)/$(SOMIN) $(LIB)/$(SOMAJ) $(LIB)/$(SO)
+
+analyze:
+	@which scan-build >/dev/null || (echo 'scan-build required: pip install scan-build' && exit 1)
+	rm -rf build/analyze
+	scan-build -o build/analyze/tmp $(MAKE) BUILD=analyze
+	@which open >/dev/null && open build/analyze/tmp/scan-build*/index.html
 
 # Build and run tests.
 test: $(TESTSRC:test/test-%.c=test-%)
