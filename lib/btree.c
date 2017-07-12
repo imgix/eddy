@@ -229,7 +229,6 @@ done:
 static int
 redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 {
-	return INS_NONE;
 	// If the leaf is the first child, don't redistribute.
 	if (leaf->pindex == 0) { return INS_NONE; }
 	// Don't move left if the new insert is at the beggining.
@@ -238,7 +237,8 @@ redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 	int rc = map_extra(srch, leaf->parent, leaf->pindex-1);
 	if (rc < 0) { return rc == -1 ? INS_NONE : rc; }
 
-	uint16_t ord = LEAF_ORDER(srch->entry_size);
+	size_t esize = srch->entry_size;
+	uint16_t ord = LEAF_ORDER(esize);
 	EdBTree *l = srch->extra[rc].tree;
 
 	// Bail if the left leaf is full.
@@ -250,13 +250,20 @@ redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 	uint32_t max = srch->entry_index;
 	if (n > max) { n = max; }
 
-	// Move the lower range of leaf into the end of left.
-	size_t size = n * srch->entry_size;
+	// Check if the split point spans a repeating key.
+	size_t size = n * esize;
 	uint8_t *src = leaf->tree->data;
-	uint8_t *dst = l->data + srch->entry_size*l->nkeys;
+	uint64_t key = ed_fetch64(src + size);
+	if (key == ed_fetch64(src + size - esize)) {
+		// TODO: find an available split point
+		return INS_NONE;
+	}
+
+	// Move the lower range of leaf into the end of left.
+	uint8_t *dst = l->data + esize*l->nkeys;
 	memcpy(dst, src, size);
-	memmove(src, src+size, (leaf->tree->nkeys - n) * srch->entry_size);
-	branch_set_key(leaf->parent->tree, leaf->pindex, ed_fetch64(src));
+	memmove(src, src+size, (leaf->tree->nkeys - n) * esize);
+	branch_set_key(leaf->parent->tree, leaf->pindex, key);
 
 	// Update leaf counts.
 	l->nkeys += n;
@@ -264,7 +271,7 @@ redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 
 	// Slide the entry index down.
 	srch->entry_index -= n;
-	srch->entry = leaf->tree->data + srch->entry_index*srch->entry_size;
+	srch->entry = leaf->tree->data + srch->entry_index*esize;
 
 	srch->extra[rc].dirty = 1;
 	leaf->dirty = 1;
@@ -275,7 +282,6 @@ redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 static int
 redistribute_leaf_right(EdBSearch *srch, EdBNode *leaf)
 {
-	return INS_NONE;
 	// If the leaf is the last child, don't redistribute.
 	if (leaf->pindex == leaf->parent->tree->nkeys) { return INS_NONE; }
 	size_t esize = srch->entry_size;
@@ -297,13 +303,20 @@ redistribute_leaf_right(EdBSearch *srch, EdBNode *leaf)
 	uint32_t max = (uint32_t)ord - srch->entry_index;
 	if (n > max) { n = max; }
 
-	// Move upper range of leaf into the start of right.
-	size_t size = n * esize;
+	// Check if the split point spans a repeating key.
 	uint8_t *src = leaf->tree->data + esize*(ord - n);
+	uint64_t key = ed_fetch64(src);
+	if (key == ed_fetch64(src - esize)) {
+		// TODO: find an available split point
+		return INS_NONE;
+	}
+
+	// Move upper range of leaf into the start of right.
 	uint8_t *dst = r->data;
+	size_t size = n * esize;
 	memmove(dst+size, dst, r->nkeys*esize);
 	memcpy(dst, src, size);
-	branch_set_key(leaf->parent->tree, leaf->pindex+1, ed_fetch64(dst));
+	branch_set_key(leaf->parent->tree, leaf->pindex+1, key);
 
 	// Update leaf counts.
 	r->nkeys += n;
