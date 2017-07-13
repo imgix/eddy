@@ -69,11 +69,12 @@ branch_key(EdBTree *b, uint16_t idx)
 }
 
 static inline void
-branch_set_key(EdBTree *b, uint16_t idx, uint64_t val)
+branch_set_key(EdBNode *b, uint16_t idx, uint64_t val)
 {
-	assert(idx <= b->nkeys);
+	assert(idx <= b->tree->nkeys);
 	if (idx == 0) { return; }
-	memcpy(b->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE, &val, sizeof(val));
+	memcpy(b->tree->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE, &val, sizeof(val));
+	b->dirty = 1;
 }
 
 static inline uint64_t
@@ -263,7 +264,7 @@ redistribute_leaf_left(EdBSearch *srch, EdBNode *leaf)
 	uint8_t *dst = l->data + esize*l->nkeys;
 	memcpy(dst, src, size);
 	memmove(src, src+size, (leaf->tree->nkeys - n) * esize);
-	branch_set_key(leaf->parent->tree, leaf->pindex, key);
+	branch_set_key(leaf->parent, leaf->pindex, key);
 
 	// Update leaf counts.
 	l->nkeys += n;
@@ -316,7 +317,7 @@ redistribute_leaf_right(EdBSearch *srch, EdBNode *leaf)
 	size_t size = n * esize;
 	memmove(dst+size, dst, r->nkeys*esize);
 	memcpy(dst, src, size);
-	branch_set_key(leaf->parent->tree, leaf->pindex+1, key);
+	branch_set_key(leaf->parent, leaf->pindex+1, key);
 
 	// Update leaf counts.
 	r->nkeys += n;
@@ -646,7 +647,7 @@ ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
 	}
 	memcpy(p, entry, esize);
 	if (srch->entry_index == 0 && leaf->parent != NULL) {
-		branch_set_key(leaf->parent->tree, leaf->pindex, ed_fetch64(p));
+		branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(p));
 	}
 	*srch->root = srch->nodes[0].tree;
 	srch->nsplits = 0;
