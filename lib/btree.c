@@ -661,6 +661,9 @@ done:
 int
 ed_bsearch_set(EdBSearch *srch, const void *entry)
 {
+	if (ed_fetch64(entry) != srch->key) {
+		return ED_EINDEX_KEY_MATCH;
+	}
 	memcpy(srch->entry, entry, srch->entry_size);
 	return 0;
 }
