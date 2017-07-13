@@ -89,6 +89,7 @@ static int
 verify_leaf(EdBTree *l, int fd, size_t esize, FILE *out, uint64_t min, uint64_t max)
 {
 	if (l->nkeys == 0) {
+		// FIXME: allow this until a better delete algorithm is implemented
 		//if (out != NULL) { fprintf(out, "leaf has no keys\n"); }
 		//return -1;
 		return 0;
