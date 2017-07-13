@@ -4,6 +4,7 @@
 // Enough entries to get to depth 3.
 // The entry size is bloated to get there in fewer ops.
 #define LARGE 22000
+#define SMALL 10
 
 static EdPgalloc alloc;
 static const char *path = "/tmp/eddy_test_btree";
@@ -63,7 +64,7 @@ test_basic(void)
 	mu_assert_ptr_ne(ed_pgload(alloc.fd, (EdPg **)&bt, t->head), MAP_FAILED);
 	mu_assert_ptr_eq(bt, NULL);
 
-	for (int i = 1; i <= 10; i++) {
+	for (int i = 1; i <= SMALL; i++) {
 		Entry ent = { i, "a1" };
 		snprintf(ent.name, sizeof(ent.name), "a%d", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
@@ -383,6 +384,90 @@ test_split_middle_branch(void)
 	ed_pgunmap(bt, 1);
 }
 
+static void
+test_remove_small(void)
+{
+	mu_teardown = cleanup;
+
+	Tree *t = NULL;
+	EdBTree *bt = NULL;
+	EdBSearch srch;
+
+	unlink(path);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+
+	t = ed_pgalloc_meta(&alloc);
+	t->head = ED_PAGE_NONE;
+
+	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
+		int k = rand_r(&seed);
+		Entry ent = { .key = k };
+		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+
+	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
+		int k = rand_r(&seed);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		mu_assert_int_eq(ed_bsearch_del(&srch), 1);
+		ed_bsearch_final(&srch);
+	}
+
+	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
+		int k = rand_r(&seed);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	ed_pgunmap(bt, 1);
+}
+
+static void
+test_remove_large(void)
+{
+	mu_teardown = cleanup;
+
+	Tree *t = NULL;
+	EdBTree *bt = NULL;
+	EdBSearch srch;
+
+	unlink(path);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+
+	t = ed_pgalloc_meta(&alloc);
+	t->head = ED_PAGE_NONE;
+
+	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
+		int k = rand_r(&seed);
+		Entry ent = { .key = k };
+		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+
+	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
+		int k = rand_r(&seed);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		mu_assert_int_eq(ed_bsearch_del(&srch), 1);
+		ed_bsearch_final(&srch);
+	}
+
+	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
+		int k = rand_r(&seed);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	ed_pgunmap(bt, 1);
+}
+
 int
 main(void)
 {
@@ -396,6 +481,8 @@ main(void)
 	mu_run(test_split_leaf_middle_left);
 	mu_run(test_split_leaf_middle_right);
 	mu_run(test_split_middle_branch);
+	mu_run(test_remove_small);
+	mu_run(test_remove_large);
 	return 0;
 }
 
