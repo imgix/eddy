@@ -78,6 +78,10 @@
 #define ED_TIME_DELETE 0
 #define ED_TIME_INF UINT32_MAX
 
+#define ED_IS_FILE(mode) (S_ISREG(mode))
+#define ED_IS_DEVICE(mode) (S_ISCHR(mode) || S_ISBLK(mode))
+#define ED_IS_MODE(mode) (ED_IS_FILE(mode) || ED_IS_DEVICE(mode))
+
 typedef uint32_t EdPgno;
 typedef uint64_t EdBlkno;
 typedef uint64_t EdHash;

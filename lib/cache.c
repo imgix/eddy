@@ -4,13 +4,13 @@ static int64_t
 cache_size(int fd, struct stat *stat)
 {
 	if (fstat(fd, stat) < 0) { return ED_ERRNO; }
-	if (S_ISREG(stat->st_mode)) {
+	if (ED_IS_FILE(stat->st_mode)) {
 		if (stat->st_size <= 0 || (intmax_t)stat->st_size > (intmax_t)INT64_MAX) {
 			return ED_ECACHE_SIZE;
 		}
 		return (int64_t)stat->st_size;
 	}
-	if (S_ISCHR(stat->st_mode)) {
+	if (ED_IS_DEVICE(stat->st_mode)) {
 #if defined(BLKGETSIZE64)
 		uint64_t size;
 		if (ioctl(fd, BLKGETSIZE64, &size) < 0) { return ED_ERRNO; }

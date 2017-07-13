@@ -20,7 +20,7 @@ ed_config_open(EdConfig *cfg)
 		err = ED_ERRNO;
 		goto error;
 	}
-	if (!S_ISREG(cache_stat.st_mode) && !S_ISCHR(cache_stat.st_mode)) {
+	if (!ED_IS_MODE(cache_stat.st_mode)) {
 		err = ED_ECACHE_MODE;
 		goto error;
 	}

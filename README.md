@@ -1,6 +1,12 @@
 # Eddy
 
-High-performance, maintenence light, caching library and tools.
+High-performance, maintenence-light, caching library and tools.
+
+Rather than rely on precise LRU caching, eddy implements an indexing scheme on
+top of a fixed size ring buffer. This can be either a pre-allocated file on disk
+or an entire device; both character and block devices are supported. The ring
+has the benefit of guaranteed sequential writes, no fragmentation of cached
+object blocks, and no ongoing disk space utilization management.
 
 ## Building
 

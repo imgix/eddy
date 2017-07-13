@@ -82,12 +82,12 @@ main(int argc, char **argv)
 
 	if (fstat(fd, &stat) < 0) { err(1, "failed to stat file"); }
 
-	if (S_ISREG(stat.st_mode)) {
+	if (ED_IS_FILE(stat.st_mode)) {
 		fprintf(stderr, "allocating %lld bytes...", size);
 		if (ed_mkfile(fd, (off_t)size) < 0) { err(1, "error\nfailed to allocate file"); }
 		fprintf(stderr, "ok\n");
 	}
-	else if (!S_ISCHR(stat.st_mode)) {
+	else if (!ED_IS_DEVICE(stat.st_mode)) {
 		errx(1, "unsupported file mode");
 	}
 	close(fd);
