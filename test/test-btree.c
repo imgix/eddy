@@ -417,9 +417,28 @@ test_remove_small(void)
 		ed_bsearch_final(&srch);
 	}
 
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
+		int k = rand_r(&seed);
+		Entry ent = { .key = k };
+		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+
+	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
+		int k = rand_r(&seed);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
 		ed_bsearch_final(&srch);
 	}
 
@@ -459,9 +478,28 @@ test_remove_large(void)
 		ed_bsearch_final(&srch);
 	}
 
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
+		int k = rand_r(&seed);
+		Entry ent = { .key = k };
+		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+
+	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
+		int k = rand_r(&seed);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
 		ed_bsearch_final(&srch);
 	}
 
