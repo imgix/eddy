@@ -668,6 +668,30 @@ ed_bsearch_set(EdBSearch *srch, const void *entry)
 	return 0;
 }
 
+int
+ed_bsearch_del(EdBSearch *srch)
+{
+	if (srch->nnodes == 0) { return 0; }
+
+	EdBNode *leaf = &srch->nodes[srch->nnodes-1];
+	size_t esize = srch->entry_size;
+	memmove(srch->entry, (uint8_t *)srch->entry + esize,
+			(leaf->tree->nkeys - srch->entry_index - 1) * esize);
+	if (leaf->tree->nkeys == 1) {
+		// FIXME: this is terrible
+		leaf->tree->nkeys = 0;
+		leaf->dirty = 1;
+	}
+	else {
+		leaf->tree->nkeys--;
+		leaf->dirty = 1;
+		if (srch->nnodes > 1 && srch->entry_index == 0) {
+			branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(srch->entry));
+		}
+	}
+	return 1;
+}
+
 void
 ed_bsearch_final(EdBSearch *srch)
 {

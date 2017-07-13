@@ -89,8 +89,9 @@ static int
 verify_leaf(EdBTree *l, int fd, size_t esize, FILE *out, uint64_t min, uint64_t max)
 {
 	if (l->nkeys == 0) {
-		if (out != NULL) { fprintf(out, "leaf has no keys\n"); }
-		return -1;
+		//if (out != NULL) { fprintf(out, "leaf has no keys\n"); }
+		//return -1;
+		return 0;
 	}
 
 	uint8_t *p = l->data;
