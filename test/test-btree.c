@@ -340,6 +340,49 @@ test_split_leaf_middle_right(void)
 	ed_pgunmap(bt, 1);
 }
 
+static void
+test_split_middle_branch(void)
+{
+	mu_teardown = cleanup;
+
+	Tree *t = NULL;
+	EdBTree *bt = NULL;
+	EdBSearch srch;
+
+	unlink(path);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+
+	t = ed_pgalloc_meta(&alloc);
+	t->head = ED_PAGE_NONE;
+
+	size_t mid = LARGE / 2;
+	for (size_t i = 0; i <= LARGE; i++) {
+		if (i == mid) { i++; }
+		Entry ent = { .key = i };
+		snprintf(ent.name, sizeof(ent.name), "a%zu", i);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	{
+		Entry ent = { .key = mid };
+		snprintf(ent.name, sizeof(ent.name), "a%zu", mid);
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, mid, sizeof(Entry), &srch), 0);
+		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
+		ed_bsearch_final(&srch);
+	}
+
+	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+
+	for (size_t i = 0; i <= LARGE; i++) {
+		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
+		ed_bsearch_final(&srch);
+	}
+
+	ed_pgunmap(bt, 1);
+}
+
 int
 main(void)
 {
@@ -352,7 +395,7 @@ main(void)
 	mu_run(test_large_sequential_reverse);
 	mu_run(test_split_leaf_middle_left);
 	mu_run(test_split_leaf_middle_right);
-	// TODO mu_run(test_split_middle_branch);
+	mu_run(test_split_middle_branch);
 	return 0;
 }
 
