@@ -9,14 +9,13 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-e] [-i PATH] PATH\n"
+			"usage: %s [-e] PATH\n"
 			"\n"
 			"about:\n"
 			"  Reports on the status of the cache. Outputs information in YAML.\n"
 			"\n"
 			"options:\n"
 			"  -e        perform extended stat (requires briefly locking the index)\n"
-			"  -i PATH   path to index file (default is the cache path with \"-index\" suffix)\n"
 			,
 			name);
 }
@@ -29,10 +28,9 @@ main(int argc, char **argv)
 	int flags = 0;
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hei:")) != -1) {
+	while ((ch = getopt(argc, argv, ":he")) != -1) {
 		switch (ch) {
 		case 'e': flags |= ED_FSTAT_EXTEND; break;
-		case 'i': cfg.index_path = optarg; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
 		case ':': errx(1, "missing argument for option: -%c", optopt);
@@ -41,8 +39,8 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc == 0) { errx(1, "cache file not provided"); }
-	cfg.cache_path = argv[0];
+	if (argc == 0) { errx(1, "index file path not provided"); }
+	cfg.index_path = argv[0];
 
 	int rc;
 

@@ -9,7 +9,7 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-u] [-m] [-i PATH] PATH KEY\n"
+			"usage: %s [-u] [-m] PATH KEY\n"
 			"\n"
 			"about:\n"
 			"  Gets the contents of an object in the cache to stdout.\n"
@@ -17,7 +17,6 @@ usage(const char *prog)
 			"options:\n"
 			"  -u        immediately unlink the object\n"
 			"  -m        write the object metadata to stderr\n"
-			"  -i PATH   path to index file (default is the cache path with \"-index\" suffix)\n"
 			,
 			name);
 }
@@ -31,11 +30,10 @@ main(int argc, char **argv)
 	const char *key = NULL;
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":humi:")) != -1) {
+	while ((ch = getopt(argc, argv, ":hum")) != -1) {
 		switch (ch) {
 		case 'u': unlink = true; break;
 		case 'm': mime = true; break;
-		case 'i': cfg.index_path = optarg; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
 		case ':': errx(1, "missing argument for option: -%c", optopt);
@@ -44,8 +42,8 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc == 0) { errx(1, "cache file not provided"); }
-	cfg.cache_path = argv[0];
+	if (argc == 0) { errx(1, "index file not provided"); }
+	cfg.index_path = argv[0];
 
 	if (argc == 1) { errx(1, "key not provided"); }
 	key = argv[1];

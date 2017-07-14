@@ -1,7 +1,7 @@
 #include "eddy-private.h"
 
 static const char *const econfig[] = {
-	[ed_ecode(ED_ECONFIG_CACHE_NAME)]    = "cache name is too long",
+	[ed_ecode(ED_ECONFIG_SLAB_NAME)]    = "slab name is too long",
 	[ed_ecode(ED_ECONFIG_INDEX_NAME)]    = "index name is too long",
 };
 
@@ -19,7 +19,6 @@ static const char *const eindex[] = {
 	[ed_ecode(ED_EINDEX_ALLOC_COUNT)]    = "index allocation count differs",
 	[ed_ecode(ED_EINDEX_PAGE_REF)]       = "index page has multiple references",
 	[ed_ecode(ED_EINDEX_PAGE_LOST)]      = "index page has been lost",
-	[ed_ecode(ED_EINDEX_INODE)]          = "index inode reference invalid",
 	[ed_ecode(ED_EINDEX_DEPTH)]          = "index btree depth limit exceeded",
 	[ed_ecode(ED_EINDEX_KEY_MATCH)]      = "index btree entry does not match key",
 	[ed_ecode(ED_EINDEX_RANDOM)]         = "failed to produce seed from /dev/urandom",
@@ -29,10 +28,11 @@ static const char *const ekey[] = {
 	[ed_ecode(ED_EKEY_LENGTH)]           = "key length too long",
 };
 
-static const char *const ecache[] = {
-	[ed_ecode(ED_ECACHE_MODE)]           = "cache file mode invalid",
-	[ed_ecode(ED_ECACHE_SIZE)]           = "cache file size too large",
-	[ed_ecode(ED_ECACHE_BLOCK_SIZE)]     = "cache file block/sector size is not supported",
+static const char *const eslab[] = {
+	[ed_ecode(ED_ESLAB_MODE)]            = "slab file mode invalid",
+	[ed_ecode(ED_ESLAB_SIZE)]            = "slab file size too large",
+	[ed_ecode(ED_ESLAB_BLOCK_SIZE)]      = "slab file block/sector size is not supported",
+	[ed_ecode(ED_ESLAB_INODE)]           = "slab inode reference invalid",
 };
 
 static const char *const emime[] = {
@@ -53,7 +53,7 @@ ed_strerror(int code)
 		case ED_ECONFIG: msg = EGETMSG(econfig, ec); break;
 		case ED_EINDEX:  msg = EGETMSG(eindex, ec); break;
 		case ED_EKEY:    msg = EGETMSG(ekey, ec); break;
-		case ED_ECACHE:  msg = EGETMSG(ecache, ec); break;
+		case ED_ESLAB:   msg = EGETMSG(eslab, ec); break;
 		case ED_EMIME:   msg = EGETMSG(emime, ec); break;
 		}
 	}
@@ -64,6 +64,6 @@ bool ed_eissys(int code)    { return ed_etype(code) == ED_ESYS; }
 bool ed_eisconfig(int code) { return ed_etype(code) == ED_ECONFIG; }
 bool ed_eisindex(int code)  { return ed_etype(code) == ED_EINDEX; }
 bool ed_eiskey(int code)    { return ed_etype(code) == ED_EKEY; }
-bool ed_eiscache(int code)  { return ed_etype(code) == ED_ECACHE; }
+bool ed_eisslab(int code)   { return ed_etype(code) == ED_ESLAB; }
 bool ed_eismime(int code)   { return ed_etype(code) == ED_EMIME; }
 

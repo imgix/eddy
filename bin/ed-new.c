@@ -13,17 +13,17 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-r] [-f] [-c] [-i PATH] [-s SIZE[k|m|g|t|p]] PATH\n"
+			"usage: %s [-v] [-f] [-c] [-s SIZE[k|m|g|t|p]] [-S PATH] PATH\n"
 			"\n"
 			"about:\n"
-			"  Creates a new cache slab and index.\n"
+			"  Creates a new cache index and slab.\n"
 			"\n"
 			"options:\n"
-			"  -r        rebuild the index file if invalid\n"
+			"  -v        enable verbose messaging\n"
 			"  -f        force creation of a new cache file\n"
 			"  -c        track crc32 checksums\n"
-			"  -i PATH   path to index file (default is the cache path with \"-index\" suffix)\n"
 			"  -s SIZE   size of the file (default " DEFAULT_SIZE ")\n"
+			"  -S PATH   path to slab file (default is the index path with \"-slab\" suffix)\n"
 			"\n"
 			"Sizes are expressed as numbers with optional size modifiers.\n"
 			"Supported size modifiers are:\n"
@@ -40,21 +40,16 @@ int
 main(int argc, char **argv)
 {
 	char *size_arg = DEFAULT_SIZE;
-	int open_flags = O_CREAT|O_EXCL|O_RDWR|O_CLOEXEC;
-	EdConfig cfg = { .flags = 0 };
-	long long size;
+	EdConfig cfg = { .flags = ED_FCREATE|ED_FALLOCATE };
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hrfci:s:b:")) != -1) {
+	while ((ch = getopt(argc, argv, ":hvfcs:S:b:")) != -1) {
 		switch (ch) {
-		case 'r': cfg.flags |= ED_FREBUILD; break;
-		case 'f':
-			open_flags &= ~O_EXCL;
-			cfg.flags |= ED_FCREATE;
-			break;
+		case 'v': cfg.flags |= ED_FVERBOSE; break;
+		case 'f': cfg.flags |= ED_FREPLACE; break;
 		case 'c': cfg.flags |= ED_FCHECKSUM; break;
-		case 'i': cfg.index_path = optarg; break;
 		case 's': size_arg = optarg; break;
+		case 'S': cfg.slab_path = optarg; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
 		case ':': errx(1, "missing argument for option: -%c", optopt);
@@ -63,42 +58,19 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (!ed_parse_size(size_arg, &size)) {
+	if (!ed_parse_size(size_arg, &cfg.slab_size)) {
 		errx(1, "-s must be a valid positive number");
 	}
 
-	int fd, ec;
-	struct stat stat;
+	if (argc == 0) { errx(1, "index file path not provided"); }
+	cfg.index_path = argv[0];
+
 	EdCache *cache;
-
-	if (argc == 0) { errx(1, "cache file not provided"); }
-	cfg.cache_path = argv[0];
-
-	fd = open(cfg.cache_path, open_flags, 0600);
-	if (fd < 0) {
-		if ((cfg.flags & ED_FREBUILD) && errno == EEXIST) { goto open_cache; }
-		err(1, "failed to open file");
-	}
-
-	if (fstat(fd, &stat) < 0) { err(1, "failed to stat file"); }
-
-	if (ED_IS_FILE(stat.st_mode)) {
-		fprintf(stderr, "allocating %lld bytes...", size);
-		if (ed_mkfile(fd, (off_t)size) < 0) { err(1, "error\nfailed to allocate file"); }
-		fprintf(stderr, "ok\n");
-	}
-	else if (!ED_IS_DEVICE(stat.st_mode)) {
-		errx(1, "unsupported file mode");
-	}
-	close(fd);
-
-open_cache:
-	ec = ed_cache_open(&cache, &cfg);
+	int ec = ed_cache_open(&cache, &cfg);
 	if (ec < 0) {
 		fprintf(stderr, "failed to open cache: %s\n", ed_strerror(ec));
 		exit(1);
 	}
-
 	ed_cache_close(&cache);
 
 #if ED_MMAP_DEBUG

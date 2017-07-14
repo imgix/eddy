@@ -13,12 +13,13 @@
 // EdConfig and ed_cache_open flags
 #define ED_FCHECKSUM     UINT32_C(        0x00000001) /* Calculate checksums for entries. */
 #define ED_FNOPAGEALIGN  UINT32_C(        0x00000002) /* Don't force file data to a page boundary. */
-#define ED_FREBUILD      UINT64_C(0x0000000800000000) /* Rebuild a new index if invalid. */
-#define ED_FCREATE       UINT64_C(0x0000001000000000) /* Always create a new index. */
-#define ED_FNOMLOCK      UINT64_C(0x0000002000000000) /* Disable mlocking the index. */
-#define ED_FNOBLOCK      UINT64_C(0x0000004000000000) /* May return EAGAIN for open or create. */
-#define ED_FNOSYNC       UINT64_C(0x0000008000000000) /* Don't perform file syncing. */
-#define ED_FOPTIMIZE     UINT64_C(0x0000010000000000) /* Attempt to optimize when opening. */
+#define ED_FVERBOSE      UINT64_C(0x0000000800000000) /* Print informational messages to stderr. */
+#define ED_FCREATE       UINT64_C(0x0000001000000000) /* Create a new index if missing. */
+#define ED_FALLOCATE     UINT64_C(0x0000002000000000) /* Allocate slab space when opening. */
+#define ED_FREPLACE      UINT64_C(0x0000004000000000) /* Replace an existing index. */
+#define ED_FNOMLOCK      UINT64_C(0x0000008000000000) /* Disable mlocking the index. */
+#define ED_FNOBLOCK      UINT64_C(0x0000010000000000) /* May return EAGAIN for open or create. */
+#define ED_FNOSYNC       UINT64_C(0x0000020000000000) /* Don't perform file syncing. */
 
 // ed_cache_stat flags
 #define ED_FSTAT_EXTEND  (1<<0)
@@ -29,8 +30,9 @@ typedef struct EdObject EdObject;
 typedef struct EdObjectAttr EdObjectAttr;
 
 struct EdConfig {
-	const char *cache_path;
 	const char *index_path;
+	const char *slab_path;
+	long long slab_size;
 	uint64_t flags;
 };
 
@@ -103,7 +105,7 @@ ed_discard(EdObject *obj);
 #define ED_ECONFIG 2
 #define ED_EINDEX  3
 #define ED_EKEY    4
-#define ED_ECACHE  5
+#define ED_ESLAB   5
 #define ED_EMIME   6
 
 #define ed_emake(t, n) (-(((t) << 16) | (((n)+1) & 0xffff)))
@@ -114,12 +116,12 @@ ed_discard(EdObject *obj);
 #define ed_econfig(n) ed_emake(ED_ECONFIG, n)
 #define ed_eindex(n)  ed_emake(ED_EINDEX, n)
 #define ed_ekey(n)    ed_emake(ED_EKEY, n)
-#define ed_ecache(n)  ed_emake(ED_ECACHE, n)
+#define ed_eslab(n)   ed_emake(ED_ESLAB, n)
 #define ed_emime(n)   ed_emake(ED_EMIME, n)
 
 #define ED_ERRNO ed_esys(errno)
 
-#define ED_ECONFIG_CACHE_NAME    ed_econfig(0)
+#define ED_ECONFIG_SLAB_NAME     ed_econfig(0)
 #define ED_ECONFIG_INDEX_NAME    ed_econfig(1)
 
 #define ED_EINDEX_MODE           ed_eindex(0)
@@ -135,14 +137,14 @@ ed_discard(EdObject *obj);
 #define ED_EINDEX_ALLOC_COUNT    ed_eindex(10)
 #define ED_EINDEX_PAGE_REF       ed_eindex(11)
 #define ED_EINDEX_PAGE_LOST      ed_eindex(12)
-#define ED_EINDEX_INODE          ed_eindex(13)
-#define ED_EINDEX_DEPTH          ed_eindex(14)
-#define ED_EINDEX_KEY_MATCH      ed_eindex(15)
-#define ED_EINDEX_RANDOM         ed_eindex(16)
+#define ED_EINDEX_DEPTH          ed_eindex(13)
+#define ED_EINDEX_KEY_MATCH      ed_eindex(14)
+#define ED_EINDEX_RANDOM         ed_eindex(15)
 
-#define ED_ECACHE_MODE           ed_ecache(0)
-#define ED_ECACHE_SIZE           ed_ecache(1)
-#define ED_ECACHE_BLOCK_SIZE     ed_ecache(2)
+#define ED_ESLAB_MODE            ed_eslab(0)
+#define ED_ESLAB_SIZE            ed_eslab(1)
+#define ED_ESLAB_BLOCK_SIZE      ed_eslab(2)
+#define ED_ESLAB_INODE           ed_eslab(3)
 
 #define ED_EKEY_LENGTH           ed_ekey(0)
 
@@ -155,7 +157,7 @@ ED_EXPORT bool ed_eissys(int code);
 ED_EXPORT bool ed_eisconfig(int code);
 ED_EXPORT bool ed_eisindex(int code);
 ED_EXPORT bool ed_eiskey(int code);
-ED_EXPORT bool ed_eiscache(int code);
+ED_EXPORT bool ed_eisslab(int code);
 ED_EXPORT bool ed_eismime(int code);
 
 #endif

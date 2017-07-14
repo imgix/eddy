@@ -63,6 +63,10 @@
 
 #define ed_ptr_b32(T, b, off) ((const T *)((const uint8_t *)(b) + ed_b32(off)))
 
+#define ed_verbose(f, ...) do { \
+	if ((f) & ED_FVERBOSE) { fprintf(stderr, __VA_ARGS__); fflush(stderr); } \
+} while (0)
+
 #define ED_PGINDEX     UINT32_C(0x998ddcb0)
 #define ED_PGFREE_HEAD UINT32_C(0xc3e873b2)
 #define ED_PGFREE_CHLD UINT32_C(0xea104f71)
@@ -207,11 +211,12 @@ struct EdIndexHdr {
 	uint64_t seed;
 	int64_t epoch;
 	EdPgallocHdr alloc;
-	uint64_t slab_ino;
-	EdPgno slab_page_count;
 	uint8_t size_align;
 	uint8_t alloc_count;
 	uint8_t _pad[2];
+	EdPgno slab_page_count;
+	uint64_t slab_ino;
+	char slab_path[1024];
 };
 
 struct EdObjectHdr {
@@ -299,7 +304,7 @@ ED_LOCAL      int ed_btree_verify(EdBTree *, int fd, size_t esize, FILE *);
 
 
 /* Index Module */
-ED_LOCAL      int ed_index_open(EdIndex *, const char *path, int64_t slabsize, uint64_t flags, uint64_t ino);
+ED_LOCAL      int ed_index_open(EdIndex *, const EdConfig *cfg, int *slab_fd);
 ED_LOCAL     void ed_index_close(EdIndex *);
 ED_LOCAL      int ed_index_load_trees(EdIndex *);
 ED_LOCAL      int ed_index_save_trees(EdIndex *);

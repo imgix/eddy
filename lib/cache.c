@@ -1,102 +1,22 @@
 #include "eddy-private.h"
 
-static int64_t
-cache_size(int fd, struct stat *stat)
-{
-	if (fstat(fd, stat) < 0) { return ED_ERRNO; }
-	if (ED_IS_FILE(stat->st_mode)) {
-		if (stat->st_size <= 0 || (intmax_t)stat->st_size > (intmax_t)INT64_MAX) {
-			return ED_ECACHE_SIZE;
-		}
-		return (int64_t)stat->st_size;
-	}
-	if (ED_IS_DEVICE(stat->st_mode)) {
-#if defined(BLKGETSIZE64)
-		uint64_t size;
-		if (ioctl(fd, BLKGETSIZE64, &size) < 0) { return ED_ERRNO; }
-		if (size == 0 || size > (uint64_t)INT64_MAX) {
-			return ED_ECACHE_SIZE;
-		}
-		return (int64_t)size;
-#elif defined(DIOCGMEDIASIZE)
-		off_t size;
-		if (ioctl(fd, DIOCGMEDIASIZE, &size) < 0) { return ED_ERRNO; }
-		if (size <= 0 || (intmax_t)size > (intmax_t)INT64_MAX) {
-			return ED_ECACHE_SIZE;
-		}
-		return (int64_t)size;
-#elif defined(DKIOCGETBLOCKSIZE) && defined(DKIOCGETBLOCKCOUNT)
-		uint32_t size;
-		uint64_t count;
-		if (ioctl(fd, DKIOCGETBLOCKSIZE, &size) < 0 ||
-				ioctl(fd, DKIOCGETBLOCKCOUNT, &count) < 0) {
-			return ED_ERRNO;
-		}
-		if (size == 0 || count == 0 || count > (uint64_t)(INT64_MAX / (int64_t)size)) {
-			return ED_ECACHE_SIZE;
-		}
-		return (int64_t)size * (int64_t)count;
-#else
-# warning Character devices not yet supported on this platform
-#endif
-	}
-	return ED_ECACHE_MODE;
-}
-
 int
 ed_cache_open(EdCache **cachep, const EdConfig *cfg)
 {
-	int ec = 0, fd = -1;
-	EdCache *cache = NULL;
-	struct stat stat;
+	EdCache *cache = malloc(sizeof(*cache));
+	if (cache == NULL) { return ED_ERRNO; }
 
-	fd = open(cfg->cache_path, O_CLOEXEC|O_RDWR);
-	if (fd < 0) {
-		ec = errno == EISDIR ? ED_ECACHE_MODE : ED_ERRNO;
-		goto error;
+	int rc = ed_index_open(&cache->index, cfg, &cache->fd);
+	if (rc < 0) {
+		free(cache);
+		return rc;
 	}
-
-	int64_t size = cache_size(fd, &stat);
-	if (size < 0) {
-		ec = (int)size;
-		goto error;
-	}
-
-	const char *index_path = cfg->index_path;
-	char buf[8192];
-	if (index_path == NULL) {
-		int len = snprintf(buf, sizeof(buf), "%s-index", cfg->cache_path);
-		if (len < 0) {
-			ec = ED_ERRNO;
-			goto error;
-		}
-		if (len >= (int)sizeof(buf)) {
-			ec = ED_ECONFIG_CACHE_NAME;
-			goto error;
-		}
-		index_path = buf;
-	}
-
-	cache = malloc(sizeof(*cache));
-	if (cache == NULL) {
-		ec = ED_ERRNO;
-		goto error;
-	}
-
-	ec = ed_index_open(&cache->index, index_path, size, cfg->flags, (uint64_t)stat.st_ino);
-	if (ec < 0) { goto error; }
 
 	cache->ref = 1;
-	cache->fd = fd;
 	cache->bytes_used = 0;
 	cache->pages_used = 0;
 	*cachep = cache;
 	return 0;
-
-error:
-	free(cache);
-	if (fd > -1) { close(fd); }
-	return ec;
 }
 
 EdCache *

@@ -9,7 +9,7 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-e EXP] [-m FILE] [-i PATH] PATH KEY [FILE]\n"
+			"usage: %s [-e EXP] [-m FILE] PATH KEY [FILE]\n"
 			"\n"
 			"about:\n"
 			"  Sets the contents of an object in the cache from stdin or a file.\n"
@@ -17,7 +17,6 @@ usage(const char *prog)
 			"options:\n"
 			"  -e EXP    set the time-to-live in seconds\n"
 			"  -m FILE   set the object meta data from the contents of a file\n"
-			"  -i PATH   path to index file (default is the cache path with \"-index\" suffix)\n"
 			,
 			name);
 }
@@ -34,7 +33,7 @@ main(int argc, char **argv)
 	EdObjectAttr attr = { .expiry = -1 };
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hemi:")) != -1) {
+	while ((ch = getopt(argc, argv, ":hem")) != -1) {
 		switch (ch) {
 		case 'e':
 			attr.expiry = strtol(optarg, &end, 10);
@@ -44,7 +43,6 @@ main(int argc, char **argv)
 			rc = ed_input_fread(&meta, optarg, UINT16_MAX);
 			if (rc < 0) { errc(1, ed_ecode(rc), "failed to read MIME file"); }
 			break;
-		case 'i': cfg.index_path = optarg; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
 		case ':': errx(1, "missing argument for option: -%c", optopt);
@@ -53,8 +51,8 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc == 0) { errx(1, "cache file not provided"); }
-	cfg.cache_path = argv[0];
+	if (argc == 0) { errx(1, "index file path not provided"); }
+	cfg.index_path = argv[0];
 
 	if (argc == 1) { errx(1, "key not provided"); }
 	attr.key = argv[1];
