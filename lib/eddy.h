@@ -17,9 +17,10 @@
 #define ED_FCREATE       UINT64_C(0x0000001000000000) /* Create a new index if missing. */
 #define ED_FALLOCATE     UINT64_C(0x0000002000000000) /* Allocate slab space when opening. */
 #define ED_FREPLACE      UINT64_C(0x0000004000000000) /* Replace an existing index. */
-#define ED_FNOMLOCK      UINT64_C(0x0000008000000000) /* Disable mlocking the index. */
-#define ED_FNOBLOCK      UINT64_C(0x0000010000000000) /* May return EAGAIN for open or create. */
-#define ED_FNOSYNC       UINT64_C(0x0000020000000000) /* Don't perform file syncing. */
+#define ED_FREPAIR       UINT64_C(0x0000008000000000) /* Attempt to repair problems in the index (not yet supported). */
+#define ED_FNOMLOCK      UINT64_C(0x0000010000000000) /* Disable mlocking the index. */
+#define ED_FNOBLOCK      UINT64_C(0x0000020000000000) /* May return EAGAIN for open or create. */
+#define ED_FNOSYNC       UINT64_C(0x0000040000000000) /* Don't perform file syncing. */
 
 // ed_cache_stat flags
 #define ED_FSTAT_EXTEND  (1<<0)
