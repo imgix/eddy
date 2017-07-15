@@ -169,7 +169,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	int fd = -1, sfd = -1, rc = 0;
 	uint64_t flags = cfg->flags;
 
-	if (ed_rnd_u64(&hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
+	if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
 	hdrnew.flags = ED_FSAVE(flags);
 	hdrnew.epoch = (int64_t)time(NULL);
 	hdrnew.alloc.free_list = PG_ROOT_FREE;

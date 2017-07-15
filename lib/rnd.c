@@ -6,15 +6,23 @@
 # define IS_RAND_MODE(mode) (S_ISCHR(mode))
 #endif
 
-#ifdef __linux__
-# define IS_RAND_DEVICE(dev) ((dev) == makedev(1, 8) || (dev) == makedev(1, 9))
+#if defined(__linux__)
+# define IS_RAND_DEVICE(dev) ((dev) == makedev(1, 9))
+#elif defined(__APPLE__)
+# define IS_RAND_DEVICE(dev) ((dev) == makedev(14, 1))
+#elif defined(__FreeBSD__)
+# define IS_RAND_DEVICE(dev) ((dev) == makedev(0, 10))
+#elif defined(__DragonFly__)
+# define IS_RAND_DEVICE(dev) ((dev) == makedev(8, 4))
+#elif defined(__NetBSD__)
+# define IS_RAND_DEVICE(dev) ((dev) == makedev(46, 1))
+#elif defined(__OpenBSD__)
+# define IS_RAND_DEVICE(dev) ((dev) == makedev(45, 2))
 #else
 # define IS_RAND_DEVICE(dev) 1
 #endif
 
-#define IS_RAND(st) (IS_RAND_MODE((st).st_mode) && IS_RAND_DEVICE((st).st_dev))
-
-static atomic_int ed_rnd_fd = -1;
+#define IS_RAND(st) (IS_RAND_MODE((st).st_mode) && IS_RAND_DEVICE((st).st_rdev))
 
 static int
 ed_rnd_check(int fd)
@@ -45,55 +53,35 @@ ed_rnd_open(void)
 	} while (1);
 }
 
-int
-ed_rnd_global(void)
-{
-	if (ed_rnd_fd == -1) {
-		int old = -1, new = ed_rnd_open();
-		if (new < 0) { return new; }
-		if (!atomic_compare_exchange_strong(&ed_rnd_fd, &old, new)) {
-			close(new);
-		}
-	}
-	return ed_rnd_fd;
-}
-
-void
-ed_rnd_close(void)
-{
-	do {
-		int old = atomic_load(&ed_rnd_fd);
-		if (old == -1) { return; }
-		if (atomic_compare_exchange_strong(&ed_rnd_fd, &old, -1)) {
-			close(old);
-			return;
-		}
-	} while(1);
-}
-
 ssize_t
-ed_rnd_buffer(void *buf, size_t len)
+ed_rnd_buffer(int fd, void *buf, size_t len)
 {
-	int fd = ed_rnd_global();
-	if (fd < 0) { return fd; }
+	bool new = false;
+	if (fd < 0) {
+		fd = ed_rnd_open();
+		if (fd < 0) { return fd; }
+		new = true;
+	}
+
+	uint8_t *p = buf;
+	ssize_t rc = 0;
 	do {
-		ssize_t n = read(fd, buf, len);
-		if (n < 0 && errno != EAGAIN) { return ED_ERRNO; }
-		else if (n == 0) {
-			if (atomic_compare_exchange_strong(&ed_rnd_fd, &fd, -1)) {
-				close(fd);
-			}
-			return 0;
-		}
-		else if ((size_t)n == len) {
-			return n;
+		ssize_t n = read(fd, p, len-rc);
+		if (n < 0 && errno != EINTR) { rc = ED_ERRNO; break; }
+		else if (n == 0) { rc = 0; break; }
+		else {
+			if ((rc += n) >= (ssize_t)len) { break; }
+			p += n;
 		}
 	} while(1);
+
+	if (new) { close(fd); }
+	return rc;
 }
 
 int
-ed_rnd_u64(uint64_t *val)
+ed_rnd_u64(int fd, uint64_t *val)
 {
-	return (int)ed_rnd_buffer(val, 8);
+	return (int)ed_rnd_buffer(fd, val, 8);
 }
 
