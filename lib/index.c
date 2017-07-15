@@ -188,10 +188,10 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	}
 
 	fd = OPEN(cfg->index_path, flags, ED_FCREATE|ED_FREPLACE);
-	if (fd < 0) { rc = ED_ERRNO; goto done; }
+	if (fd < 0) { rc = ED_ERRNO; goto error; }
 
 	hdr = ed_pgmap(fd, 0, PG_NINIT);
-	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto done; }
+	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgfree *free_list = (EdPgfree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
 
@@ -237,26 +237,25 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 		} while (0);
 		lock_file(fd, ED_LOCK_UN, 0, PAGESIZE, true);
 	}
+	if (rc < 0) { goto error; }
 
-done:
-	if (rc < 0) {
-		if (hdr != MAP_FAILED) { ed_pgunmap(hdr, PG_NINIT); }
-		if (sfd >= 0) { close(sfd); }
-		if (fd >= 0) { close(fd); }
-	}
-	else {
-		uint64_t f = hdr->flags | ED_FOPEN(cfg->flags);
-		ed_pgalloc_init(&index->alloc, &hdr->alloc, fd, f);
-		index->alloc.free = free_list;
-		index->flags = f;
-		index->seed = hdr->seed;
-		index->epoch = hdr->epoch;
-		index->hdr = hdr;
-		index->keys = NULL;
-		index->blocks = NULL;
-		pthread_rwlock_init(&index->rw, NULL);
-		*slab_fd = sfd;
-	}
+	uint64_t f = hdr->flags | ED_FOPEN(flags);
+	ed_pgalloc_init(&index->alloc, &hdr->alloc, fd, f);
+	index->alloc.free = free_list;
+	index->flags = f;
+	index->seed = hdr->seed;
+	index->epoch = hdr->epoch;
+	index->hdr = hdr;
+	index->keys = NULL;
+	index->blocks = NULL;
+	pthread_rwlock_init(&index->rw, NULL);
+	*slab_fd = sfd;
+	return 0;
+
+error:
+	if (hdr != MAP_FAILED) { ed_pgunmap(hdr, PG_NINIT); }
+	if (sfd >= 0) { close(sfd); }
+	if (fd >= 0) { close(fd); }
 	return rc;
 }
 

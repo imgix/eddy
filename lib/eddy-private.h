@@ -221,11 +221,9 @@ struct EdIndexHdr {
 
 struct EdObjectHdr {
 	uint64_t hash;
-	uint32_t expiry;
 	uint32_t datalen;
 	uint16_t keylen;
 	uint16_t metalen;
-	uint32_t _pad;
 };
 
 struct EdBTree {
