@@ -312,7 +312,7 @@ ED_LOCAL      int ed_index_stat(EdIndex *, FILE *, int flags);
 
 /* Random Module */
 ED_LOCAL      int ed_rnd_open(void);
-ED_LOCAL  ssize_t ed_rnd_buffer(int fd, void *buf, size_t len);
+ED_LOCAL  ssize_t ed_rnd_buf(int fd, void *buf, size_t len);
 ED_LOCAL      int ed_rnd_u64(int fd, uint64_t *);
 
 

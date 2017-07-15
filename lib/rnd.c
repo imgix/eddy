@@ -54,7 +54,7 @@ ed_rnd_open(void)
 }
 
 ssize_t
-ed_rnd_buffer(int fd, void *buf, size_t len)
+ed_rnd_buf(int fd, void *buf, size_t len)
 {
 	bool new = false;
 	if (fd < 0) {
@@ -82,6 +82,6 @@ ed_rnd_buffer(int fd, void *buf, size_t len)
 int
 ed_rnd_u64(int fd, uint64_t *val)
 {
-	return (int)ed_rnd_buffer(fd, val, 8);
+	return (int)ed_rnd_buf(fd, val, 8);
 }
 
