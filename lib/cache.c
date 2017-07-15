@@ -50,15 +50,20 @@ ed_cache_stat(EdCache *cache, FILE *out, int flags)
 	int rc = ed_index_stat(&cache->index, out, flags);
 	if (rc < 0) { return rc; }
 	fprintf(out,
-		"entries: %zu\n"
-		"bytes:\n"
-		"  used: %zu\n"
-		"  wasted: %zu\n"
-		"pages:\n"
-		"  used: %zu\n"
-		"  size: %zu\n"
-		"  count: %zu\n"
-		"  cursor: %zu\n",
+		"slab:\n"
+		"  path: %s\n"
+		"  inode: %llu\n"
+		"  entries: %zu\n"
+		"  bytes:\n"
+		"    used: %zu\n"
+		"    wasted: %zu\n"
+		"  pages:\n"
+		"    used: %zu\n"
+		"    size: %zu\n"
+		"    count: %zu\n"
+		"    cursor: %zu\n",
+		cache->index.hdr->slab_path,
+		cache->index.hdr->slab_ino,
 		(size_t)0,
 		(size_t)cache->bytes_used,
 		(size_t)0,
