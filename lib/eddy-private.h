@@ -43,7 +43,7 @@
 
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-#define ED_INLINE inline __attribute__((always_inline))
+#define ED_INLINE static inline __attribute__((always_inline))
 
 #if BYTE_ORDER == LITTLE_ENDIAN
 # define ed_b16(v) __builtin_bswap16(v)

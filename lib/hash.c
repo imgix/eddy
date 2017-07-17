@@ -9,13 +9,13 @@
 #define XX64_PRIME_4 UINT64_C( 9650029242287828579)
 #define XX64_PRIME_5 UINT64_C( 2870177450012600261)
 
-static inline uint64_t
+ED_INLINE uint64_t
 rotl(uint64_t v, unsigned k)
 {
     return (v << k) | (v >> (64 - k));
 }
 
-static inline uint64_t
+ED_INLINE uint64_t
 xx64_round(uint64_t acc, uint64_t input)
 {
 	acc += input * XX64_PRIME_2;
@@ -24,7 +24,7 @@ xx64_round(uint64_t acc, uint64_t input)
 	return acc;
 }
 
-static inline uint64_t
+ED_INLINE uint64_t
 xx64_merge(uint64_t acc, uint64_t val)
 {
 	val  = xx64_round(0, val);

@@ -114,7 +114,7 @@ struct EdMimeIconList {
 	EdMimeIcon icon_list[];
 };
 
-static inline uint32_t
+ED_INLINE uint32_t
 fetch32(const uint8_t *restrict p)
 {
 	uint32_t result;
@@ -122,7 +122,7 @@ fetch32(const uint8_t *restrict p)
 	return ed_b32(result);
 }
 
-static inline bool
+ED_INLINE bool
 maskeq(const uint8_t *a, const uint8_t *b, const uint8_t *m, size_t len)
 {
 	for (size_t i = 0; i < len; i++) {
