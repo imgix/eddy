@@ -44,7 +44,6 @@ LIBSRC:= lib/cache.c \
 	lib/hash.c \
 	lib/pg.c \
 	lib/btree.c \
-	lib/butil.c \
 	lib/index.c \
 	lib/mkfile.c \
 	lib/time.c
