@@ -51,6 +51,10 @@ BINSRC:= bin/ed-new.c bin/ed-stat.c bin/ed-get.c bin/ed-set.c
 ifeq ($(BUILD_MIME),yes)
   LIBSRC+= lib/mime.c
   BINSRC+= bin/ed-mime.c
+  ifeq ($(BUILD_MIMEDB),yes)
+    LIBSRC+= lib/mimedb.c
+    CFLAGS+= -DED_MIMEDB=1
+  endif
 endif
 ifeq ($(DEBUG_MMAP),yes)
   LIBSRC+= lib/pgtrack.cc lib/backtrace.cc
@@ -290,3 +294,5 @@ $(DESTDIR)$(PREFIX)/include/%.h: lib/%.h | $(DESTDIR)$(PREFIX)/include
 .SECONDARY:
 
 -include $(OBJ:%.o=%.d) $(BINSRC:bin/%.c=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/%.c.d)
+
+$(TMP)/mimedb.c.$(OBJEXT): lib/mimedb.c test/mime.cache

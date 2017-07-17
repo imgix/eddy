@@ -32,6 +32,7 @@ make dynamic # build only the dynamic library and version symlinks
 | --- | --- | --- |
 | `BUILD` | Build mode: `release` or `debug`. | `release` |
 | `BUILD_MIME` | Build the MIME module. This is for both the command line tool and internal `mime.cache` database reader. | `yes` |
+| `BUILD_MIMEDB` | Link the MIME database with the MIME module. This allows the MIME module to work without a local database. | `no` |
 | `BUILD_DEV` | Build the maintainer tools. These are not needed for managing the cache. | `no` for `release`, `yes` for `debug`  |
 | `OPT` | Optimization level of the build. | `3` for `release`, unset for `debug` |
 | `LTO` | Enable link time optimizations. Additionally, this may be set to `amalg` which will produce an amalgamated source build rather than using the compiler LTO. The amalgamated build is always used for the static library any time LTO is enabled. | `yes` for `release`, `no` for `debug` |

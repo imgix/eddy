@@ -114,6 +114,11 @@ struct EdMimeIconList {
 	EdMimeIcon icon_list[];
 };
 
+#if ED_MIMEDB
+extern const uint8_t ed_mimedb_data[];
+extern const unsigned int ed_mimedb_size;
+#endif
+
 ED_INLINE uint32_t
 fetch32(const uint8_t *restrict p)
 {
@@ -186,6 +191,13 @@ check_max_extent(const EdMime *db, const void *end)
 int
 ed_mime_load(EdMime **dbp, const void *data, size_t size, int flags)
 {
+#if ED_MIMEDB
+	if (data == NULL) {
+		data = ed_mimedb_data;
+		size = ed_mimedb_size;
+	}
+#endif
+
 	if (size < sizeof(EdMimeHdr)) { return ED_EMIME_FILE; }
 
 	const EdMimeHdr *hdr = data;
@@ -241,26 +253,52 @@ ed_mime_open(EdMime **dbp, const char *path, int flags)
 {
 	(void)flags;
 
-	int fd = open(path, O_RDONLY);
-	if (fd < 0) { return -1; }
+	const void *data = NULL;
+	size_t size = 0;
+	int rc = 0;
 
-	struct stat stat;
-	void *data;
-	bool ok =
-		fstat(fd, &stat) == 0 &&
-		(data = mmap(NULL, stat.st_size, PROT_READ, MAP_SHARED, fd, 0)) != MAP_FAILED;
-	close(fd);
-	if (!ok) { return -1; }
-
-	madvise(data, stat.st_size, MADV_RANDOM|MADV_WILLNEED);
-	if (flags & ED_FMIME_MLOCK) {
-		mlock(data, stat.st_size);
+	if (path == NULL) {
+		rc = ed_esys(EINVAL);
+	}
+	else {
+		int fd = open(path, O_RDONLY);
+		if (fd < 0) {
+			rc = ED_ERRNO;
+		}
+		else {
+			struct stat stat;
+			bool ok =
+				fstat(fd, &stat) == 0 &&
+				(data = mmap(NULL, stat.st_size, PROT_READ, MAP_SHARED, fd, 0)) != MAP_FAILED;
+			close(fd);
+			if (!ok) {
+				rc = ED_ERRNO;
+			}
+			else {
+				madvise((void *)data, size, MADV_RANDOM|MADV_WILLNEED);
+				if (flags & ED_FMIME_MLOCK) {
+					mlock(data, size);
+				}
+				size = stat.st_size;
+			}
+		}
 	}
 
-	int rc = ed_mime_load(dbp, data, stat.st_size, flags);
+	if (rc < 0) {
+#if ED_MIMEDB
+		data = ed_mimedb_data;
+		size = ed_mimedb_size;
+		rc = 1;
+#else
+		return rc;
+#endif
+	}
+
+	bool mapped = rc == 0;
+	rc = ed_mime_load(dbp, data, size, flags);
 	if (rc == 0) {
 		if (*dbp == NULL) { return ed_esys(EFAULT); }
-		(*dbp)->mapped = true;
+		(*dbp)->mapped = mapped;
 	}
 	return rc;
 }
