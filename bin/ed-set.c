@@ -1,4 +1,5 @@
-#include "eddy-util.h"
+#include "eddy-private.h"
+#include "input.h"
 
 #include <getopt.h>
 #include <err.h>
@@ -77,6 +78,8 @@ main(int argc, char **argv)
 		warnx("faild to create object: %s", ed_strerror(rc));
 	}
 
+	ed_input_final(&data);
+	ed_input_final(&meta);
 	ed_cache_close(&cache);
 #if ED_MMAP_DEBUG
 	if (ed_pgcheck() > 0) { return EXIT_FAILURE; }

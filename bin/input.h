@@ -1,24 +1,14 @@
-#include "eddy-util.h"
+typedef struct EdInput EdInput;
 
-bool
-ed_parse_size(const char *val, long long *out)
-{
-	char *end;
-	long long size = strtoll(val, &end, 10);
-	if (size < 0) { return false; }
-	switch(*end) {
-	case 'k': case 'K': size *= ED_KiB; end++; break;
-	case 'm': case 'M': size *= ED_MiB; end++; break;
-	case 'g': case 'G': size *= ED_GiB; end++; break;
-	case 't': case 'T': size *= ED_TiB; end++; break;
-	case 'p': case 'P': size *= PAGESIZE; end++; break;
-	}
-	if (*end != '\0') { return false; }
-	*out = size;
-	return true;
-}
+struct EdInput {
+	uint8_t *data;
+	size_t length;
+	bool mapped;
+};
 
-int
+#define ed_input_make() ((EdInput){ NULL, 0, false })
+
+static int
 ed_input_read(EdInput *in, int fd, off_t max)
 {
 	struct stat sbuf;
@@ -66,7 +56,7 @@ done_rc:
 	return rc;
 }
 
-int
+static int
 ed_input_fread(EdInput *in, const char *path, off_t max)
 {
 	if (path == NULL || strcmp(path, "-") == 0) {
@@ -79,7 +69,7 @@ ed_input_fread(EdInput *in, const char *path, off_t max)
 	return rc;
 }
 
-void
+static void
 ed_input_final(EdInput *in)
 {
 	if (in->mapped) { munmap(in->data, in->length); }

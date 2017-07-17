@@ -1,4 +1,5 @@
-#include "eddy-util.h"
+#include "eddy-private.h"
+#include "parse_size.h"
 
 // TODO: round new size to PAGESIZE
 

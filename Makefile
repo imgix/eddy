@@ -95,7 +95,6 @@ ifeq ($(LTO),yes)
   OBJEXT:=lto.o
   OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
   OBJA:= $(TMP)/$(LIBNAME).c.o
-  OBJBIN:= $(OBJ) $(TMP)/util.c.$(OBJEXT)
 else
   OBJEXT:=o
   ifeq ($(LTO),amalg)
@@ -104,7 +103,6 @@ else
     OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
   endif
   OBJA:= $(OBJ)
-  OBJBIN:= $(OBJ) $(TMP)/util.c.$(OBJEXT)
 endif
 
 # Setup library names and additional flags.
@@ -192,7 +190,7 @@ else
 endif
 
 # Generate and strip statically linked executable.
-$(BIN)/$(BINNAME)%: $(TMP)/ed-%.c.$(OBJEXT) $(OBJBIN) | $(BIN)
+$(BIN)/$(BINNAME)%: $(TMP)/ed-%.c.$(OBJEXT) $(OBJ) | $(BIN)
 	$(call LINK,$^,$@)
 	@$(STRIP) $@
 
