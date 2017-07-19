@@ -24,7 +24,7 @@ static void __attribute__((unused))
 print_entry(const void *ent, FILE *out)
 {
 	const Entry *e = ent;
-	fprintf(out, "%2llu:%s", e->key, e->name);
+	fprintf(out, "%llu:%s", e->key, e->name);
 }
 
 static void
@@ -439,6 +439,7 @@ test_remove_small(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	ed_btree_print(bt, alloc.fd, sizeof(Entry), stderr, print_entry);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
