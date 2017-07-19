@@ -21,10 +21,10 @@ typedef struct {
 } Entry;
 
 static void __attribute__((unused))
-print_entry(const void *ent, char *buf, size_t len)
+print_entry(const void *ent, FILE *out)
 {
 	const Entry *e = ent;
-	snprintf(buf, len, "%2llu:%s", e->key, e->name);
+	fprintf(out, "%2llu:%s", e->key, e->name);
 }
 
 static void
@@ -170,7 +170,7 @@ test_large(void)
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
-		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
@@ -181,6 +181,11 @@ test_large(void)
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, k);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
@@ -214,6 +219,11 @@ test_large_sequential(void)
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, i);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
@@ -247,6 +257,11 @@ test_large_sequential_reverse(void)
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, i);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
@@ -291,6 +306,11 @@ test_split_leaf_middle_left(void)
 
 	for (size_t i = 0; i <= n; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%zu", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, i);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
@@ -335,6 +355,11 @@ test_split_leaf_middle_right(void)
 
 	for (size_t i = 0; i <= n; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%zu", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, i);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
@@ -378,6 +403,11 @@ test_split_middle_branch(void)
 
 	for (size_t i = 0; i <= LARGE; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%zu", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, i);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
@@ -402,7 +432,7 @@ test_remove_small(void)
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
-		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
@@ -413,6 +443,11 @@ test_remove_small(void)
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, k);
+		mu_assert_str_eq(ent->name, name);
 		mu_assert_int_eq(ed_bsearch_del(&srch), 1);
 		ed_bsearch_final(&srch);
 	}
@@ -428,7 +463,7 @@ test_remove_small(void)
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
-		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
@@ -439,6 +474,11 @@ test_remove_small(void)
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, k);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
@@ -463,7 +503,7 @@ test_remove_large(void)
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
-		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
@@ -474,6 +514,11 @@ test_remove_large(void)
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, k);
+		mu_assert_str_eq(ent->name, name);
 		mu_assert_int_eq(ed_bsearch_del(&srch), 1);
 		ed_bsearch_final(&srch);
 	}
@@ -489,7 +534,7 @@ test_remove_large(void)
 	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
-		snprintf(ent.name, sizeof(ent.name), "a%u", k);
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
@@ -500,6 +545,11 @@ test_remove_large(void)
 	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		Entry *ent = srch.entry;
+		mu_assert_int_eq(ent->key, k);
+		mu_assert_str_eq(ent->name, name);
 		ed_bsearch_final(&srch);
 	}
 
