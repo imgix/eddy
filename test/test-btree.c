@@ -4,7 +4,7 @@
 // Enough entries to get to depth 3.
 // The entry size is bloated to get there in fewer ops.
 #define LARGE 22000
-#define SMALL 10
+#define SMALL 12
 
 static EdPgalloc alloc;
 static const char *path = "/tmp/eddy_test_btree";
@@ -20,11 +20,11 @@ typedef struct {
 	char name[56];
 } Entry;
 
-static void __attribute__((unused))
-print_entry(const void *ent, FILE *out)
+static int __attribute__((unused))
+print_entry(const void *ent, char *buf, size_t len)
 {
 	const Entry *e = ent;
-	fprintf(out, "%llu:%s", e->key, e->name);
+	return snprintf(buf, len, "%llu:%s", e->key, e->name);
 }
 
 static void

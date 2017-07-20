@@ -43,6 +43,9 @@
 
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
 
+#define ED_STR2(n) #n
+#define ED_STR(n) ED_STR2(n)
+
 #define ED_INLINE static inline __attribute__((always_inline))
 
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -295,7 +298,7 @@ ED_LOCAL      int ed_bsearch_set(EdBSearch *, const void *entry);
 ED_LOCAL      int ed_bsearch_del(EdBSearch *);
 ED_LOCAL     void ed_bsearch_final(EdBSearch *);
 
-typedef void (*EdBTreePrint)(const void *, FILE *);
+typedef int (*EdBTreePrint)(const void *, char *buf, size_t len);
 ED_LOCAL     void ed_btree_print(EdBTree *, int fd, size_t esize, FILE *, EdBTreePrint);
 ED_LOCAL      int ed_btree_verify(EdBTree *, int fd, size_t esize, FILE *);
 

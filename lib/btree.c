@@ -730,40 +730,101 @@ ed_bsearch_final(EdBSearch *srch)
 static void
 print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBTreePrint print, bool *stack, int top);
 
-static void
-print_value(const void *value, FILE *out)
+static int
+print_value(const void *value, char *buf, size_t len)
 {
-	fprintf(out, "%llu", ed_fetch64(value));
+	return snprintf(buf, len, "%llu", ed_fetch64(value));
+}
+
+static void
+print_tree_branches(FILE *out, bool *stack, int top)
+{
+	for (int i = 0; i < top; i++) {
+		if (stack[i]) { fprintf(out, "    "); }
+		else          { fprintf(out, "│   "); }
+	}
 }
 
 static void
 print_tree(FILE *out, bool *stack, int top)
 {
-	if (top > 0) {
-		int i;
-		for (i = 0; i < top - 1; i++) {
-			if (stack[i]) { fprintf (out, "    "); }
-			else          { fprintf (out, "│   "); }
-		}
-		if (stack[i]) { fprintf (out, "└── "); }
-		else          { fprintf (out, "├── "); }
+	print_tree_branches(out, stack, top);
+	if (stack[top]) { fprintf(out, "└── "); }
+	else            { fprintf(out, "├── "); }
+}
+
+#define HBAR "╌"
+#define VBAR "┆"
+#define COLS 5
+#define COLW 24
+#define COLB ((sizeof(HBAR)-1)*COLW)
+
+static void
+print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
+{
+	if (n == 0 || i > n) { return; }
+
+	static const char
+		tl[] = "╭", tc[] = "┬", tr[] = "╮",
+		ml[] = "├", mc[] = "┼", mr[] = "┤",
+		bl[] = "╰", bc[] = "┴", br[] = "╯",
+		hbar[] =
+			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
+			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
+			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
+			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR;
+
+	bool last = false;
+	uint32_t end = 0;
+
+	if (i == n) {
+		last = true;
+		uint32_t c = n % COLS;
+		if (c == 0) { c = COLS; }
+		end = i + c;
 	}
+	else if (i % COLS == 0) {
+		end = n < COLS ? n : i + COLS;
+	}
+
+	if (i < end) {
+		if (i) { fprintf(out, VBAR); }
+		fprintf(out, "\n");
+		print_tree_branches(out, stack, top);
+
+		fprintf(out, "%s%.*s", i == 0 ? tl : (i < n ? ml : bl), (int)COLB, hbar);
+		for (i++; i < end; i++) {
+			fprintf(out, "%s%.*s", !last && i < COLS ? tc : (i <= n ? mc : bc), (int)COLB, hbar);
+		}
+		fprintf(out, "%s\n", !last && i <= COLS ? tr : (i <= n ? mr : br));
+
+		if (last) { return; }
+		print_tree_branches(out, stack, top);
+	}
+
+	fprintf(out, VBAR);
 }
 
 static void
 print_leaf(size_t esize, EdBTree *leaf, FILE *out, EdBTreePrint print, bool *stack, int top)
 {
-	fprintf(out, "%s p%u, nkeys=%u\n",
+	fprintf(out, "%s p%u, nkeys=%u",
 			leaf->base.type == ED_PGLEAF ? "leaf" : "overflow",
 			leaf->base.no, leaf->nkeys);
 
 	uint8_t *p = leaf->data;
-	for (uint32_t x = 1, end = leaf->nkeys; x <= end; x++, p += esize) {
-		stack[top-1] = x == end;
-		print_tree(out, stack, top);
-		print(p, out);
-		fprintf(out, "\n");
+	uint32_t n = leaf->nkeys;
+	for (uint32_t i = 0; i < n; i++, p += esize) {
+		char buf[COLW+1];
+		int len = print(p, buf, sizeof(buf));
+		if (len < 0 || len > COLW) {
+			memcpy(buf, "-", 2);
+			len = 1;
+		}
+		print_box(out, i, n, stack, top);
+		fprintf(out, "%-" ED_STR(COLW) ".*s", len, buf);
 	}
+	print_box(out, n, n, stack, top);
 }
 
 static void
@@ -776,11 +837,11 @@ print_branch(int fd, size_t esize, EdBTree *branch, FILE *out, EdBTreePrint prin
 
 	print_tree(out, stack, top);
 	fprintf(out, "< %llu, ", ed_fetch64(p));
-	stack[top-1] = end == 0;
+	stack[top] = end == 0;
 	print_page(fd, esize, p-BRANCH_PTR_SIZE, out, print, stack, top+1);
 
 	for (uint32_t i = 1; i <= end; i++, p += BRANCH_ENTRY_SIZE) {
-		stack[top-1] = i == end;
+		stack[top] = i == end;
 		print_tree(out, stack, top);
 		fprintf(out, "≥ %llu, ", ed_fetch64(p));
 		print_page(fd, esize, p+BRANCH_KEY_SIZE, out, print, stack, top+1);
@@ -823,7 +884,7 @@ verify_overflow(size_t esize, EdBTree *o, FILE *out, uint64_t expect)
 			if (out != NULL) {
 				fprintf(out, "overflow key incorrect: %llu, %llu\n", key, expect);
 				bool stack[16] = {0};
-				print_leaf(esize, o, out, print_value, stack, 1);
+				print_leaf(esize, o, out, print_value, stack, 0);
 			}
 			return -1;
 		}
@@ -849,7 +910,7 @@ verify_leaf(int fd, size_t esize, EdBTree *l, FILE *out, uint64_t min, uint64_t 
 			if (out != NULL) {
 				fprintf(out, "leaf key out of range: %llu, %llu...%llu\n", key, min, max);
 				bool stack[16] = {0};
-				print_leaf(esize, l, out, print_value, stack, 1);
+				print_leaf(esize, l, out, print_value, stack, 0);
 			}
 			return -1;
 		}
@@ -857,7 +918,7 @@ verify_leaf(int fd, size_t esize, EdBTree *l, FILE *out, uint64_t min, uint64_t 
 			if (out != NULL) {
 				fprintf(out, "leaf key out of order: %llu\n", key);
 				bool stack[16] = {0};
-				print_leaf(esize, l, out, print_value, stack, 1);
+				print_leaf(esize, l, out, print_value, stack, 0);
 			}
 			return -1;
 		}
@@ -899,7 +960,7 @@ verify_node(int fd, size_t esize, EdBTree *t, FILE *out, uint64_t min, uint64_t 
 			if (out != NULL) {
 				fprintf(out, "branch key out of range: %llu, %llu...%llu\n", nmax, min, max);
 				bool stack[16] = {0};
-				print_branch(fd, esize, t, out, print_value, stack, 1);
+				print_branch(fd, esize, t, out, print_value, stack, 0);
 			}
 			return -1;
 		}
@@ -933,9 +994,8 @@ ed_btree_print(EdBTree *t, int fd, size_t esize, FILE *out, EdBTreePrint print)
 	}
 
 	fprintf(out, "#<Eddy:BTree:%p>\n", (void *)t);
-
 	bool stack[16] = {0};
-	print_node(fd, esize, t, out, print, stack, 1);
+	print_node(fd, esize, t, out, print, stack, 0);
 }
 
 int
