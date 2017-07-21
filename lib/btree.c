@@ -727,6 +727,23 @@ ed_bsearch_final(EdBSearch *srch)
 
 
 
+#define HBAR "╌"
+#define VBAR "┆"
+
+static const char
+	tl[] = "╭", tc[] = "┬", tr[] = "╮",
+	ml[] = "├", mc[] = "┼", mr[] = "┤",
+	bl[] = "╰", bc[] = "┴", br[] = "╯",
+	hbar[] =
+		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
+		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR;
+
+#define COLS 5
+#define COLW ((sizeof(hbar)-1)/(sizeof(HBAR)-1))
+
+static const char
+	space[COLW] = "                        ";
+
 static void
 print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBTreePrint print, bool *stack, int top);
 
@@ -764,23 +781,6 @@ print_tree(FILE *out, bool *stack, int top)
 		fwrite(s, 1, sizeof(s)-1, out);
 	}
 }
-
-#define HBAR "╌"
-#define VBAR "┆"
-
-static const char
-	tl[] = "╭", tc[] = "┬", tr[] = "╮",
-	ml[] = "├", mc[] = "┼", mr[] = "┤",
-	bl[] = "╰", bc[] = "┴", br[] = "╯",
-	hbar[] =
-		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
-		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR;
-
-#define COLS 5
-#define COLW ((sizeof(hbar)-1)/(sizeof(HBAR)-1))
-
-static const char
-	space[COLW] = "                        ";
 
 static void
 print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
@@ -1008,9 +1008,11 @@ ed_btree_print(EdBTree *t, int fd, size_t esize, FILE *out, EdBTreePrint print)
 		return;
 	}
 
-	fprintf(out, "#<Eddy:BTree:%p>\n", (void *)t);
-	bool stack[16] = {0};
-	print_node(fd, esize, t, out, print, stack, 0);
+	fprintf(out, "#<Eddy:BTree:%p> {\n", (void *)t);
+	bool stack[16] = {1};
+	fwrite(space, 1, 4, out);
+	print_node(fd, esize, t, out, print, stack, 1);
+	fprintf(out, "}\n");
 }
 
 int
