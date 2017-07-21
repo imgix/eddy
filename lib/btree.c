@@ -826,8 +826,13 @@ print_leaf(size_t esize, EdBTree *leaf, FILE *out, EdBTreePrint print, bool *sta
 			leaf->base.type == ED_PGLEAF ? "leaf" : "overflow",
 			leaf->base.no, leaf->nkeys);
 
-	uint8_t *p = leaf->data;
 	uint32_t n = leaf->nkeys;
+	if (n == 0) {
+		fputc('\n', out);
+		return;
+	}
+
+	uint8_t *p = leaf->data;
 	for (uint32_t i = 0; i < n; i++, p += esize) {
 		char buf[COLW+1];
 		int len = print(p, buf, sizeof(buf));
