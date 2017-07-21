@@ -20,11 +20,20 @@ typedef struct {
 	char name[56];
 } Entry;
 
-static int __attribute__((unused))
+static int
 print_entry(const void *ent, char *buf, size_t len)
 {
 	const Entry *e = ent;
 	return snprintf(buf, len, "%11llu  %s", e->key, e->name);
+}
+
+static void
+print_tree(EdBTree *bt, int fd)
+{
+	char *p = getenv("PRINT");
+	if (p && strcmp(p, "1") == 0) {
+		ed_btree_print(bt, fd, sizeof(Entry), stdout, print_entry);
+	}
 }
 
 static void
@@ -73,6 +82,7 @@ test_basic(void)
 	}
 	mu_assert_ptr_ne(bt, NULL);
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 1, sizeof(Entry), &srch), 1);
 
 	ed_pgmark(&bt->base, &t->head, &alloc.dirty);
@@ -138,6 +148,7 @@ test_repeat(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 0, sizeof(Entry), &srch), 1);
 	ed_bsearch_final(&srch);
 	mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, 20, sizeof(Entry), &srch), 1);
@@ -177,6 +188,7 @@ test_large(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
@@ -216,6 +228,7 @@ test_large_sequential(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -254,6 +267,7 @@ test_large_sequential_reverse(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -303,6 +317,7 @@ test_split_leaf_middle_left(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (size_t i = 0; i <= n; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -352,6 +367,7 @@ test_split_leaf_middle_right(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (size_t i = 0; i <= n; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -400,6 +416,7 @@ test_split_middle_branch(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (size_t i = 0; i <= LARGE; i++) {
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, i, sizeof(Entry), &srch), 1);
@@ -439,6 +456,7 @@ test_remove_small(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
@@ -463,19 +481,20 @@ test_remove_small(void)
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
 		Entry ent = { .key = k };
-		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+		snprintf(ent.name, sizeof(ent.name), "b%u", i);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 0);
 		mu_assert_int_eq(ed_bsearch_ins(&srch, &ent, &alloc), 0);
 		ed_bsearch_final(&srch);
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
 		int k = rand_r(&seed);
 		mu_assert_int_eq(ed_btree_search(&bt, alloc.fd, k, sizeof(Entry), &srch), 1);
 		char name[64];
-		snprintf(name, sizeof(name), "a%u", i);
+		snprintf(name, sizeof(name), "b%u", i);
 		Entry *ent = srch.entry;
 		mu_assert_int_eq(ent->key, k);
 		mu_assert_str_eq(ent->name, name);
@@ -524,6 +543,7 @@ test_remove_large(void)
 	}
 
 	mu_assert_int_eq(ed_btree_verify(bt, alloc.fd, sizeof(Entry), stderr), 0);
+	print_tree(bt, alloc.fd);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int k = rand_r(&seed);
