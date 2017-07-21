@@ -738,7 +738,7 @@ static const char
 		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
 		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR;
 
-#define COLS 5
+#define COLS 6
 #define COLW ((sizeof(hbar)-1)/(sizeof(HBAR)-1))
 
 static const char
@@ -832,8 +832,7 @@ print_leaf(size_t esize, EdBTree *leaf, FILE *out, EdBTreePrint print, bool *sta
 		char buf[COLW+1];
 		int len = print(p, buf, sizeof(buf));
 		if (len < 0 || len > (int)COLW) {
-			memcpy(buf, "-", 2);
-			len = 1;
+			len = 0;
 		}
 		print_box(out, i, n, stack, top);
 		fwrite(buf, 1, len, out);

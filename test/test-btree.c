@@ -24,7 +24,7 @@ static int __attribute__((unused))
 print_entry(const void *ent, char *buf, size_t len)
 {
 	const Entry *e = ent;
-	return snprintf(buf, len, "%llu:%s", e->key, e->name);
+	return snprintf(buf, len, "%11llu  %s", e->key, e->name);
 }
 
 static void
