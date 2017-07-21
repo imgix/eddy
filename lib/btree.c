@@ -850,9 +850,9 @@ print_branch(int fd, size_t esize, EdBTree *branch, FILE *out, EdBTreePrint prin
 	uint32_t end = branch->nkeys;
 	uint8_t *p = branch->data + BRANCH_PTR_SIZE;
 
+	stack[top] = end == 0;
 	print_tree(out, stack, top);
 	fprintf(out, "< %llu, ", ed_fetch64(p));
-	stack[top] = end == 0;
 	print_page(fd, esize, p-BRANCH_PTR_SIZE, out, print, stack, top+1);
 
 	for (uint32_t i = 1; i <= end; i++, p += BRANCH_ENTRY_SIZE) {
