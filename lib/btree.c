@@ -740,8 +740,14 @@ static void
 print_tree_branches(FILE *out, bool *stack, int top)
 {
 	for (int i = 0; i < top; i++) {
-		if (stack[i]) { fprintf(out, "    "); }
-		else          { fprintf(out, "│   "); }
+		if (stack[i]) {
+			static const char s[] = "    ";
+			fwrite(s, 1, sizeof(s)-1, out);
+		}
+		else {
+			static const char s[] = "│   ";
+			fwrite(s, 1, sizeof(s)-1, out);
+		}
 	}
 }
 
@@ -749,30 +755,37 @@ static void
 print_tree(FILE *out, bool *stack, int top)
 {
 	print_tree_branches(out, stack, top);
-	if (stack[top]) { fprintf(out, "└── "); }
-	else            { fprintf(out, "├── "); }
+	if (stack[top]) {
+		static const char s[] = "└── ";
+		fwrite(s, 1, sizeof(s)-1, out);
+	}
+	else {
+		static const char s[] = "├── ";
+		fwrite(s, 1, sizeof(s)-1, out);
+	}
 }
 
 #define HBAR "╌"
 #define VBAR "┆"
+
+static const char
+	tl[] = "╭", tc[] = "┬", tr[] = "╮",
+	ml[] = "├", mc[] = "┼", mr[] = "┤",
+	bl[] = "╰", bc[] = "┴", br[] = "╯",
+	hbar[] =
+		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
+		HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR;
+
 #define COLS 5
-#define COLW 24
-#define COLB ((sizeof(HBAR)-1)*COLW)
+#define COLW ((sizeof(hbar)-1)/(sizeof(HBAR)-1))
+
+static const char
+	space[COLW] = "                        ";
 
 static void
 print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
 {
 	if (n == 0 || i > n) { return; }
-
-	static const char
-		tl[] = "╭", tc[] = "┬", tr[] = "╮",
-		ml[] = "├", mc[] = "┼", mr[] = "┤",
-		bl[] = "╰", bc[] = "┴", br[] = "╯",
-		hbar[] =
-			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
-			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
-			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR
-			HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR HBAR;
 
 	bool last = false;
 	uint32_t end = 0;
@@ -789,15 +802,16 @@ print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
 
 	if (i < end) {
 		if (i) { fprintf(out, VBAR); }
-		fprintf(out, "\n");
+		fputc('\n', out);
 		print_tree_branches(out, stack, top);
-
-		fprintf(out, "%s%.*s", i == 0 ? tl : (i < n ? ml : bl), (int)COLB, hbar);
+		fwrite(i == 0 ? tl : (i < n ? ml : bl), 1, sizeof(tl)-1, out);
+		fwrite(hbar, 1, sizeof(hbar)-1, out);
 		for (i++; i < end; i++) {
-			fprintf(out, "%s%.*s", !last && i < COLS ? tc : (i <= n ? mc : bc), (int)COLB, hbar);
+			fwrite(!last && i < COLS ? tc : (i <= n ? mc : bc), 1, sizeof(tc)-1, out);
+			fwrite(hbar, 1, sizeof(hbar)-1, out);
 		}
-		fprintf(out, "%s\n", !last && i <= COLS ? tr : (i <= n ? mr : br));
-
+		fwrite(!last && i <= COLS ? tr : (i <= n ? mr : br), 1, sizeof(tr)-1, out);
+		fputc('\n', out);
 		if (last) { return; }
 		print_tree_branches(out, stack, top);
 	}
@@ -817,12 +831,13 @@ print_leaf(size_t esize, EdBTree *leaf, FILE *out, EdBTreePrint print, bool *sta
 	for (uint32_t i = 0; i < n; i++, p += esize) {
 		char buf[COLW+1];
 		int len = print(p, buf, sizeof(buf));
-		if (len < 0 || len > COLW) {
+		if (len < 0 || len > (int)COLW) {
 			memcpy(buf, "-", 2);
 			len = 1;
 		}
 		print_box(out, i, n, stack, top);
-		fprintf(out, "%-" ED_STR(COLW) ".*s", len, buf);
+		fwrite(buf, 1, len, out);
+		fwrite(space, 1, COLW-len, out);
 	}
 	print_box(out, n, n, stack, top);
 }
