@@ -6,13 +6,13 @@
 #define LARGE 22000
 #define SMALL 12
 
-static EdPgalloc alloc;
+static EdPgAlloc alloc;
 static const char *path = "/tmp/eddy_test_btree";
 
 typedef struct {
 	EdPgno head;
 	uint32_t pad;
-	EdPgallocHdr alloc;
+	EdPgAllocHdr alloc;
 } Tree;
 
 typedef struct {

@@ -43,9 +43,6 @@
 
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-#define ED_STR2(n) #n
-#define ED_STR(n) ED_STR2(n)
-
 #define ED_INLINE static inline __attribute__((always_inline))
 
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -94,10 +91,10 @@ typedef uint64_t EdBlkno;
 typedef uint64_t EdHash;
 
 typedef struct EdPg EdPg;
-typedef struct EdPgfree EdPgfree;
-typedef struct EdPgtail EdPgtail;
-typedef struct EdPgalloc EdPgalloc;
-typedef struct EdPgallocHdr EdPgallocHdr;
+typedef struct EdPgFree EdPgFree;
+typedef struct EdPgTail EdPgTail;
+typedef struct EdPgAlloc EdPgAlloc;
+typedef struct EdPgAllocHdr EdPgAllocHdr;
 
 typedef struct EdBTree EdBTree;
 typedef struct EdBSearch EdBSearch;
@@ -114,10 +111,10 @@ typedef enum EdLock {
 	ED_LOCK_UN = F_UNLCK,
 } EdLock;
 
-struct EdPgalloc {
-	EdPgallocHdr *hdr;
+struct EdPgAlloc {
+	EdPgAllocHdr *hdr;
 	void *pg;
-	EdPgfree *free;
+	EdPgFree *free;
 	uint64_t flags;
 	int fd;
 	uint8_t dirty, free_dirty;
@@ -125,7 +122,7 @@ struct EdPgalloc {
 };
 
 struct EdIndex {
-	EdPgalloc alloc;
+	EdPgAlloc alloc;
 	uint64_t flags;
 	uint64_t seed;
 	int64_t epoch;
@@ -184,18 +181,18 @@ struct EdPg {
 	uint32_t type;
 };
 
-struct EdPgfree {
+struct EdPgFree {
 	EdPg base;
 	EdPgno count;
 #define ED_PGFREE_COUNT ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
 	EdPgno pages[ED_PGFREE_COUNT];
 };
 
-struct EdPgallocHdr {
+struct EdPgAllocHdr {
 	uint16_t size_page;
 	uint16_t size_block;
 	EdPgno free_list;
-	_Atomic struct EdPgtail {
+	_Atomic struct EdPgTail {
 		EdPgno start;
 		EdPgno off;
 	} tail;
@@ -213,7 +210,7 @@ struct EdIndexHdr {
 	EdPgno block_tree;
 	uint64_t seed;
 	int64_t epoch;
-	EdPgallocHdr alloc;
+	EdPgAllocHdr alloc;
 	uint8_t size_align;
 	uint8_t alloc_count;
 	uint8_t _pad[2];
@@ -262,14 +259,14 @@ ED_LOCAL      int ed_pgunmap(void *p, EdPgno count);
 ED_LOCAL      int ed_pgsync(void *p, EdPgno count, int flags, uint8_t lvl);
 ED_LOCAL   void * ed_pgload(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pgmark(EdPg *pg, EdPgno *no, uint8_t *dirty);
-ED_LOCAL      int ed_pgalloc_new(EdPgalloc *, const char *, size_t meta);
-ED_LOCAL     void ed_pgalloc_init(EdPgalloc *, EdPgallocHdr *, int fd, uint64_t flags);
-ED_LOCAL     void ed_pgalloc_close(EdPgalloc *);
-ED_LOCAL     void ed_pgalloc_sync(EdPgalloc *);
-ED_LOCAL   void * ed_pgalloc_meta(EdPgalloc *alloc);
-ED_LOCAL      int ed_pgalloc(EdPgalloc *, EdPg **, EdPgno n, bool exclusive);
-ED_LOCAL     void ed_pgfree(EdPgalloc *, EdPg **, EdPgno n);
-ED_LOCAL EdPgfree * ed_pgfree_list(EdPgalloc *);
+ED_LOCAL      int ed_pgalloc_new(EdPgAlloc *, const char *, size_t meta);
+ED_LOCAL     void ed_pgalloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
+ED_LOCAL     void ed_pgalloc_close(EdPgAlloc *);
+ED_LOCAL     void ed_pgalloc_sync(EdPgAlloc *);
+ED_LOCAL   void * ed_pgalloc_meta(EdPgAlloc *alloc);
+ED_LOCAL      int ed_pgalloc(EdPgAlloc *, EdPg **, EdPgno n, bool exclusive);
+ED_LOCAL     void ed_pgfree(EdPgAlloc *, EdPg **, EdPgno n);
+ED_LOCAL EdPgFree * ed_pgfree_list(EdPgAlloc *);
 #if ED_MMAP_DEBUG
 ED_LOCAL     void ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count);
 ED_LOCAL     void ed_pguntrack(uint8_t *pg, EdPgno count);
@@ -293,7 +290,7 @@ ED_LOCAL   size_t ed_btree_capacity(size_t esize, size_t depth);
 ED_LOCAL     void ed_btree_init(EdBTree *);
 ED_LOCAL      int ed_btree_search(EdBTree **, int fd, uint64_t key, size_t entry_size, EdBSearch *);
 ED_LOCAL      int ed_bsearch_next(EdBSearch *);
-ED_LOCAL      int ed_bsearch_ins(EdBSearch *, const void *entry, EdPgalloc *);
+ED_LOCAL      int ed_bsearch_ins(EdBSearch *, const void *entry, EdPgAlloc *);
 ED_LOCAL      int ed_bsearch_set(EdBSearch *, const void *entry);
 ED_LOCAL      int ed_bsearch_del(EdBSearch *);
 ED_LOCAL     void ed_bsearch_final(EdBSearch *);

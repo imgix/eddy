@@ -1,7 +1,7 @@
 #include "eddy-private.h"
 #include "mu.h"
 
-static EdPgalloc alloc;
+static EdPgAlloc alloc;
 static const char *path = "/tmp/eddy_test_page";
 
 static void
@@ -23,8 +23,8 @@ test_basic(void)
 	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, 0), 0);
 
 	EdPg *pages[2];
-	EdPgfree *free;
-	EdPgtail tail;
+	EdPgFree *free;
+	EdPgTail tail;
 
 	mu_assert_int_eq(ed_pgalloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 

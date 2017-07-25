@@ -502,7 +502,7 @@ split_point(EdBSearch *srch, EdBTree *l)
 }
 
 static int
-overflow_leaf(EdBSearch *srch, EdBNode *leaf, EdPgalloc *alloc)
+overflow_leaf(EdBSearch *srch, EdBNode *leaf, EdPgAlloc *alloc)
 {
 	assert(leaf->tree->nkeys == LEAF_ORDER(srch->entry_size));
 
@@ -536,7 +536,7 @@ done:
 }
 
 static int
-split_leaf(EdBSearch *srch, EdBNode *leaf, int mid, EdPgalloc *alloc)
+split_leaf(EdBSearch *srch, EdBNode *leaf, int mid, EdPgAlloc *alloc)
 {
 	EdBTree *l = leaf->tree;
 	EdPgno npg = srch->nsplits, used = 1;
@@ -603,7 +603,7 @@ split_leaf(EdBSearch *srch, EdBNode *leaf, int mid, EdPgalloc *alloc)
 }
 
 int
-ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgalloc *alloc)
+ed_bsearch_ins(EdBSearch *srch, const void *entry, EdPgAlloc *alloc)
 {
 	if (ed_fetch64(entry) != srch->key) {
 		return ED_EINDEX_KEY_MATCH;

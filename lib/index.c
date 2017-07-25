@@ -173,7 +173,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	hdrnew.flags = ED_FSAVE(flags);
 	hdrnew.epoch = (int64_t)time(NULL);
 	hdrnew.alloc.free_list = PG_ROOT_FREE;
-	hdrnew.alloc.tail = (EdPgtail){ PG_NINIT, 0 };
+	hdrnew.alloc.tail = (EdPgTail){ PG_NINIT, 0 };
 	if (cfg->slab_path == NULL) {
 		int len = snprintf(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1, "%s-slab", cfg->index_path);
 		if (len < 0) { return ED_ERRNO; }
@@ -193,7 +193,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	hdr = ed_pgmap(fd, 0, PG_NINIT);
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
-	EdPgfree *free_list = (EdPgfree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
+	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
 
 	rc = lock_file(fd, ED_LOCK_EX, 0, PAGESIZE, true);
 	if (rc == 0) {
@@ -349,15 +349,15 @@ stat_pages(uint8_t *vec, EdPgno pgno, EdPgno *pages, EdPgno cnt, FILE *out)
 
 // Verifies the integrity of a free list. This will recur to any child free pages.
 static int
-stat_free(EdIndex *index, uint8_t *vec, EdPgfree *fs, FILE *out)
+stat_free(EdIndex *index, uint8_t *vec, EdPgFree *fs, FILE *out)
 {
 	EdPgno c = fs->count;
 	int rc = stat_pages(vec, fs->base.no, fs->pages, c, out);
 	if (rc == 0 && c > 0) {
-		EdPgfree *p = ed_pgmap(index->alloc.fd, fs->pages[0], 1);
+		EdPgFree *p = ed_pgmap(index->alloc.fd, fs->pages[0], 1);
 		if (p == MAP_FAILED) { return ED_ERRNO; }
 		if (p->base.type == ED_PGFREE_CHLD || p->base.type == ED_PGFREE_HEAD) {
-			rc = stat_free(index, vec, (EdPgfree *)p, out);
+			rc = stat_free(index, vec, (EdPgFree *)p, out);
 		}
 		ed_pgunmap(p, 1);
 	}
@@ -367,7 +367,7 @@ stat_free(EdIndex *index, uint8_t *vec, EdPgfree *fs, FILE *out)
 static int
 stat_tail(EdIndex *index, uint8_t *vec, FILE *out)
 {
-	EdPgtail tail = atomic_load(&index->hdr->alloc.tail);
+	EdPgTail tail = atomic_load(&index->hdr->alloc.tail);
 	EdPgno buf[ED_ALLOC_COUNT], n = ED_ALLOC_COUNT - tail.off;
 	for (EdPgno i = 0; i < n; i++) {
 		buf[i] = tail.start + tail.off + i;
