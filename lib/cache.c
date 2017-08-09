@@ -78,6 +78,10 @@ ed_cache_stat(EdCache *cache, FILE *out, int flags)
 int
 ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 {
+	(void)cache;
+	(void)key;
+	(void)len;
+#if 0
 	uint64_t h = ed_hash(key, len, cache->index.seed);
 	EdBSearch srch;
 	EdNodeKey *k;
@@ -100,6 +104,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 
 unlock:
 	ed_index_lock(&cache->index, ED_LOCK_UN, true);
+#endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
 }
@@ -107,6 +112,9 @@ unlock:
 int
 ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 {
+	(void)cache;
+	(void)attr;
+#if 0
 	EdBSearch srch;
 	EdNodeKey key = {
 		.hash = ed_hash(attr->key, attr->key_size, cache->index.seed),
@@ -133,6 +141,7 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 unlock:
 	ed_index_save_trees(&cache->index);
 	ed_index_lock(&cache->index, ED_LOCK_UN, true);
+#endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
 }

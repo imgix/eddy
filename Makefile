@@ -43,6 +43,7 @@ LIBSRC:= lib/cache.c \
 	lib/rnd.c \
 	lib/hash.c \
 	lib/pg.c \
+	lib/tx.c \
 	lib/btree.c \
 	lib/index.c \
 	lib/mkfile.c \

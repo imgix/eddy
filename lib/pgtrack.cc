@@ -17,7 +17,7 @@ void PrintStack(EdBacktrace *bt)
 	bt->Print(idx < 0 ? 0 : idx + 1, stderr);
 }
 
-struct EdPgstate {
+struct EdPgState {
 	EdPgno no;
 	bool active;
 	std::shared_ptr<EdBacktrace> stack;
@@ -25,7 +25,7 @@ struct EdPgstate {
 	void Print() { PrintStack(stack.get()); }
 };
 
-typedef std::map<uintptr_t, EdPgstate> EdPgtrack;
+typedef std::map<uintptr_t, EdPgState> EdPgtrack;
 
 static pthread_rwlock_t track_lock = PTHREAD_RWLOCK_INITIALIZER;
 static EdPgtrack *track = NULL;
@@ -65,7 +65,7 @@ ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count)
 		}
 
 		for (; k < ke; k += PAGESIZE, no++) {
-			EdPgstate state = { no, true, stack };
+			EdPgState state = { no, true, stack };
 			auto result = track->emplace(k, state);
 			if (!result.second) {
 				result.first->second = state;
@@ -120,7 +120,7 @@ ed_pguntrack(uint8_t *pg, EdPgno count)
 
 			for (; k < ke; k += PAGESIZE) {
 				if (skip.find(k) != skip.end()) { continue; }
-				EdPgstate state = { ((EdPg *)k)->no, false, stack };
+				EdPgState state = { ((EdPg *)k)->no, false, stack };
 				auto result = track->emplace(k, state);
 				if (!result.second) {
 					result.first->second = state;

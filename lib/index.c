@@ -62,7 +62,7 @@ static const EdIndexHdr INDEX_DEFAULT = {
 };
 
 static int
-lock_file(int fd, EdLock type, off_t start, off_t len, bool wait)
+ed_flock(int fd, EdLock type, off_t start, off_t len, bool wait)
 {
 	struct flock l = {
 		.l_type = (int)type,
@@ -195,7 +195,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
 
-	rc = lock_file(fd, ED_LOCK_EX, 0, PAGESIZE, true);
+	rc = ed_flock(fd, ED_LOCK_EX, 0, PAGESIZE, true);
 	if (rc == 0) {
 		do {
 			const char *slab_path = hdrnew.slab_path;
@@ -235,7 +235,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 			free_list->count = 0;
 			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
 		} while (0);
-		lock_file(fd, ED_LOCK_UN, 0, PAGESIZE, true);
+		ed_flock(fd, ED_LOCK_UN, 0, PAGESIZE, true);
 	}
 	if (rc < 0) { goto error; }
 
@@ -303,7 +303,7 @@ ed_index_lock(EdIndex *index, EdLock type, bool wait)
 	}
 	if (rc != 0) { return ed_esys(rc); }
 
-	rc = lock_file(index->alloc.fd, type, 0, PAGESIZE, wait);
+	rc = ed_flock(index->alloc.fd, type, 0, PAGESIZE, wait);
 
 	if (rc != 0 || type == ED_LOCK_UN) {
 		pthread_rwlock_unlock(&index->rw);

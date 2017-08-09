@@ -41,6 +41,8 @@
 # endif
 #endif
 
+#define ED_ALIGN(n) ((((n) + (ED_MAX_ALIGN-1)) / ED_MAX_ALIGN) * ED_MAX_ALIGN)
+
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define ED_INLINE static inline __attribute__((always_inline))
@@ -95,10 +97,21 @@ typedef struct EdPgFree EdPgFree;
 typedef struct EdPgTail EdPgTail;
 typedef struct EdPgAlloc EdPgAlloc;
 typedef struct EdPgAllocHdr EdPgAllocHdr;
+typedef struct EdPgMap EdPgMap;
+typedef struct EdPgNode EdPgNode;
 
 typedef struct EdBTree EdBTree;
-typedef struct EdBSearch EdBSearch;
-typedef struct EdBNode EdBNode;
+typedef enum EdBTreeApply {
+	ED_BT_NONE,
+	ED_BT_INSERT,
+	ED_BT_REPLACE,
+	ED_BT_DELETE
+} EdBTreeApply;
+
+typedef struct EdTx EdTx;
+typedef struct EdTxType EdTxType;
+typedef struct EdTxSearch EdTxSearch;
+
 typedef struct EdNodePage EdNodePage;
 typedef struct EdNodeKey EdNodeKey;
 typedef struct EdIndex EdIndex;
@@ -152,25 +165,46 @@ struct EdObject {
 	EdObjectHdr *hdr;
 };
 
-struct EdBSearch {
-	EdBTree **root;       // indirect reference to the root node
-	struct EdBNode {
-		EdBTree *tree;      // tree page
-		EdBNode *parent;    // parent node entry
-		uint8_t dirty;      // dirty state of the tree page
-		uint16_t pindex;    // index of tree in the parent
-	} nodes[16],            // node path to the leaf
-	  extra[16];            // additional mapped nodes
-	uint64_t key;         // key searched for
-	void *entry;          // pointer to the entry in the leaf
-	size_t entry_size;    // size in bytes of the entry
-	uint32_t entry_index; // index of the entry in the leaf
-	int fd;               // file descriptor for mapping pages
-	int nnodes;           // number of nodes in the path list
-	int nsplits;          // number of nodes requiring splits for an insert
-	int nextra;           // number of extra nodes stashed in the node array
-	int match;            // return code of the search
-	int nmatches;         // number of matched keys so far
+struct EdTx {
+	EdPgAlloc *alloc;     // page allocator
+	EdPg **pg;            // array to hold allocated pages
+	unsigned npg;         // number of pages allocated
+	unsigned npgused;     // number of pages used
+
+	struct EdPgNode {
+		union {
+			EdPg *page;       // mapped page
+			EdBTree *tree;    // mapped page as a tree
+		};
+		EdPgNode *parent;     // parent node
+		uint16_t pindex;      // index of page in the parent
+		uint8_t dirty;        // dirty state of the page
+	} *nodes;             // array of node wrapped pages
+	unsigned nnodes;      // length of node array
+	unsigned nnodesused;  // number of nodes used
+
+	int state;
+
+	unsigned ndb;             // number of search objects
+	struct EdTxSearch {
+		EdPgNode *head;       // first node searched
+		EdPgNode *tail;       // current tail node
+		EdPgno *root;         // pointer to page number of root node
+		uint64_t key;         // key searched for
+		void *entry;          // pointer to the entry in the leaf
+		size_t entry_size;    // size in bytes of the entry
+		uint32_t entry_index; // index of the entry in the leaf
+		int nsplits;          // number of nodes requiring splits for an insert
+		int match;            // return code of the search
+		int nmatches;         // number of matched keys so far
+		void *scratch;        // new entry content
+		EdBTreeApply apply;   // replace, insert, or delete entry
+	} db[1];
+};
+
+struct EdTxType {
+	EdPgno *no;
+	size_t entry_size;
 };
 
 #pragma GCC diagnostic push
@@ -256,8 +290,9 @@ ED_LOCAL uint64_t ed_hash(const uint8_t *val, size_t len, uint64_t seed);
 /* Page Module */
 ED_LOCAL   void * ed_pgmap(int fd, EdPgno no, EdPgno count);
 ED_LOCAL      int ed_pgunmap(void *p, EdPgno count);
-ED_LOCAL      int ed_pgsync(void *p, EdPgno count, int flags, uint8_t lvl);
+ED_LOCAL      int ed_pgsync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
 ED_LOCAL   void * ed_pgload(int fd, EdPg **pgp, EdPgno no);
+ED_LOCAL     void ed_pgunload(EdPg **pgp);
 ED_LOCAL     void ed_pgmark(EdPg *pg, EdPgno *no, uint8_t *dirty);
 ED_LOCAL      int ed_pgalloc_new(EdPgAlloc *, const char *, size_t meta);
 ED_LOCAL     void ed_pgalloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
@@ -284,20 +319,26 @@ ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
 #endif
 
 
+/* Transaction Module */
+ED_LOCAL      int ed_txopen(EdTx **, EdPgAlloc *alloc, EdTxType *type, unsigned ntype);
+ED_LOCAL     void ed_txclose(EdTx **, uint64_t flags);
+ED_LOCAL      int ed_txcommit(EdTx *, bool exclusive);
+ED_LOCAL      int ed_txmap(EdTx *, EdPgno, EdPgNode *par, uint16_t pidx, EdPgNode **out);
+ED_LOCAL EdPgNode * ed_txalloc(EdTx *tx, EdPgNode *par, uint16_t pidx);
+ED_LOCAL EdTxSearch * ed_txsearch(EdTx *tx, unsigned db, bool reset);
+
+
 /* B+Tree Module */
-
-ED_LOCAL   size_t ed_btree_capacity(size_t esize, size_t depth);
-ED_LOCAL     void ed_btree_init(EdBTree *);
-ED_LOCAL      int ed_btree_search(EdBTree **, int fd, uint64_t key, size_t entry_size, EdBSearch *);
-ED_LOCAL      int ed_bsearch_next(EdBSearch *);
-ED_LOCAL      int ed_bsearch_ins(EdBSearch *, const void *entry, EdPgAlloc *);
-ED_LOCAL      int ed_bsearch_set(EdBSearch *, const void *entry);
-ED_LOCAL      int ed_bsearch_del(EdBSearch *);
-ED_LOCAL     void ed_bsearch_final(EdBSearch *);
-
 typedef int (*EdBTreePrint)(const void *, char *buf, size_t len);
-ED_LOCAL     void ed_btree_print(EdBTree *, int fd, size_t esize, FILE *, EdBTreePrint);
-ED_LOCAL      int ed_btree_verify(EdBTree *, int fd, size_t esize, FILE *);
+ED_LOCAL   size_t ed_btcapacity(size_t esize, size_t depth);
+ED_LOCAL     void ed_btinit(EdBTree *bt);
+ED_LOCAL      int ed_btfind(EdTx *tx, unsigned db, uint64_t key, void **ent);
+ED_LOCAL      int ed_btnext(EdTx *tx, unsigned db, void **ent);
+ED_LOCAL      int ed_btset(EdTx *tx, unsigned db, const void *ent, bool replace);
+ED_LOCAL      int ed_btdel(EdTx *tx, unsigned db);
+ED_LOCAL     void ed_btapply(EdTx *tx, unsigned db, const void *ent, EdBTreeApply);
+ED_LOCAL     void ed_btprint(EdBTree *, int fd, size_t esize, FILE *, EdBTreePrint);
+ED_LOCAL      int ed_btverify(EdBTree *, int fd, size_t esize, FILE *);
 
 
 /* Index Module */

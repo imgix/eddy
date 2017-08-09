@@ -31,13 +31,14 @@ ed_pgunmap(void *p, EdPgno count)
 }
 
 int
-ed_pgsync(void *p, EdPgno count, int flags, uint8_t lvl)
+ed_pgsync(void *p, EdPgno count, uint64_t flags, uint8_t lvl)
 {
 	switch (lvl) {
 	case 0: return 0;
 	case 1: if (flags & ED_FNOSYNC) { return 0; }
 	}
-	return msync(p, (size_t)count*PAGESIZE, MS_SYNC) < 0 ? ED_ERRNO : 0;
+	int f = (flags & ED_FASYNC) ? MS_SYNC : MS_ASYNC;
+	return msync(p, (size_t)count*PAGESIZE, f) < 0 ? ED_ERRNO : 0;
 }
 
 void *
@@ -56,6 +57,16 @@ ed_pgload(int fd, EdPg **pgp, EdPgno no)
 		*pgp = pg == MAP_FAILED ? NULL : pg;
 	}
 	return pg;
+}
+
+void
+ed_pgunload(EdPg **pgp)
+{
+	EdPg *pg = *pgp;
+	if (pg != NULL) {
+		*pgp = NULL;
+		ed_pgunmap(pg, 1);
+	}
 }
 
 void
