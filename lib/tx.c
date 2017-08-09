@@ -177,7 +177,10 @@ EdPgNode *
 ed_txalloc(EdTx *tx, EdPgNode *par, uint16_t pidx)
 {
 	if (tx->npg == tx->npgused || tx->nnodesused == tx->nnodes) {
-		fprintf(stderr, "too few pages allocated for transaction\n");
+		fprintf(stderr, "*** too few pages allocated for transaction (%u)\n", tx->npg);
+#if ED_BACKTRACE
+		ed_backtrace_print(NULL, 0, stderr);
+#endif
 		abort();
 	}
 	return wrap_node(tx, tx->pg[tx->npgused++], par, pidx, 1);
