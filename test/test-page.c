@@ -20,7 +20,7 @@ test_basic(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, 0), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	EdPg *pages[2];
 	EdPgFree *free;
@@ -37,7 +37,7 @@ test_basic(void)
 	mu_assert_int_eq(free->count, 2);
 
 	ed_pgalloc_close(&alloc);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, 0), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	mu_assert_int_eq(tail.off, 2);
 
