@@ -37,7 +37,6 @@ _Static_assert(sizeof(EdBTree) == PAGESIZE,
 	(sizeof(((EdBTree *)0)->data) / (esize))
 
 #define IS_BRANCH(n) ((n)->base.type == ED_PGBRANCH)
-#define IS_LEAF(n) ((n)->base.type == ED_PGLEAF)
 #define IS_BRANCH_FULL(n) ((n)->nkeys == (BRANCH_ORDER-1))
 #define IS_LEAF_FULL(n, esize) ((n)->nkeys == LEAF_ORDER(esize))
 #define IS_FULL(n, esize) (IS_BRANCH(n) ? IS_BRANCH_FULL(n) : IS_LEAF_FULL(n, esize))
@@ -156,8 +155,8 @@ ed_btfind(EdTx *tx, unsigned db, uint64_t key, void **ent)
 		node = next;
 		srch->tail = node;
 	}
-
-	srch->nsplits += IS_LEAF_FULL(node->tree, esize);
+	if (IS_LEAF_FULL(node->tree, esize)) { srch->nsplits++; }
+	else { srch->nsplits = 0; }
 
 	// Search the leaf node.
 	data = node->tree->data;

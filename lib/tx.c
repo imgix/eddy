@@ -123,7 +123,9 @@ ed_txcommit(EdTx *tx, bool exclusive)
 
 	int rc;
 	unsigned npg = 0;
-	for (unsigned i = 0; i < tx->ndb; npg += tx->db[i].nsplits, i++) {}
+	for (unsigned i = 0; i < tx->ndb; i++) {
+		if (tx->db[i].apply == ED_BT_INSERT) { npg += tx->db[i].nsplits; }
+	}
 	if (npg > tx->nnodes) {
 		rc = ed_esys(ENOBUFS); // FIXME: proper error code
 		goto error;

@@ -336,6 +336,8 @@ page_alloc_free_or_expand(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 int
 ed_pgalloc(EdPgAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 {
+	if (n == 0) { return 0; }
+
 	// Try the lock-free allocation from the tail pages.
 	if (!exclusive) { return page_alloc_tail(alloc, pages, n); }
 
