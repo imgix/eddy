@@ -85,7 +85,7 @@ ed_pgmark(EdPg *pg, EdPgno *no, uint8_t *dirty)
 }
 
 int
-ed_pgalloc_new(EdPgAlloc *alloc, const char *path, size_t meta)
+ed_pgalloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags)
 {
 	int fd = open(path, O_CLOEXEC|O_RDWR|O_CREAT, 0600);
 	if (fd < 0) { return ED_ERRNO; }
@@ -127,7 +127,7 @@ ed_pgalloc_new(EdPgAlloc *alloc, const char *path, size_t meta)
 		hdr->tail = (EdPgTail){ hdrpages+1, 0 };
 	}
 
-	ed_pgalloc_init(alloc, hdr, fd, 0);
+	ed_pgalloc_init(alloc, hdr, fd, flags);
 	alloc->free = free_list;
 	alloc->dirty = 1;
 	alloc->free_dirty = 1;

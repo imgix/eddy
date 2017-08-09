@@ -294,7 +294,7 @@ ED_LOCAL      int ed_pgsync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
 ED_LOCAL   void * ed_pgload(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pgunload(EdPg **pgp);
 ED_LOCAL     void ed_pgmark(EdPg *pg, EdPgno *no, uint8_t *dirty);
-ED_LOCAL      int ed_pgalloc_new(EdPgAlloc *, const char *, size_t meta);
+ED_LOCAL      int ed_pgalloc_new(EdPgAlloc *, const char *, size_t meta, uint64_t flags);
 ED_LOCAL     void ed_pgalloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
 ED_LOCAL     void ed_pgalloc_close(EdPgAlloc *);
 ED_LOCAL     void ed_pgalloc_sync(EdPgAlloc *);

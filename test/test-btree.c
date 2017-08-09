@@ -81,7 +81,7 @@ test_basic(void)
 	Entry *found = NULL;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -109,7 +109,7 @@ test_basic(void)
 	ed_pgalloc_close(&alloc);
 	ed_txclose(&tx, ED_FNOSYNC);
 
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	t = ed_pgalloc_meta(&alloc);
 	type[0].no = &t->head;
@@ -129,7 +129,7 @@ test_repeat(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -183,7 +183,7 @@ test_large(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -223,7 +223,7 @@ test_large_sequential(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -262,7 +262,7 @@ test_large_sequential_reverse(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -301,7 +301,7 @@ test_split_leaf_middle_left(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -352,7 +352,7 @@ test_split_leaf_middle_right(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -403,7 +403,7 @@ test_split_middle_branch(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -453,7 +453,7 @@ test_remove_small(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
@@ -525,7 +525,7 @@ test_remove_large(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree)), 0);
+	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pgalloc_meta(&alloc);
 	t->head = ED_PAGE_NONE;
