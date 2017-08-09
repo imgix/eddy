@@ -361,8 +361,9 @@ ed_pgalloc(EdPgAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 		}
 	}
 
+	if (rc < 0) { return rc; }
 	ed_pgalloc_sync(alloc);
-	return rc < 0 ? rc : (int)n;
+	return (int)n;
 }
 
 // Frees a disused page. This will not reclaim the disk space used for it,
