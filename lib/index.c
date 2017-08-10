@@ -19,8 +19,8 @@
  * +------------------------------+
  */
 
-_Static_assert(sizeof(EdIndexHdr) <= PAGESIZE,
-		"EdIndexHdr too big");
+_Static_assert(sizeof(EdIdxHdr) <= PAGESIZE,
+		"EdIdxHdr too big");
 _Static_assert(sizeof(EdBpt) + ED_NODE_PAGE_COUNT*sizeof(EdNodePage) <= PAGESIZE,
 		"ED_PAGE_PAGE_COUNT is too high");
 _Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
@@ -39,7 +39,7 @@ _Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
 #define PG_NINIT (PG_NHDR + PG_NEXTRA)
 
 
-static const EdIndexHdr INDEX_DEFAULT = {
+static const EdIdxHdr INDEX_DEFAULT = {
 	.base = { 0, ED_PGINDEX },
 	.magic = { 'E', 'D', 'D', 'Y' },
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -62,7 +62,7 @@ static const EdIndexHdr INDEX_DEFAULT = {
 };
 
 static int
-hdr_verify(const EdIndexHdr *hdr, const struct stat *s)
+hdr_verify(const EdIdxHdr *hdr, const struct stat *s)
 {
 	if (s->st_size < (off_t)sizeof(*hdr)) { return ED_EINDEX_SIZE; }
 	if (memcmp(hdr->magic, INDEX_DEFAULT.magic, sizeof(hdr->magic)) != 0) {
@@ -78,7 +78,7 @@ hdr_verify(const EdIndexHdr *hdr, const struct stat *s)
 }
 
 static int
-hdr_verify_slab(const EdIndexHdr *hdr, int64_t size, ino_t ino)
+hdr_verify_slab(const EdIdxHdr *hdr, int64_t size, ino_t ino)
 {
 	if (hdr->slab_page_count != (EdPgno)(size/PAGESIZE)) { return ED_EINDEX_PAGE_COUNT; }
 	if (hdr->slab_ino != (uint64_t)ino) { return ED_ESLAB_INODE; }
@@ -147,9 +147,9 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
 	open(path, (O_CLOEXEC|O_RDWR | (((f) & (ifset)) ? O_CREAT : 0)), 0600)
 
 int
-ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
+ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 {
-	EdIndexHdr *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
+	EdIdxHdr *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
 	int fd = -1, sfd = -1, rc = 0;
 	uint64_t flags = cfg->flags;
@@ -247,7 +247,7 @@ error:
 }
 
 void
-ed_index_close(EdIndex *index)
+ed_idx_close(EdIdx *index)
 {
 	if (index == NULL) { return; }
 	ed_pg_alloc_close(&index->alloc);
@@ -256,7 +256,7 @@ ed_index_close(EdIndex *index)
 }
 
 int
-ed_index_load_trees(EdIndex *index)
+ed_idx_load_trees(EdIdx *index)
 {
 	if (ed_pg_load(index->alloc.fd, (EdPg **)&index->keys, index->hdr->key_tree) == MAP_FAILED ||
 		ed_pg_load(index->alloc.fd, (EdPg **)&index->blocks, index->hdr->block_tree) == MAP_FAILED) {
@@ -266,7 +266,7 @@ ed_index_load_trees(EdIndex *index)
 }
 
 int
-ed_index_save_trees(EdIndex *index)
+ed_idx_save_trees(EdIdx *index)
 {
 	ed_pg_mark(&index->keys->base, &index->hdr->key_tree, &index->alloc.dirty);
 	ed_pg_mark(&index->blocks->base, &index->hdr->block_tree, &index->alloc.dirty);
@@ -275,7 +275,7 @@ ed_index_save_trees(EdIndex *index)
 }
 
 int
-ed_index_lock(EdIndex *index, EdLockType type, bool wait)
+ed_idx_lock(EdIdx *index, EdLockType type, bool wait)
 {
 	return ed_lock(&index->lock, index->alloc.fd, type, wait, index->flags);
 }
@@ -318,7 +318,7 @@ stat_pages(uint8_t *vec, EdPgno pgno, EdPgno *pages, EdPgno cnt, FILE *out)
 
 // Verifies the integrity of a free list. This will recur to any child free pages.
 static int
-stat_free(EdIndex *index, uint8_t *vec, EdPgFree *fs, FILE *out)
+stat_free(EdIdx *index, uint8_t *vec, EdPgFree *fs, FILE *out)
 {
 	EdPgno c = fs->count;
 	int rc = stat_pages(vec, fs->base.no, fs->pages, c, out);
@@ -334,7 +334,7 @@ stat_free(EdIndex *index, uint8_t *vec, EdPgFree *fs, FILE *out)
 }
 
 static int
-stat_tail(EdIndex *index, uint8_t *vec, FILE *out)
+stat_tail(EdIdx *index, uint8_t *vec, FILE *out)
 {
 	EdPgTail tail = atomic_load(&index->hdr->alloc.tail);
 	EdPgno buf[ED_ALLOC_COUNT], n = ED_ALLOC_COUNT - tail.off;
@@ -345,7 +345,7 @@ stat_tail(EdIndex *index, uint8_t *vec, FILE *out)
 }
 
 int
-ed_index_stat(EdIndex *index, FILE *out, int flags)
+ed_idx_stat(EdIdx *index, FILE *out, int flags)
 {
 	struct stat s;
 	if (fstat(index->alloc.fd, &s) < 0) { return ED_ERRNO; }
@@ -380,13 +380,13 @@ ed_index_stat(EdIndex *index, FILE *out, int flags)
 		fprintf(out, "    free:\n");
 		stat_tail(index, vec, out);
 
-		rc = ed_index_lock(index, ED_LOCK_EX, true);
+		rc = ed_idx_lock(index, ED_LOCK_EX, true);
 		if (rc < 0) { goto done; }
 
 		BITSET(vec, index->alloc.hdr->free_list);
 		rc = stat_free(index, vec, ed_pg_free_list(&index->alloc), out);
 
-		ed_index_lock(index, ED_LOCK_UN, true);
+		ed_idx_lock(index, ED_LOCK_UN, true);
 		if (rc < 0) { goto done; }
 
 		fprintf(out, "    lost: [");

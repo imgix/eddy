@@ -45,11 +45,11 @@ task(void *data)
 			break;
 		}
 		else if (rc < pages) {
-			ed_index_lock(&cache->index, ED_LOCK_EX, true);
+			ed_idx_lock(&cache->index, ED_LOCK_EX, true);
 			int nrc = ed_pg_alloc(&cache->index.alloc, p+rc, pages-rc, true);
 			if (nrc < 0) { warnx("failed to allocate page: %s", ed_strerror(nrc)); }
 			else { rc += nrc; }
-			ed_index_lock(&cache->index, ED_LOCK_UN, true);
+			ed_idx_lock(&cache->index, ED_LOCK_UN, true);
 		}
 		if (lose > 0) { 
 			if (rc < lose) {
@@ -63,9 +63,9 @@ task(void *data)
 		}
 		if (usec > 0) { usleep(usec); }
 		if (rc > 0) {
-			ed_index_lock(&cache->index, ED_LOCK_EX, true);
+			ed_idx_lock(&cache->index, ED_LOCK_EX, true);
 			ed_pg_free(&cache->index.alloc, p, rc);
-			ed_index_lock(&cache->index, ED_LOCK_UN, true);
+			ed_idx_lock(&cache->index, ED_LOCK_UN, true);
 		}
 	}
 	return NULL;

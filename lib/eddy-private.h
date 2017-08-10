@@ -114,8 +114,8 @@ typedef struct EdTxnSearch EdTxnSearch;
 
 typedef struct EdNodePage EdNodePage;
 typedef struct EdNodeKey EdNodeKey;
-typedef struct EdIndex EdIndex;
-typedef struct EdIndexHdr EdIndexHdr;
+typedef struct EdIdx EdIdx;
+typedef struct EdIdxHdr EdIdxHdr;
 typedef struct EdObjectHdr EdObjectHdr;
 
 typedef enum EdLockType {
@@ -142,19 +142,19 @@ struct EdPgAlloc {
 	bool from_new;
 };
 
-struct EdIndex {
+struct EdIdx {
 	EdLock lock;
 	EdPgAlloc alloc;
 	uint64_t flags;
 	uint64_t seed;
 	int64_t epoch;
-	EdIndexHdr *hdr;
+	EdIdxHdr *hdr;
 	EdBpt *blocks;
 	EdBpt *keys;
 };
 
 struct EdCache {
-	EdIndex index;
+	EdIdx index;
 	atomic_int ref;
 	int fd;
 	size_t bytes_used;
@@ -242,7 +242,7 @@ struct EdPgAllocHdr {
 	} tail;
 };
 
-struct EdIndexHdr {
+struct EdIdxHdr {
 	EdPg base;
 	char magic[4];
 	char endian;
@@ -359,12 +359,12 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 
 
 /* Index Module */
-ED_LOCAL      int ed_index_open(EdIndex *, const EdConfig *cfg, int *slab_fd);
-ED_LOCAL     void ed_index_close(EdIndex *);
-ED_LOCAL      int ed_index_load_trees(EdIndex *);
-ED_LOCAL      int ed_index_save_trees(EdIndex *);
-ED_LOCAL      int ed_index_lock(EdIndex *, EdLockType type, bool wait);
-ED_LOCAL      int ed_index_stat(EdIndex *, FILE *, int flags);
+ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
+ED_LOCAL     void ed_idx_close(EdIdx *);
+ED_LOCAL      int ed_idx_load_trees(EdIdx *);
+ED_LOCAL      int ed_idx_save_trees(EdIdx *);
+ED_LOCAL      int ed_idx_lock(EdIdx *, EdLockType type, bool wait);
+ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
 
 
 /* Random Module */

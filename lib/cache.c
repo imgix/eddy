@@ -6,7 +6,7 @@ ed_cache_open(EdCache **cachep, const EdConfig *cfg)
 	EdCache *cache = malloc(sizeof(*cache));
 	if (cache == NULL) { return ED_ERRNO; }
 
-	int rc = ed_index_open(&cache->index, cfg, &cache->fd);
+	int rc = ed_idx_open(&cache->index, cfg, &cache->fd);
 	if (rc < 0) {
 		free(cache);
 		return rc;
@@ -35,7 +35,7 @@ ed_cache_close(EdCache **cachep)
 	if (cache != NULL) {
 		*cachep = NULL;
 		if (atomic_fetch_sub(&cache->ref, 1) == 1) {
-			ed_index_close(&cache->index);
+			ed_idx_close(&cache->index);
 			close(cache->fd);
 			free(cache);
 		}
@@ -47,7 +47,7 @@ ed_cache_stat(EdCache *cache, FILE *out, int flags)
 {
 	if (out == NULL) { out = stdout; }
 
-	int rc = ed_index_stat(&cache->index, out, flags);
+	int rc = ed_idx_stat(&cache->index, out, flags);
 	if (rc < 0) { return rc; }
 	fprintf(out,
 		"slab:\n"
@@ -88,10 +88,10 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	int rc;
 	printf("get: key=%.*s, hash=%llu\n", (int)len, key, h);
 
-	rc = ed_index_lock(&cache->index, ED_LOCK_EX, true);
+	rc = ed_idx_lock(&cache->index, ED_LOCK_EX, true);
 	if (rc < 0) { return 0; }
 	
-	rc = ed_index_load_trees(&cache->index);
+	rc = ed_idx_load_trees(&cache->index);
 	if (rc < 0) { goto unlock; }
 
 	rc = ed_btree_search(&cache->index.keys, cache->index.alloc.fd, h, sizeof(*k), &srch);
@@ -103,7 +103,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	if (rc < 0) { goto unlock; }
 
 unlock:
-	ed_index_lock(&cache->index, ED_LOCK_UN, true);
+	ed_idx_lock(&cache->index, ED_LOCK_UN, true);
 #endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
@@ -126,10 +126,10 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 
 	int rc;
 
-	rc = ed_index_lock(&cache->index, ED_LOCK_EX, true);
+	rc = ed_idx_lock(&cache->index, ED_LOCK_EX, true);
 	if (rc < 0) { return 0; }
 
-	rc = ed_index_load_trees(&cache->index);
+	rc = ed_idx_load_trees(&cache->index);
 	if (rc < 0) { goto unlock; }
 
 	rc = ed_btree_search(&cache->index.keys, cache->index.alloc.fd, key.hash, sizeof(key), &srch);
@@ -139,8 +139,8 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 	if (rc < 0) { goto unlock; }
 
 unlock:
-	ed_index_save_trees(&cache->index);
-	ed_index_lock(&cache->index, ED_LOCK_UN, true);
+	ed_idx_save_trees(&cache->index);
+	ed_idx_lock(&cache->index, ED_LOCK_UN, true);
 #endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
