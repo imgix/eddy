@@ -42,7 +42,7 @@ LIBSRC:= lib/cache.c \
 	lib/error.c \
 	lib/rnd.c \
 	lib/hash.c \
-	lib/lock.c \
+	lib/lck.c \
 	lib/pg.c \
 	lib/txn.c \
 	lib/bpt.c \
