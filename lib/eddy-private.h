@@ -291,11 +291,13 @@ struct EdNodeKey {
 #pragma GCC diagnostic pop
 
 
-ED_LOCAL uint64_t
-ed_hash(const uint8_t *val, size_t len, uint64_t seed);
-
-
-/*** Lock Module ***/
+/**
+ * @defgroup  lock  Lock Module
+ *
+ * A combined thread and file lock with shared and exclusive locking modes.
+ *
+ * @{
+ */
 
 /**
  * @brief  Initializes the lock in an unlocked state.
@@ -367,6 +369,8 @@ ed_lck(EdLck *lock, int fd, EdLckType type, bool wait, uint64_t flags);
  */
 ED_LOCAL int
 ed_lck_f(EdLck *lock, int fd, EdLckType type, bool wait);
+
+/** @} */
 
 /*** Page Module ***/
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
@@ -450,6 +454,18 @@ ED_LOCAL     bool ed_expired_now(int64_t epoch, uint32_t exp);
 
 /*** File Module ***/
 ED_LOCAL      int ed_mkfile(int fd, off_t size);
+
+
+/**
+ * @brief  64-bit seeded hash function.
+ *
+ * @param  val  Bytes to hash
+ * @param  len  Number of bytes to hash
+ * @param  seed  Seed for the hash family
+ * @return  64-bit hash value
+ */
+ED_LOCAL uint64_t
+ed_hash(const uint8_t *val, size_t len, uint64_t seed);
 
 
 static inline uint32_t __attribute__((unused))

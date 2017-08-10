@@ -14,9 +14,10 @@
 #define ED_TX_OPEN 1
 
 /**
- * Wraps a mapped page into a node. Nodes are a memory representation used to
- * simplify tracking parent relationships as well as the dirty state of the
- * page's contents.
+ * @brief   Wraps a mapped page into a node.
+ *
+ * Nodes are a memory representation used to simplify tracking parent
+ * relationships as well as the dirty state of the page's contents.
  */
 static EdPgNode *
 wrap_node(EdTxn *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
