@@ -22,8 +22,8 @@
 #define ED_FNOBLOCK      UINT64_C(0x0000020000000000) /* May return EAGAIN for open or create. */
 #define ED_FNOSYNC       UINT64_C(0x0000040000000000) /* Don't perform file syncing. */
 #define ED_FASYNC        UINT64_C(0x0000080000000000) /* Use asynchronous syncing. */
-#define ED_FNOTLOCK      UINT64_C(0x0000100000000000) /* Disable thread locking. */
-#define ED_FNOFLOCK      UINT64_C(0x0000200000000000) /* Disable file locking. */
+#define ED_FNOTLCK       UINT64_C(0x0000100000000000) /* Disable thread locking. */
+#define ED_FNOFLCK       UINT64_C(0x0000200000000000) /* Disable file locking. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /* Reset the transaction when closing. */
 
 // ed_cache_stat flags

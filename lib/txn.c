@@ -1,8 +1,23 @@
 #include "eddy-private.h"
 
+/**
+ * The implements the transaction system for working with multiple database
+ * btrees. These aren't "real" transactions, in that only a single change
+ * operation is supported per database. However, single changes made to
+ * multiple databases are handled as a single change. This is all that's
+ * needed for the index, so the simplicity is preferrable for the moment.
+ * The design of the API is intended to accomodate full transactions if that
+ * does become necessary.
+ */
+
 #define ED_TX_CLOSED 0
 #define ED_TX_OPEN 1
 
+/**
+ * Wraps a mapped page into a node. Nodes are a memory representation used to
+ * simplify tracking parent relationships as well as the dirty state of the
+ * page's contents.
+ */
 static EdPgNode *
 wrap_node(EdTxn *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 {
@@ -71,7 +86,7 @@ ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags)
 {
 	if (tx == NULL || tx->isopen) { return ed_esys(EINVAL); }
 	EdLckType lock = rdonly ? ED_LCK_SH : ED_LCK_EX;
-	int rc = ed_lock(tx->lock, tx->alloc->fd, lock, true, flags);
+	int rc = ed_lck(tx->lock, tx->alloc->fd, lock, true, flags);
 	if (rc < 0) { return rc; }
 	tx->isopen = true;
 	tx->rdonly = rdonly;
@@ -120,7 +135,7 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 	if (tx == NULL) { return; }
 
 	if (tx->isopen) {
-		ed_lock(tx->lock, tx->alloc->fd, ED_LCK_UN, true, flags);
+		ed_lck(tx->lock, tx->alloc->fd, ED_LCK_UN, true, flags);
 	}
 
 	EdPg *heads[tx->ndb];

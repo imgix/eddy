@@ -291,16 +291,84 @@ struct EdNodeKey {
 #pragma GCC diagnostic pop
 
 
-ED_LOCAL uint64_t ed_hash(const uint8_t *val, size_t len, uint64_t seed);
+ED_LOCAL uint64_t
+ed_hash(const uint8_t *val, size_t len, uint64_t seed);
 
 
-/* Lock Module */
-ED_LOCAL     void ed_lock_init(EdLck *lock, off_t start, off_t len);
-ED_LOCAL     void ed_lock_final(EdLck *lock);
-ED_LOCAL      int ed_lock(EdLck *lock, int fd, EdLckType type, bool wait, uint64_t flags);
-ED_LOCAL      int ed_flock(EdLck *lock, int fd, EdLckType type, bool wait);
+/*** Lock Module ***/
 
-/* Page Module */
+/**
+ * @brief  Initializes the lock in an unlocked state.
+ *
+ * The lock controls both thread-level, and file-level reader/writer locking.
+ * A byte range is specified for file locking, allowing multiple independant
+ * locks per file.
+ *
+ * @param  lock  Pointer to a lock value
+ * @param  start  Starting byte off
+ * @param  len  Number of bytes from #start
+ */
+ED_LOCAL void
+ed_lck_init(EdLck *lock, off_t start, off_t len);
+
+/**
+ * @brief  Cleans up any resources for the lock.
+ *
+ * It is expected that the lock has been released by #ed_lck().
+ *
+ * @param  lock  Pointer to a lock value
+ */
+ED_LOCAL void
+ed_lck_final(EdLck *lock);
+
+/**
+ * @brief  Controls the lock state.
+ *
+ * This is used to both aquires a lock (shared or exlusive) and release it.
+ * It is undefined behavior to acquire a lock multiple times. The lock must
+ * be released before #ed_lck_final().
+ * 
+ * Supported values for #type are:
+ * <dl>
+ *     <dt>#ED_LCK_SH</dt>
+ *     <dd>Acquires a read-only shared lock.</dd>
+ *     <dt>#ED_LCK_EX</dt>
+ *     <dd>Acquires a read-write exclusive lock.</dd>
+ *     <dt>#ED_LCK_UN</dt>
+ *     <dd>Unlocks either the shared or exclusive lock.</dd>
+ * </dl>
+ * 
+ * Supported flags are:
+ * <dl>
+ *     <dt>#ED_FNOTLCK</dt>
+ *     <dd>Disable thread locking.</dd>
+ *     <dt>#ED_FNOFLCK</dt>
+ *     <dd>Disable file locking.</dd>
+ * </dl>
+ *
+ * @param  lock  Pointer to a lock value
+ * @param  fd  Open file descriptor to lock
+ * @param  type  The lock action to take
+ * @param  wait  Block the thread until the lock may be acquired
+ * @param  flags  Modify locking behavior
+ */
+ED_LOCAL int
+ed_lck(EdLck *lock, int fd, EdLckType type, bool wait, uint64_t flags);
+
+/**
+ * @brief  Controls the lock state for file locking only.
+ *
+ * This must be used with care.
+ *
+ * @param  lock  Pointer to a lock value
+ * @param  fd  Open file descriptor to lock
+ * @param  type  The lock action to take
+ * @param  wait  Block the thread until the lock may be acquired
+ */
+ED_LOCAL int
+ed_lck_f(EdLck *lock, int fd, EdLckType type, bool wait);
+
+/*** Page Module ***/
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
 ED_LOCAL      int ed_pg_sync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
@@ -322,6 +390,7 @@ ED_LOCAL      int ed_pg_check(void);
 #endif
 
 
+/*** Backtrace Module ***/
 #if ED_BACKTRACE
 typedef struct EdBacktrace EdBacktrace;
 
@@ -332,7 +401,7 @@ ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
 #endif
 
 
-/* Transaction Module */
+/*** Transaction Module ***/
 ED_LOCAL      int ed_txn_new(EdTxn **, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype);
 ED_LOCAL      int ed_txn_open(EdTxn *, bool rdonly, uint64_t flags);
 ED_LOCAL      int ed_txn_commit(EdTxn **, uint64_t flags);
@@ -342,7 +411,7 @@ ED_LOCAL EdPgNode * ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
 ED_LOCAL EdTxnSearch * ed_txn_search(EdTxn *tx, unsigned db, bool reset);
 
 
-/* B+Tree Module */
+/*** B+Tree Module ***/
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
 ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
 ED_LOCAL     void ed_bpt_init(EdBpt *bt);
@@ -355,7 +424,7 @@ ED_LOCAL     void ed_bpt_print(EdBpt *, int fd, size_t esize, FILE *, EdBptPrint
 ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 
 
-/* Index Module */
+/*** Index Module ***/
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL      int ed_idx_load_trees(EdIdx *);
@@ -364,13 +433,13 @@ ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type, bool wait);
 ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
 
 
-/* Random Module */
+/*** Random Module ***/
 ED_LOCAL      int ed_rnd_open(void);
 ED_LOCAL  ssize_t ed_rnd_buf(int fd, void *buf, size_t len);
 ED_LOCAL      int ed_rnd_u64(int fd, uint64_t *);
 
 
-/* Time Module */
+/*** Time Module ***/
 ED_LOCAL  int64_t ed_now(int64_t epoch);
 ED_LOCAL uint32_t ed_expire(int64_t epoch, time_t ttlsec);
 ED_LOCAL   time_t ed_ttl_at(int64_t epoch, uint32_t exp, time_t t);
@@ -379,7 +448,7 @@ ED_LOCAL     bool ed_expired_at(int64_t epoch, uint32_t exp, time_t t);
 ED_LOCAL     bool ed_expired_now(int64_t epoch, uint32_t exp);
 
 
-/* File Module */
+/*** File Module ***/
 ED_LOCAL      int ed_mkfile(int fd, off_t size);
 
 

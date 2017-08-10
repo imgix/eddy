@@ -6,7 +6,8 @@
 #define LARGE 22000
 #define SMALL 12
 
-#define FOPEN (ED_FNOTLOCK|ED_FNOFLOCK)
+// These flags aren't terribly safe to use, but they do speed up the tests.
+#define FOPEN (ED_FNOTLCK|ED_FNOFLCK)
 #define FCLOSE (FOPEN|ED_FNOSYNC)
 #define FRESET (FCLOSE|ED_FRESET)
 
@@ -84,7 +85,7 @@ test_basic(void)
 
 	Entry *found = NULL;
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -135,7 +136,7 @@ test_repeat(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -196,7 +197,7 @@ test_large(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -240,7 +241,7 @@ test_large_sequential(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -283,7 +284,7 @@ test_large_sequential_reverse(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -326,7 +327,7 @@ test_split_leaf_middle_left(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -381,7 +382,7 @@ test_split_leaf_middle_right(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -436,7 +437,7 @@ test_split_middle_branch(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -490,7 +491,7 @@ test_remove_small(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
@@ -567,7 +568,7 @@ test_remove_large(void)
 	mu_teardown = cleanup;
 
 	EdLck lock;
-	ed_lock_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
