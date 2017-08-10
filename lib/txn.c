@@ -17,7 +17,7 @@ wrap_node(EdTxn *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 }
 
 int
-ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLock *lock, EdTxnType *type, unsigned ntype)
+ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype)
 {
 	unsigned nnodes = ntype * 16;
 	int rc = 0;
@@ -70,7 +70,7 @@ int
 ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags)
 {
 	if (tx == NULL || tx->isopen) { return ed_esys(EINVAL); }
-	EdLockType lock = rdonly ? ED_LOCK_SH : ED_LOCK_EX;
+	EdLckType lock = rdonly ? ED_LCK_SH : ED_LCK_EX;
 	int rc = ed_lock(tx->lock, tx->alloc->fd, lock, true, flags);
 	if (rc < 0) { return rc; }
 	tx->isopen = true;
@@ -120,7 +120,7 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 	if (tx == NULL) { return; }
 
 	if (tx->isopen) {
-		ed_lock(tx->lock, tx->alloc->fd, ED_LOCK_UN, true, flags);
+		ed_lock(tx->lock, tx->alloc->fd, ED_LCK_UN, true, flags);
 	}
 
 	EdPg *heads[tx->ndb];

@@ -118,19 +118,16 @@ typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
 typedef struct EdObjectHdr EdObjectHdr;
 
-typedef enum EdLockType {
-	ED_LOCK_SH = F_RDLCK,
-	ED_LOCK_EX = F_WRLCK,
-	ED_LOCK_UN = F_UNLCK,
-} EdLockType;
+typedef enum EdLckType {
+	ED_LCK_SH = F_RDLCK,
+	ED_LCK_EX = F_WRLCK,
+	ED_LCK_UN = F_UNLCK,
+} EdLckType;
 
-typedef struct flock EdFLock;
-typedef pthread_rwlock_t EdRWLock;
-
-typedef struct EdLock {
-	EdFLock f;
-	EdRWLock rw;
-} EdLock;
+typedef struct EdLck {
+	struct flock f;
+	pthread_rwlock_t rw;
+} EdLck;
 
 struct EdPgAlloc {
 	EdPgAllocHdr *hdr;
@@ -143,7 +140,7 @@ struct EdPgAlloc {
 };
 
 struct EdIdx {
-	EdLock lock;
+	EdLck lock;
 	EdPgAlloc alloc;
 	uint64_t flags;
 	uint64_t seed;
@@ -174,7 +171,7 @@ struct EdObject {
 };
 
 struct EdTxn {
-	EdLock *lock;         // reference to shared lock
+	EdLck *lock;         // reference to shared lock
 	EdPgAlloc *alloc;     // page allocator
 	EdPg **pg;            // array to hold allocated pages
 	unsigned npg;         // number of pages allocated
@@ -298,10 +295,10 @@ ED_LOCAL uint64_t ed_hash(const uint8_t *val, size_t len, uint64_t seed);
 
 
 /* Lock Module */
-ED_LOCAL     void ed_lock_init(EdLock *lock, off_t start, off_t len);
-ED_LOCAL     void ed_lock_final(EdLock *lock);
-ED_LOCAL      int ed_lock(EdLock *lock, int fd, EdLockType type, bool wait, uint64_t flags);
-ED_LOCAL      int ed_flock(EdLock *lock, int fd, EdLockType type, bool wait);
+ED_LOCAL     void ed_lock_init(EdLck *lock, off_t start, off_t len);
+ED_LOCAL     void ed_lock_final(EdLck *lock);
+ED_LOCAL      int ed_lock(EdLck *lock, int fd, EdLckType type, bool wait, uint64_t flags);
+ED_LOCAL      int ed_flock(EdLck *lock, int fd, EdLckType type, bool wait);
 
 /* Page Module */
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
@@ -336,7 +333,7 @@ ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
 
 
 /* Transaction Module */
-ED_LOCAL      int ed_txn_new(EdTxn **, EdPgAlloc *alloc, EdLock *lock, EdTxnType *type, unsigned ntype);
+ED_LOCAL      int ed_txn_new(EdTxn **, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype);
 ED_LOCAL      int ed_txn_open(EdTxn *, bool rdonly, uint64_t flags);
 ED_LOCAL      int ed_txn_commit(EdTxn **, uint64_t flags);
 ED_LOCAL     void ed_txn_close(EdTxn **, uint64_t flags);
@@ -363,7 +360,7 @@ ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL      int ed_idx_load_trees(EdIdx *);
 ED_LOCAL      int ed_idx_save_trees(EdIdx *);
-ED_LOCAL      int ed_idx_lock(EdIdx *, EdLockType type, bool wait);
+ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type, bool wait);
 ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
 
 

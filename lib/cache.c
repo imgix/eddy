@@ -88,7 +88,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	int rc;
 	printf("get: key=%.*s, hash=%llu\n", (int)len, key, h);
 
-	rc = ed_idx_lock(&cache->index, ED_LOCK_EX, true);
+	rc = ed_idx_lock(&cache->index, ED_LCK_EX, true);
 	if (rc < 0) { return 0; }
 	
 	rc = ed_idx_load_trees(&cache->index);
@@ -103,7 +103,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	if (rc < 0) { goto unlock; }
 
 unlock:
-	ed_idx_lock(&cache->index, ED_LOCK_UN, true);
+	ed_idx_lock(&cache->index, ED_LCK_UN, true);
 #endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
@@ -126,7 +126,7 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 
 	int rc;
 
-	rc = ed_idx_lock(&cache->index, ED_LOCK_EX, true);
+	rc = ed_idx_lock(&cache->index, ED_LCK_EX, true);
 	if (rc < 0) { return 0; }
 
 	rc = ed_idx_load_trees(&cache->index);
@@ -140,7 +140,7 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 
 unlock:
 	ed_idx_save_trees(&cache->index);
-	ed_idx_lock(&cache->index, ED_LOCK_UN, true);
+	ed_idx_lock(&cache->index, ED_LCK_UN, true);
 #endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);

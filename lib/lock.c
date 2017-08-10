@@ -1,10 +1,10 @@
 #include "eddy-private.h"
 
 void
-ed_lock_init(EdLock *lock, off_t start, off_t len)
+ed_lock_init(EdLck *lock, off_t start, off_t len)
 {
 	struct flock f = {
-		.l_type = (int)ED_LOCK_UN,
+		.l_type = (int)ED_LCK_UN,
 		.l_whence = SEEK_SET,
 		.l_start = start,
 		.l_len = len,
@@ -14,22 +14,22 @@ ed_lock_init(EdLock *lock, off_t start, off_t len)
 }
 
 void
-ed_lock_final(EdLock *lock)
+ed_lock_final(EdLck *lock)
 {
 	pthread_rwlock_destroy(&lock->rw);
 }
 
 int
-ed_lock(EdLock *lock, int fd, EdLockType type, bool wait, uint64_t flags)
+ed_lock(EdLck *lock, int fd, EdLckType type, bool wait, uint64_t flags)
 {
 	int rc = 0;
 	if (!(flags & ED_FNOTLOCK)) {
-		if (type == ED_LOCK_EX) {
+		if (type == ED_LCK_EX) {
 			rc = wait ?
 				pthread_rwlock_wrlock(&lock->rw) :
 				pthread_rwlock_trywrlock(&lock->rw);
 		}
-		else if (type == ED_LOCK_SH) {
+		else if (type == ED_LCK_SH) {
 			rc = wait ?
 				pthread_rwlock_rdlock(&lock->rw) :
 				pthread_rwlock_tryrdlock(&lock->rw);
@@ -41,14 +41,14 @@ ed_lock(EdLock *lock, int fd, EdLockType type, bool wait, uint64_t flags)
 		rc = ed_flock(lock, fd, type, wait);
 	}
 
-	if ((rc != 0 || type == ED_LOCK_UN) && !(flags & ED_FNOTLOCK)) {
+	if ((rc != 0 || type == ED_LCK_UN) && !(flags & ED_FNOTLOCK)) {
 		pthread_rwlock_unlock(&lock->rw);
 	}
 	return rc;
 }
 
 int
-ed_flock(EdLock *lock, int fd, EdLockType type, bool wait)
+ed_flock(EdLck *lock, int fd, EdLckType type, bool wait)
 {
 	struct flock f = lock->f;
 	f.l_type = (int)type;

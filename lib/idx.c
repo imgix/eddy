@@ -179,10 +179,10 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
-	rc = ed_flock(&lock, fd, ED_LOCK_EX, true);
+	rc = ed_flock(&lock, fd, ED_LCK_EX, true);
 	if (rc == 0) {
 		do {
 			const char *slab_path = hdrnew.slab_path;
@@ -222,7 +222,7 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 			free_list->count = 0;
 			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
 		} while (0);
-		ed_flock(&lock, fd, ED_LOCK_UN, true);
+		ed_flock(&lock, fd, ED_LCK_UN, true);
 	}
 	if (rc < 0) { goto error; }
 
@@ -275,7 +275,7 @@ ed_idx_save_trees(EdIdx *index)
 }
 
 int
-ed_idx_lock(EdIdx *index, EdLockType type, bool wait)
+ed_idx_lock(EdIdx *index, EdLckType type, bool wait)
 {
 	return ed_lock(&index->lock, index->alloc.fd, type, wait, index->flags);
 }
@@ -380,13 +380,13 @@ ed_idx_stat(EdIdx *index, FILE *out, int flags)
 		fprintf(out, "    free:\n");
 		stat_tail(index, vec, out);
 
-		rc = ed_idx_lock(index, ED_LOCK_EX, true);
+		rc = ed_idx_lock(index, ED_LCK_EX, true);
 		if (rc < 0) { goto done; }
 
 		BITSET(vec, index->alloc.hdr->free_list);
 		rc = stat_free(index, vec, ed_pg_free_list(&index->alloc), out);
 
-		ed_idx_lock(index, ED_LOCK_UN, true);
+		ed_idx_lock(index, ED_LCK_UN, true);
 		if (rc < 0) { goto done; }
 
 		fprintf(out, "    lost: [");

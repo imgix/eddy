@@ -83,7 +83,7 @@ test_basic(void)
 	mu_teardown = cleanup;
 
 	Entry *found = NULL;
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -134,7 +134,7 @@ test_repeat(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -195,7 +195,7 @@ test_large(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -239,7 +239,7 @@ test_large_sequential(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -282,7 +282,7 @@ test_large_sequential_reverse(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -325,7 +325,7 @@ test_split_leaf_middle_left(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -380,7 +380,7 @@ test_split_leaf_middle_right(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -435,7 +435,7 @@ test_split_middle_branch(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -489,7 +489,7 @@ test_remove_small(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
@@ -566,7 +566,7 @@ test_remove_large(void)
 {
 	mu_teardown = cleanup;
 
-	EdLock lock;
+	EdLck lock;
 	ed_lock_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
