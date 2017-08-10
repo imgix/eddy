@@ -21,9 +21,9 @@
 
 _Static_assert(sizeof(EdIndexHdr) <= PAGESIZE,
 		"EdIndexHdr too big");
-_Static_assert(sizeof(EdBTree) + ED_NODE_PAGE_COUNT*sizeof(EdNodePage) <= PAGESIZE,
+_Static_assert(sizeof(EdBpt) + ED_NODE_PAGE_COUNT*sizeof(EdNodePage) <= PAGESIZE,
 		"ED_PAGE_PAGE_COUNT is too high");
-_Static_assert(sizeof(EdBTree) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
+_Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
 		"ED_NODE_KEY_COUNT is too high");
 
 #define BITMASK(b) (1 << ((b) % 8))

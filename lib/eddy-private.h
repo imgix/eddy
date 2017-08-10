@@ -76,8 +76,8 @@
 #define ED_PGLEAF      UINT32_C(0x2dd39a85)
 #define ED_PGOVERFLOW  UINT32_C(0x09c2fd2f)
 
-#define ED_NODE_PAGE_COUNT ((PAGESIZE - sizeof(EdBTree)) / sizeof(EdNodePage))
-#define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBTree)) / sizeof(EdNodeKey))
+#define ED_NODE_PAGE_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodePage))
+#define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeKey))
 
 #define ED_PAGE_NONE UINT32_MAX
 #define ED_BLK_NONE UINT64_MAX
@@ -100,13 +100,13 @@ typedef struct EdPgAllocHdr EdPgAllocHdr;
 typedef struct EdPgMap EdPgMap;
 typedef struct EdPgNode EdPgNode;
 
-typedef struct EdBTree EdBTree;
-typedef enum EdBTreeApply {
-	ED_BT_NONE,
-	ED_BT_INSERT,
-	ED_BT_REPLACE,
-	ED_BT_DELETE
-} EdBTreeApply;
+typedef struct EdBpt EdBpt;
+typedef enum EdBptApply {
+	ED_BPT_NONE,
+	ED_BPT_INSERT,
+	ED_BPT_REPLACE,
+	ED_BPT_DELETE
+} EdBptApply;
 
 typedef struct EdTxn EdTxn;
 typedef struct EdTxnType EdTxnType;
@@ -149,8 +149,8 @@ struct EdIndex {
 	uint64_t seed;
 	int64_t epoch;
 	EdIndexHdr *hdr;
-	EdBTree *blocks;
-	EdBTree *keys;
+	EdBpt *blocks;
+	EdBpt *keys;
 };
 
 struct EdCache {
@@ -183,7 +183,7 @@ struct EdTxn {
 	struct EdPgNode {
 		union {
 			EdPg *page;       // mapped page
-			EdBTree *tree;    // mapped page as a tree
+			EdBpt *tree;    // mapped page as a tree
 		};
 		EdPgNode *parent;     // parent node
 		uint16_t pindex;      // index of page in the parent
@@ -208,7 +208,7 @@ struct EdTxn {
 		int match;            // return code of the search
 		int nmatches;         // number of matched keys so far
 		void *scratch;        // new entry content
-		EdBTreeApply apply;   // replace, insert, or delete entry
+		EdBptApply apply;   // replace, insert, or delete entry
 	} db[1];
 };
 
@@ -270,7 +270,7 @@ struct EdObjectHdr {
 	uint16_t metalen;
 };
 
-struct EdBTree {
+struct EdBpt {
 	EdPg base;
 	EdPgno right;
 	uint16_t vers;
@@ -346,16 +346,16 @@ ED_LOCAL EdTxnSearch * ed_txn_search(EdTxn *tx, unsigned db, bool reset);
 
 
 /* B+Tree Module */
-typedef int (*EdBTreePrint)(const void *, char *buf, size_t len);
-ED_LOCAL   size_t ed_bt_capacity(size_t esize, size_t depth);
-ED_LOCAL     void ed_bt_init(EdBTree *bt);
-ED_LOCAL      int ed_bt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent);
-ED_LOCAL      int ed_bt_next(EdTxn *tx, unsigned db, void **ent);
-ED_LOCAL      int ed_bt_set(EdTxn *tx, unsigned db, const void *ent, bool replace);
-ED_LOCAL      int ed_bt_del(EdTxn *tx, unsigned db);
-ED_LOCAL     void ed_bt_apply(EdTxn *tx, unsigned db, const void *ent, EdBTreeApply);
-ED_LOCAL     void ed_bt_print(EdBTree *, int fd, size_t esize, FILE *, EdBTreePrint);
-ED_LOCAL      int ed_bt_verify(EdBTree *, int fd, size_t esize, FILE *);
+typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
+ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
+ED_LOCAL     void ed_bpt_init(EdBpt *bt);
+ED_LOCAL      int ed_bpt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent);
+ED_LOCAL      int ed_bpt_next(EdTxn *tx, unsigned db, void **ent);
+ED_LOCAL      int ed_bpt_set(EdTxn *tx, unsigned db, const void *ent, bool replace);
+ED_LOCAL      int ed_bpt_del(EdTxn *tx, unsigned db);
+ED_LOCAL     void ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApply);
+ED_LOCAL     void ed_bpt_print(EdBpt *, int fd, size_t esize, FILE *, EdBptPrint);
+ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 
 
 /* Index Module */

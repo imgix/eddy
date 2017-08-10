@@ -22,8 +22,8 @@
  * start with a 64-bit key.
  */
 
-_Static_assert(sizeof(EdBTree) == PAGESIZE,
-		"EdBTree size invalid");
+_Static_assert(sizeof(EdBpt) == PAGESIZE,
+		"EdBpt size invalid");
 
 #define BRANCH_KEY_SIZE 8
 #define BRANCH_PTR_SIZE (sizeof(EdPgno))
@@ -31,10 +31,10 @@ _Static_assert(sizeof(EdBTree) == PAGESIZE,
 #define BRANCH_NEXT(pg) ((EdPgno *)((uint8_t *)(pg) + BRANCH_ENTRY_SIZE))
 
 #define BRANCH_ORDER \
-	(((sizeof(((EdBTree *)0)->data) - BRANCH_PTR_SIZE) / BRANCH_ENTRY_SIZE) + 1)
+	(((sizeof(((EdBpt *)0)->data) - BRANCH_PTR_SIZE) / BRANCH_ENTRY_SIZE) + 1)
 
 #define LEAF_ORDER(esize) \
-	(sizeof(((EdBTree *)0)->data) / (esize))
+	(sizeof(((EdBpt *)0)->data) / (esize))
 
 #define IS_BRANCH(n) ((n)->base.type == ED_PGBRANCH)
 #define IS_BRANCH_FULL(n) ((n)->nkeys == (BRANCH_ORDER-1))
@@ -54,7 +54,7 @@ map_extra(EdTxn *tx, EdPgNode *parent, uint16_t idx, EdPgNode **out)
 }
 
 static inline uint64_t
-branch_key(EdBTree *b, uint16_t idx)
+branch_key(EdBpt *b, uint16_t idx)
 {
 	assert(idx <= b->nkeys);
 	if (idx == 0) { return 0; }
@@ -71,14 +71,14 @@ branch_set_key(EdPgNode *b, uint16_t idx, uint64_t val)
 }
 
 static inline uint64_t
-leaf_key(EdBTree *l, uint16_t idx, size_t esize)
+leaf_key(EdBpt *l, uint16_t idx, size_t esize)
 {
 	assert(idx < l->nkeys);
 	return ed_fetch64(l->data + idx*esize);
 }
 
 static inline uint16_t
-branch_index(EdBTree *node, EdPgno *ptr)
+branch_index(EdBpt *node, EdPgno *ptr)
 {
 	assert(node->data <= (uint8_t *)ptr);
 	assert((uint8_t *)ptr < node->data + BRANCH_ORDER*BRANCH_ENTRY_SIZE);
@@ -88,13 +88,13 @@ branch_index(EdBTree *node, EdPgno *ptr)
 
 
 size_t
-ed_bt_capacity(size_t esize, size_t depth)
+ed_bpt_capacity(size_t esize, size_t depth)
 {
 	return llround(pow(BRANCH_ORDER, depth-1) * LEAF_ORDER(esize));
 }
 
 void
-ed_bt_init(EdBTree *bt)
+ed_bpt_init(EdBpt *bt)
 {
 	bt->base.type = ED_PGLEAF;
 	bt->nkeys = 0;
@@ -102,7 +102,7 @@ ed_bt_init(EdBTree *bt)
 }
 
 static EdPgno *
-search_branch(EdBTree *node, uint64_t key)
+search_branch(EdBpt *node, uint64_t key)
 {
 	// TODO: binary search or SIMD
 	EdPgno *ptr = (EdPgno *)node->data;
@@ -117,7 +117,7 @@ search_branch(EdBTree *node, uint64_t key)
 }
 
 int
-ed_bt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent)
+ed_bpt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent)
 {
 	if (!tx->isopen) {
 		// FIXME: return proper error code
@@ -183,14 +183,14 @@ done:
 }
 
 int
-ed_bt_next(EdTxn *tx, unsigned db, void **ent)
+ed_bpt_next(EdTxn *tx, unsigned db, void **ent)
 {
 	EdTxnSearch *srch = &tx->db[db];
 	if (srch->match != 1) { return srch->match; }
 
 	int rc = 0;
 	EdPgNode *node = srch->tail;
-	EdBTree *leaf = node->tree;
+	EdBpt *leaf = node->tree;
 	uint8_t *p = srch->entry;
 	uint32_t i = srch->entry_index;
 	if (i == leaf->nkeys-1) {
@@ -225,33 +225,33 @@ done:
 }
 
 int
-ed_bt_set(EdTxn *tx, unsigned db, const void *ent, bool replace)
+ed_bpt_set(EdTxn *tx, unsigned db, const void *ent, bool replace)
 {
 	if (tx->rdonly) { return ed_esys(EINVAL); }
 	EdTxnSearch *srch = ed_txn_search(tx, db, false);
 	if (ed_fetch64(ent) != srch->key) { return ED_EINDEX_KEY_MATCH; }
 	memcpy(srch->scratch, ent, srch->entry_size);
 	if (replace && srch->match == 1) {
-		srch->apply = ED_BT_REPLACE;
+		srch->apply = ED_BPT_REPLACE;
 		return 0;
 	}
 	else {
-		srch->apply = ED_BT_INSERT;
+		srch->apply = ED_BPT_INSERT;
 		return 1;
 	}
 }
 
 int
-ed_bt_del(EdTxn *tx, unsigned db)
+ed_bpt_del(EdTxn *tx, unsigned db)
 {
 	if (tx->rdonly) { return ed_esys(EINVAL); }
 	EdTxnSearch *srch = ed_txn_search(tx, db, false);
 	if (srch->match == 1) {
-		srch->apply = ED_BT_DELETE;
+		srch->apply = ED_BPT_DELETE;
 		return 1;
 	}
 	else {
-		srch->apply = ED_BT_NONE;
+		srch->apply = ED_BPT_NONE;
 		return 0;
 	}
 }
@@ -270,7 +270,7 @@ redistribute_leaf_left(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 
 	size_t esize = srch->entry_size;
 	uint16_t ord = LEAF_ORDER(esize);
-	EdBTree *l = ln->tree;
+	EdBpt *l = ln->tree;
 
 	// Bail if the left leaf is full.
 	if (l->nkeys == ord) { return INS_NONE; }
@@ -326,7 +326,7 @@ redistribute_leaf_right(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 	int rc = map_extra(tx, leaf->parent, leaf->pindex+1, &rn);
 	if (rc < 0) { return rc == -1 ? INS_NONE : rc; }
 
-	EdBTree *r = rn->tree;
+	EdBpt *r = rn->tree;
 
 	// Bail if the right leaf is full.
 	if (r->nkeys == ord) { return INS_NONE; }
@@ -378,7 +378,7 @@ static void
 insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right, uint64_t rkey)
 {
 	EdPgNode *parent = left->parent;
-	EdBTree *p;
+	EdBpt *p;
 	EdPgno r = right->tree->base.no;
 	size_t pos;
 
@@ -443,7 +443,7 @@ insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right
 }
 
 static int
-split_point(EdTxnSearch *srch, EdBTree *l)
+split_point(EdTxnSearch *srch, EdBpt *l)
 {
 	uint16_t n = l->nkeys, mid = n/2, min, max;
 	uint64_t key;
@@ -545,7 +545,7 @@ split_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf, int mid)
 }
 
 void
-ed_bt_apply(EdTxn *tx, unsigned db, const void *ent, EdBTreeApply a)
+ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApply a)
 {
 	EdTxnSearch *srch = ed_txn_search(tx, db, false);
 	EdPgNode *leaf = srch->tail;
@@ -554,10 +554,10 @@ ed_bt_apply(EdTxn *tx, unsigned db, const void *ent, EdBTreeApply a)
 
 	switch (a) {
 
-	case ED_BT_NONE:
+	case ED_BPT_NONE:
 		break;
 
-	case ED_BT_INSERT:
+	case ED_BPT_INSERT:
 		// If the root was NULL, create a new root node.
 		if (leaf == NULL) {
 			leaf = ed_txn_alloc(tx, NULL, 0);
@@ -601,11 +601,11 @@ ed_bt_apply(EdTxn *tx, unsigned db, const void *ent, EdBTreeApply a)
 		srch->match = 1;
 		break;
 
-	case ED_BT_REPLACE:
+	case ED_BPT_REPLACE:
 		memcpy(srch->entry, ent, srch->entry_size);
 		break;
 
-	case ED_BT_DELETE:
+	case ED_BPT_DELETE:
 		memmove(srch->entry, (uint8_t *)srch->entry + esize,
 				(leaf->tree->nkeys - srch->entry_index - 1) * esize);
 		if (leaf->tree->nkeys == 1) {
@@ -644,7 +644,7 @@ static const char
 	space[COLW] = "                        ";
 
 static void
-print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBTreePrint print, bool *stack, int top);
+print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBptPrint print, bool *stack, int top);
 
 static int
 print_value(const void *value, char *buf, size_t len)
@@ -719,7 +719,7 @@ print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
 }
 
 static void
-print_leaf(int fd, size_t esize, EdBTree *leaf, FILE *out, EdBTreePrint print, bool *stack, int top)
+print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool *stack, int top)
 {
 	fprintf(out, "%s p%u, nkeys=%u/%zu, right=p%jd",
 			leaf->base.type == ED_PGLEAF ? "leaf" : "overflow",
@@ -746,7 +746,7 @@ print_leaf(int fd, size_t esize, EdBTree *leaf, FILE *out, EdBTreePrint print, b
 	print_box(out, n, n, stack, top);
 
 	if (leaf->right != ED_PAGE_NONE) {
-		EdBTree *next = ed_pg_map(fd, leaf->right, 1);
+		EdBpt *next = ed_pg_map(fd, leaf->right, 1);
 		if (next->base.type == ED_PGOVERFLOW) {
 			print_tree(out, stack, top-1);
 			fprintf(out, "= %llu, ", ed_fetch64(next->data));
@@ -757,7 +757,7 @@ print_leaf(int fd, size_t esize, EdBTree *leaf, FILE *out, EdBTreePrint print, b
 }
 
 static void
-print_branch(int fd, size_t esize, EdBTree *branch, FILE *out, EdBTreePrint print, bool *stack, int top)
+print_branch(int fd, size_t esize, EdBpt *branch, FILE *out, EdBptPrint print, bool *stack, int top)
 {
 	fprintf(out, "branch p%u, nkeys=%u/%zu, right=p%jd\n",
 			branch->base.no, branch->nkeys, BRANCH_ORDER,
@@ -780,7 +780,7 @@ print_branch(int fd, size_t esize, EdBTree *branch, FILE *out, EdBTreePrint prin
 }
 
 static void
-print_node(int fd, size_t esize, EdBTree *t, FILE *out, EdBTreePrint print, bool *stack, int top)
+print_node(int fd, size_t esize, EdBpt *t, FILE *out, EdBptPrint print, bool *stack, int top)
 {
 	switch (t->base.type) {
 	case ED_PGOVERFLOW:
@@ -794,9 +794,9 @@ print_node(int fd, size_t esize, EdBTree *t, FILE *out, EdBTreePrint print, bool
 }
 
 static void
-print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBTreePrint print, bool *stack, int top)
+print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBptPrint print, bool *stack, int top)
 {
-	EdBTree *t = ed_pg_map(fd, ed_fetch32(p), 1);
+	EdBpt *t = ed_pg_map(fd, ed_fetch32(p), 1);
 	if (t == MAP_FAILED) {
 		fprintf(out, "MAP FAILED (%s)\n", strerror(errno));
 		return;
@@ -806,7 +806,7 @@ print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBTreePrint print, bool
 }
 
 static int
-verify_overflow(int fd, size_t esize, EdBTree *o, FILE *out, uint64_t expect)
+verify_overflow(int fd, size_t esize, EdBpt *o, FILE *out, uint64_t expect)
 {
 	uint8_t *p = o->data;
 	for (uint32_t i = 0; i < o->nkeys; i++, p += esize) {
@@ -824,7 +824,7 @@ verify_overflow(int fd, size_t esize, EdBTree *o, FILE *out, uint64_t expect)
 }
 
 static int
-verify_leaf(int fd, size_t esize, EdBTree *l, FILE *out, uint64_t min, uint64_t max)
+verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t max)
 {
 	if (l->nkeys == 0) { return 0; }
 
@@ -853,7 +853,7 @@ verify_leaf(int fd, size_t esize, EdBTree *l, FILE *out, uint64_t min, uint64_t 
 
 	EdPgno ptr = l->right;
 	while (ptr != ED_PAGE_NONE) {
-		EdBTree *next = ed_pg_map(fd, ptr, 1);
+		EdBpt *next = ed_pg_map(fd, ptr, 1);
 		int rc = 0;
 		if (next->base.type == ED_PGOVERFLOW) {
 			rc = verify_overflow(fd, esize, next, out, last);
@@ -869,7 +869,7 @@ verify_leaf(int fd, size_t esize, EdBTree *l, FILE *out, uint64_t min, uint64_t 
 }
 
 int
-verify_node(int fd, size_t esize, EdBTree *t, FILE *out, uint64_t min, uint64_t max)
+verify_node(int fd, size_t esize, EdBpt *t, FILE *out, uint64_t min, uint64_t max)
 {
 	if (t->base.type == ED_PGLEAF) {
 		return verify_leaf(fd, esize, t, out, min, max);
@@ -877,7 +877,7 @@ verify_node(int fd, size_t esize, EdBTree *t, FILE *out, uint64_t min, uint64_t 
 
 	uint8_t *p = t->data;
 	uint64_t nmin = min;
-	EdBTree *chld;
+	EdBpt *chld;
 	int rc;
 
 	for (uint16_t i = 0; i < t->nkeys; i++, p += BRANCH_ENTRY_SIZE) {
@@ -909,7 +909,7 @@ verify_node(int fd, size_t esize, EdBTree *t, FILE *out, uint64_t min, uint64_t 
 }
 
 void
-ed_bt_print(EdBTree *t, int fd, size_t esize, FILE *out, EdBTreePrint print)
+ed_bpt_print(EdBpt *t, int fd, size_t esize, FILE *out, EdBptPrint print)
 {
 	if (out == NULL) { out = stdout; }
 	if (print == NULL) { print = print_value; }
@@ -927,7 +927,7 @@ ed_bt_print(EdBTree *t, int fd, size_t esize, FILE *out, EdBTreePrint print)
 }
 
 int
-ed_bt_verify(EdBTree *t, int fd, size_t esize, FILE *out)
+ed_bpt_verify(EdBpt *t, int fd, size_t esize, FILE *out)
 {
 	return verify_node(fd, esize, t, out, 0, UINT64_MAX);
 }

@@ -87,7 +87,7 @@ ed_txn_commit(EdTxn **txp, uint64_t flags)
 	int rc = 0;
 	unsigned npg = 0;
 	for (unsigned i = 0; i < tx->ndb; i++) {
-		if (tx->db[i].apply == ED_BT_INSERT) { npg += tx->db[i].nsplits; }
+		if (tx->db[i].apply == ED_BPT_INSERT) { npg += tx->db[i].nsplits; }
 	}
 	if (npg > tx->nnodes) {
 		rc = ed_esys(ENOBUFS); // FIXME: proper error code
@@ -105,7 +105,7 @@ ed_txn_commit(EdTxn **txp, uint64_t flags)
 	}
 
 	for (unsigned i = 0; i < tx->ndb; i++) {
-		ed_bt_apply(tx, i, tx->db[i].scratch, tx->db[i].apply);
+		ed_bpt_apply(tx, i, tx->db[i].scratch, tx->db[i].apply);
 	}
 
 done:
@@ -162,7 +162,7 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 			srch->nsplits = 0;
 			srch->match = 0;
 			srch->nmatches = 0;
-			srch->apply = ED_BT_NONE;
+			srch->apply = ED_BPT_NONE;
 		}
 	}
 	else {
@@ -216,7 +216,7 @@ ed_txn_search(EdTxn *tx, unsigned db, bool reset)
 		srch->nsplits = 0;
 		srch->match = 0;
 		srch->nmatches = 0;
-		srch->apply = ED_BT_NONE;
+		srch->apply = ED_BPT_NONE;
 	}
 	return srch;
 }
