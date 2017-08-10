@@ -45,7 +45,7 @@ LIBSRC:= lib/cache.c \
 	lib/lock.c \
 	lib/pg.c \
 	lib/txn.c \
-	lib/bt.c \
+	lib/bpt.c \
 	lib/index.c \
 	lib/mkfile.c \
 	lib/time.c
