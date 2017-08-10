@@ -119,7 +119,7 @@ search_branch(EdBTree *node, uint64_t key)
 int
 ed_btfind(EdTx *tx, unsigned db, uint64_t key, void **ent)
 {
-	if (tx->state != 0) {
+	if (!tx->isopen) {
 		// FIXME: return proper error code
 		return ed_esys(EINVAL);
 	}
@@ -227,6 +227,7 @@ done:
 int
 ed_btset(EdTx *tx, unsigned db, const void *ent, bool replace)
 {
+	if (tx->rdonly) { return ed_esys(EINVAL); }
 	EdTxSearch *srch = ed_txsearch(tx, db, false);
 	if (ed_fetch64(ent) != srch->key) { return ED_EINDEX_KEY_MATCH; }
 	memcpy(srch->scratch, ent, srch->entry_size);
@@ -243,6 +244,7 @@ ed_btset(EdTx *tx, unsigned db, const void *ent, bool replace)
 int
 ed_btdel(EdTx *tx, unsigned db)
 {
+	if (tx->rdonly) { return ed_esys(EINVAL); }
 	EdTxSearch *srch = ed_txsearch(tx, db, false);
 	if (srch->match == 1) {
 		srch->apply = ED_BT_DELETE;

@@ -1,5 +1,8 @@
 #include "eddy-private.h"
 
+#define ED_TX_CLOSED 0
+#define ED_TX_OPEN 1
+
 static EdPgNode *
 wrap_node(EdTx *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 {
@@ -14,7 +17,7 @@ wrap_node(EdTx *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 }
 
 int
-ed_txopen(EdTx **txp, EdPgAlloc *alloc, EdTxType *type, unsigned ntype)
+ed_txnew(EdTx **txp, EdPgAlloc *alloc, EdLock *lock, EdTxType *type, unsigned ntype)
 {
 	unsigned nnodes = ntype * 16;
 	int rc = 0;
@@ -33,8 +36,9 @@ ed_txopen(EdTx **txp, EdPgAlloc *alloc, EdTxType *type, unsigned ntype)
 		goto error;
 	}
 
-	tx->nodes = (EdPgNode *)((uint8_t *)tx + offnodes);
+	tx->lock = lock;
 	tx->alloc = alloc;
+	tx->nodes = (EdPgNode *)((uint8_t *)tx + offnodes);
 	tx->nnodes = nnodes;
 
 	uint8_t *scratch = (uint8_t *)tx + offscratch;
@@ -62,11 +66,62 @@ error:
 	return rc;
 }
 
+int
+ed_txopen(EdTx *tx, bool rdonly, uint64_t flags)
+{
+	if (tx == NULL || tx->isopen) { return ed_esys(EINVAL); }
+	EdLockType lock = rdonly ? ED_LOCK_SH : ED_LOCK_EX;
+	int rc = ed_lock(tx->lock, tx->alloc->fd, lock, true, flags);
+	if (rc < 0) { return rc; }
+	tx->isopen = true;
+	tx->rdonly = rdonly;
+	return 0;
+}
+
+int
+ed_txcommit(EdTx **txp, uint64_t flags)
+{
+	EdTx *tx = *txp;
+	if (tx == NULL || !tx->isopen || tx->rdonly) { return ed_esys(EINVAL); }
+
+	int rc = 0;
+	unsigned npg = 0;
+	for (unsigned i = 0; i < tx->ndb; i++) {
+		if (tx->db[i].apply == ED_BT_INSERT) { npg += tx->db[i].nsplits; }
+	}
+	if (npg > tx->nnodes) {
+		rc = ed_esys(ENOBUFS); // FIXME: proper error code
+		goto done;
+	}
+	if (npg > 0) {
+		if ((tx->pg = calloc(npg, sizeof(tx->pg[0]))) == NULL) {
+			rc = ED_ERRNO;
+			goto done;
+		}
+		rc = ed_pgalloc(tx->alloc, tx->pg, npg, true);
+		if (rc < 0) { goto done; }
+		tx->npg = npg;
+		rc = 0;
+	}
+
+	for (unsigned i = 0; i < tx->ndb; i++) {
+		ed_btapply(tx, i, tx->db[i].scratch, tx->db[i].apply);
+	}
+
+done:
+	ed_txclose(txp, flags);
+	return rc;
+}
+
 void
 ed_txclose(EdTx **txp, uint64_t flags)
 {
 	EdTx *tx = *txp;
 	if (tx == NULL) { return; }
+
+	if (tx->isopen) {
+		ed_lock(tx->lock, tx->alloc->fd, ED_LOCK_UN, true, flags);
+	}
 
 	EdPg *heads[tx->ndb];
 	if (flags & ED_FRESET) {
@@ -96,7 +151,7 @@ ed_txclose(EdTx **txp, uint64_t flags)
 		tx->npg = 0;
 		tx->npgused = 0;
 		tx->nnodesused = 0;
-		tx->state = 0;
+		tx->isopen = false;
 		for (unsigned i = 0; i < tx->ndb; i++) {
 			EdTxSearch *srch = &tx->db[i];
 			srch->tail = srch->head = heads[i] ?
@@ -111,46 +166,9 @@ ed_txclose(EdTx **txp, uint64_t flags)
 		}
 	}
 	else {
-		*txp = NULL;
 		free(tx);
+		*txp = NULL;
 	}
-}
-
-int
-ed_txcommit(EdTx *tx, bool exclusive)
-{
-	if (tx->state != 0) { return ed_esys(EINVAL); }
-
-	int rc;
-	unsigned npg = 0;
-	for (unsigned i = 0; i < tx->ndb; i++) {
-		if (tx->db[i].apply == ED_BT_INSERT) { npg += tx->db[i].nsplits; }
-	}
-	if (npg > tx->nnodes) {
-		rc = ed_esys(ENOBUFS); // FIXME: proper error code
-		goto error;
-	}
-	if (npg > 0) {
-		if ((tx->pg = calloc(npg, sizeof(tx->pg[0]))) == NULL) {
-			rc = ED_ERRNO;
-			goto error;
-		}
-		rc = ed_pgalloc(tx->alloc, tx->pg, npg, exclusive);
-		if (rc < 0) { goto error; }
-		tx->npg = npg;
-	}
-
-	for (unsigned i = 0; i < tx->ndb; i++) {
-		ed_btapply(tx, i, tx->db[i].scratch, tx->db[i].apply);
-	}
-
-	tx->state = 1;
-	return 0;
-
-error:
-	free(tx->pg);
-	tx->state = rc;
-	return rc;
 }
 
 int

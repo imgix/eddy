@@ -362,7 +362,6 @@ ed_pgalloc(EdPgAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 	}
 
 	if (rc < 0) { return rc; }
-	ed_pgalloc_sync(alloc);
 	return (int)n;
 }
 
@@ -422,8 +421,6 @@ ed_pgfree(EdPgAlloc *alloc, EdPg **pages, EdPgno n)
 		}
 		ed_pgunmap(p, 1);
 	}
-
-	ed_pgalloc_sync(alloc);
 }
 
 EdPgFree *

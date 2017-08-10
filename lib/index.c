@@ -62,21 +62,6 @@ static const EdIndexHdr INDEX_DEFAULT = {
 };
 
 static int
-ed_flock(int fd, EdLock type, off_t start, off_t len, bool wait)
-{
-	struct flock l = {
-		.l_type = (int)type,
-		.l_whence = SEEK_SET,
-		.l_start = start,
-		.l_len = len,
-	};
-	int rc, op = wait ? F_SETLKW : F_SETLK;
-	while ((rc = fcntl(fd, op, &l)) < 0 &&
-			(rc = ED_ERRNO) == ed_esys(EINTR)) {}
-	return rc;
-}
-
-static int
 hdr_verify(const EdIndexHdr *hdr, const struct stat *s)
 {
 	if (s->st_size < (off_t)sizeof(*hdr)) { return ED_EINDEX_SIZE; }
@@ -194,8 +179,10 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
+	EdLock lock;
+	ed_lock_init(&lock, 0, PAGESIZE);
 
-	rc = ed_flock(fd, ED_LOCK_EX, 0, PAGESIZE, true);
+	rc = ed_flock(&lock, fd, ED_LOCK_EX, true);
 	if (rc == 0) {
 		do {
 			const char *slab_path = hdrnew.slab_path;
@@ -235,11 +222,12 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 			free_list->count = 0;
 			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
 		} while (0);
-		ed_flock(fd, ED_LOCK_UN, 0, PAGESIZE, true);
+		ed_flock(&lock, fd, ED_LOCK_UN, true);
 	}
 	if (rc < 0) { goto error; }
 
 	uint64_t f = hdr->flags | ED_FOPEN(flags);
+	ed_lock_init(&index->lock, 0, PAGESIZE);
 	ed_pgalloc_init(&index->alloc, &hdr->alloc, fd, f);
 	index->alloc.free = free_list;
 	index->flags = f;
@@ -248,7 +236,6 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	index->hdr = hdr;
 	index->keys = NULL;
 	index->blocks = NULL;
-	pthread_rwlock_init(&index->rw, NULL);
 	*slab_fd = sfd;
 	return 0;
 
@@ -288,27 +275,9 @@ ed_index_save_trees(EdIndex *index)
 }
 
 int
-ed_index_lock(EdIndex *index, EdLock type, bool wait)
+ed_index_lock(EdIndex *index, EdLockType type, bool wait)
 {
-	int rc = 0;
-	if (type == ED_LOCK_EX) {
-		rc = wait ?
-			pthread_rwlock_wrlock(&index->rw) :
-			pthread_rwlock_trywrlock(&index->rw);
-	}
-	else if (type == ED_LOCK_SH) {
-		rc = wait ?
-			pthread_rwlock_rdlock(&index->rw) :
-			pthread_rwlock_tryrdlock(&index->rw);
-	}
-	if (rc != 0) { return ed_esys(rc); }
-
-	rc = ed_flock(index->alloc.fd, type, 0, PAGESIZE, wait);
-
-	if (rc != 0 || type == ED_LOCK_UN) {
-		pthread_rwlock_unlock(&index->rw);
-	}
-	return rc;
+	return ed_lock(&index->lock, index->alloc.fd, type, wait, index->flags);
 }
 
 // Tests and sets a page number in the bit vector.
