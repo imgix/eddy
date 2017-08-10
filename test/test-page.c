@@ -7,10 +7,10 @@ static const char *path = "/tmp/eddy_test_page";
 static void
 cleanup(void)
 {
-	ed_pgalloc_close(&alloc);
+	ed_pg_alloc_close(&alloc);
 	unlink(path);
 #if ED_MMAP_DEBUG
-	mu_assert_int_eq(ed_pgcheck(), 0);
+	mu_assert_int_eq(ed_pg_check(), 0);
 #endif
 }
 
@@ -20,28 +20,28 @@ test_basic(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	EdPg *pages[2];
 	EdPgFree *free;
 	EdPgTail tail;
 
-	mu_assert_int_eq(ed_pgalloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 
 	tail = alloc.hdr->tail;
 	mu_assert_int_eq(tail.off, 2);
 
-	ed_pgfree(&alloc, pages, ed_len(pages));
+	ed_pg_free(&alloc, pages, ed_len(pages));
 
-	free = ed_pgfree_list(&alloc);
+	free = ed_pg_free_list(&alloc);
 	mu_assert_int_eq(free->count, 2);
 
-	ed_pgalloc_close(&alloc);
-	mu_assert_int_eq(ed_pgalloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	ed_pg_alloc_close(&alloc);
+	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	mu_assert_int_eq(tail.off, 2);
 
-	free = ed_pgfree_list(&alloc);
+	free = ed_pg_free_list(&alloc);
 	mu_assert_int_eq(free->count, 2);
 }
 

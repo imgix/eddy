@@ -175,7 +175,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	fd = OPEN(cfg->index_path, flags, ED_FCREATE|ED_FREPLACE);
 	if (fd < 0) { rc = ED_ERRNO; goto error; }
 
-	hdr = ed_pgmap(fd, 0, PG_NINIT);
+	hdr = ed_pg_map(fd, 0, PG_NINIT);
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
@@ -228,7 +228,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 
 	uint64_t f = hdr->flags | ED_FOPEN(flags);
 	ed_lock_init(&index->lock, 0, PAGESIZE);
-	ed_pgalloc_init(&index->alloc, &hdr->alloc, fd, f);
+	ed_pg_alloc_init(&index->alloc, &hdr->alloc, fd, f);
 	index->alloc.free = free_list;
 	index->flags = f;
 	index->seed = hdr->seed;
@@ -240,7 +240,7 @@ ed_index_open(EdIndex *index, const EdConfig *cfg, int *slab_fd)
 	return 0;
 
 error:
-	if (hdr != MAP_FAILED) { ed_pgunmap(hdr, PG_NINIT); }
+	if (hdr != MAP_FAILED) { ed_pg_unmap(hdr, PG_NINIT); }
 	if (sfd >= 0) { close(sfd); }
 	if (fd >= 0) { close(fd); }
 	return rc;
@@ -250,16 +250,16 @@ void
 ed_index_close(EdIndex *index)
 {
 	if (index == NULL) { return; }
-	ed_pgalloc_close(&index->alloc);
-	ed_pgunmap(index->hdr, PG_NHDR);
+	ed_pg_alloc_close(&index->alloc);
+	ed_pg_unmap(index->hdr, PG_NHDR);
 	index->hdr = NULL;
 }
 
 int
 ed_index_load_trees(EdIndex *index)
 {
-	if (ed_pgload(index->alloc.fd, (EdPg **)&index->keys, index->hdr->key_tree) == MAP_FAILED ||
-		ed_pgload(index->alloc.fd, (EdPg **)&index->blocks, index->hdr->block_tree) == MAP_FAILED) {
+	if (ed_pg_load(index->alloc.fd, (EdPg **)&index->keys, index->hdr->key_tree) == MAP_FAILED ||
+		ed_pg_load(index->alloc.fd, (EdPg **)&index->blocks, index->hdr->block_tree) == MAP_FAILED) {
 		return ED_ERRNO;
 	}
 	return 0;
@@ -268,9 +268,9 @@ ed_index_load_trees(EdIndex *index)
 int
 ed_index_save_trees(EdIndex *index)
 {
-	ed_pgmark(&index->keys->base, &index->hdr->key_tree, &index->alloc.dirty);
-	ed_pgmark(&index->blocks->base, &index->hdr->block_tree, &index->alloc.dirty);
-	ed_pgalloc_sync(&index->alloc);
+	ed_pg_mark(&index->keys->base, &index->hdr->key_tree, &index->alloc.dirty);
+	ed_pg_mark(&index->blocks->base, &index->hdr->block_tree, &index->alloc.dirty);
+	ed_pg_alloc_sync(&index->alloc);
 	return 0;
 }
 
@@ -323,12 +323,12 @@ stat_free(EdIndex *index, uint8_t *vec, EdPgFree *fs, FILE *out)
 	EdPgno c = fs->count;
 	int rc = stat_pages(vec, fs->base.no, fs->pages, c, out);
 	if (rc == 0 && c > 0) {
-		EdPgFree *p = ed_pgmap(index->alloc.fd, fs->pages[0], 1);
+		EdPgFree *p = ed_pg_map(index->alloc.fd, fs->pages[0], 1);
 		if (p == MAP_FAILED) { return ED_ERRNO; }
 		if (p->base.type == ED_PGFREE_CHLD || p->base.type == ED_PGFREE_HEAD) {
 			rc = stat_free(index, vec, (EdPgFree *)p, out);
 		}
-		ed_pgunmap(p, 1);
+		ed_pg_unmap(p, 1);
 	}
 	return rc;
 }
@@ -384,7 +384,7 @@ ed_index_stat(EdIndex *index, FILE *out, int flags)
 		if (rc < 0) { goto done; }
 
 		BITSET(vec, index->alloc.hdr->free_list);
-		rc = stat_free(index, vec, ed_pgfree_list(&index->alloc), out);
+		rc = stat_free(index, vec, ed_pg_free_list(&index->alloc), out);
 
 		ed_index_lock(index, ED_LOCK_UN, true);
 		if (rc < 0) { goto done; }

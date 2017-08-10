@@ -108,9 +108,9 @@ typedef enum EdBTreeApply {
 	ED_BT_DELETE
 } EdBTreeApply;
 
-typedef struct EdTx EdTx;
-typedef struct EdTxType EdTxType;
-typedef struct EdTxSearch EdTxSearch;
+typedef struct EdTxn EdTxn;
+typedef struct EdTxnType EdTxnType;
+typedef struct EdTxnSearch EdTxnSearch;
 
 typedef struct EdNodePage EdNodePage;
 typedef struct EdNodeKey EdNodeKey;
@@ -173,7 +173,7 @@ struct EdObject {
 	EdObjectHdr *hdr;
 };
 
-struct EdTx {
+struct EdTxn {
 	EdLock *lock;         // reference to shared lock
 	EdPgAlloc *alloc;     // page allocator
 	EdPg **pg;            // array to hold allocated pages
@@ -196,7 +196,7 @@ struct EdTx {
 	bool rdonly;
 
 	unsigned ndb;             // number of search objects
-	struct EdTxSearch {
+	struct EdTxnSearch {
 		EdPgNode *head;       // first node searched
 		EdPgNode *tail;       // current tail node
 		EdPgno *root;         // pointer to page number of root node
@@ -212,7 +212,7 @@ struct EdTx {
 	} db[1];
 };
 
-struct EdTxType {
+struct EdTxnType {
 	EdPgno *no;
 	size_t entry_size;
 };
@@ -304,24 +304,24 @@ ED_LOCAL      int ed_lock(EdLock *lock, int fd, EdLockType type, bool wait, uint
 ED_LOCAL      int ed_flock(EdLock *lock, int fd, EdLockType type, bool wait);
 
 /* Page Module */
-ED_LOCAL   void * ed_pgmap(int fd, EdPgno no, EdPgno count);
-ED_LOCAL      int ed_pgunmap(void *p, EdPgno count);
-ED_LOCAL      int ed_pgsync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
-ED_LOCAL   void * ed_pgload(int fd, EdPg **pgp, EdPgno no);
-ED_LOCAL     void ed_pgunload(EdPg **pgp);
-ED_LOCAL     void ed_pgmark(EdPg *pg, EdPgno *no, uint8_t *dirty);
-ED_LOCAL      int ed_pgalloc_new(EdPgAlloc *, const char *, size_t meta, uint64_t flags);
-ED_LOCAL     void ed_pgalloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
-ED_LOCAL     void ed_pgalloc_close(EdPgAlloc *);
-ED_LOCAL     void ed_pgalloc_sync(EdPgAlloc *);
-ED_LOCAL   void * ed_pgalloc_meta(EdPgAlloc *alloc);
-ED_LOCAL      int ed_pgalloc(EdPgAlloc *, EdPg **, EdPgno n, bool exclusive);
-ED_LOCAL     void ed_pgfree(EdPgAlloc *, EdPg **, EdPgno n);
-ED_LOCAL EdPgFree * ed_pgfree_list(EdPgAlloc *);
+ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
+ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
+ED_LOCAL      int ed_pg_sync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
+ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
+ED_LOCAL     void ed_pg_unload(EdPg **pgp);
+ED_LOCAL     void ed_pg_mark(EdPg *pg, EdPgno *no, uint8_t *dirty);
+ED_LOCAL      int ed_pg_alloc_new(EdPgAlloc *, const char *, size_t meta, uint64_t flags);
+ED_LOCAL     void ed_pg_alloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
+ED_LOCAL     void ed_pg_alloc_close(EdPgAlloc *);
+ED_LOCAL     void ed_pg_alloc_sync(EdPgAlloc *);
+ED_LOCAL   void * ed_pg_alloc_meta(EdPgAlloc *alloc);
+ED_LOCAL      int ed_pg_alloc(EdPgAlloc *, EdPg **, EdPgno n, bool exclusive);
+ED_LOCAL     void ed_pg_free(EdPgAlloc *, EdPg **, EdPgno n);
+ED_LOCAL EdPgFree * ed_pg_free_list(EdPgAlloc *);
 #if ED_MMAP_DEBUG
-ED_LOCAL     void ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count);
-ED_LOCAL     void ed_pguntrack(uint8_t *pg, EdPgno count);
-ED_LOCAL      int ed_pgcheck(void);
+ED_LOCAL     void ed_pg_track(EdPgno no, uint8_t *pg, EdPgno count);
+ED_LOCAL     void ed_pg_untrack(uint8_t *pg, EdPgno count);
+ED_LOCAL      int ed_pg_check(void);
 #endif
 
 
@@ -336,26 +336,26 @@ ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
 
 
 /* Transaction Module */
-ED_LOCAL      int ed_txnew(EdTx **, EdPgAlloc *alloc, EdLock *lock, EdTxType *type, unsigned ntype);
-ED_LOCAL      int ed_txopen(EdTx *, bool rdonly, uint64_t flags);
-ED_LOCAL      int ed_txcommit(EdTx **, uint64_t flags);
-ED_LOCAL     void ed_txclose(EdTx **, uint64_t flags);
-ED_LOCAL      int ed_txmap(EdTx *, EdPgno, EdPgNode *par, uint16_t pidx, EdPgNode **out);
-ED_LOCAL EdPgNode * ed_txalloc(EdTx *tx, EdPgNode *par, uint16_t pidx);
-ED_LOCAL EdTxSearch * ed_txsearch(EdTx *tx, unsigned db, bool reset);
+ED_LOCAL      int ed_txn_new(EdTxn **, EdPgAlloc *alloc, EdLock *lock, EdTxnType *type, unsigned ntype);
+ED_LOCAL      int ed_txn_open(EdTxn *, bool rdonly, uint64_t flags);
+ED_LOCAL      int ed_txn_commit(EdTxn **, uint64_t flags);
+ED_LOCAL     void ed_txn_close(EdTxn **, uint64_t flags);
+ED_LOCAL      int ed_txn_map(EdTxn *, EdPgno, EdPgNode *par, uint16_t pidx, EdPgNode **out);
+ED_LOCAL EdPgNode * ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
+ED_LOCAL EdTxnSearch * ed_txn_search(EdTxn *tx, unsigned db, bool reset);
 
 
 /* B+Tree Module */
 typedef int (*EdBTreePrint)(const void *, char *buf, size_t len);
-ED_LOCAL   size_t ed_btcapacity(size_t esize, size_t depth);
-ED_LOCAL     void ed_btinit(EdBTree *bt);
-ED_LOCAL      int ed_btfind(EdTx *tx, unsigned db, uint64_t key, void **ent);
-ED_LOCAL      int ed_btnext(EdTx *tx, unsigned db, void **ent);
-ED_LOCAL      int ed_btset(EdTx *tx, unsigned db, const void *ent, bool replace);
-ED_LOCAL      int ed_btdel(EdTx *tx, unsigned db);
-ED_LOCAL     void ed_btapply(EdTx *tx, unsigned db, const void *ent, EdBTreeApply);
-ED_LOCAL     void ed_btprint(EdBTree *, int fd, size_t esize, FILE *, EdBTreePrint);
-ED_LOCAL      int ed_btverify(EdBTree *, int fd, size_t esize, FILE *);
+ED_LOCAL   size_t ed_bt_capacity(size_t esize, size_t depth);
+ED_LOCAL     void ed_bt_init(EdBTree *bt);
+ED_LOCAL      int ed_bt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent);
+ED_LOCAL      int ed_bt_next(EdTxn *tx, unsigned db, void **ent);
+ED_LOCAL      int ed_bt_set(EdTxn *tx, unsigned db, const void *ent, bool replace);
+ED_LOCAL      int ed_bt_del(EdTxn *tx, unsigned db);
+ED_LOCAL     void ed_bt_apply(EdTxn *tx, unsigned db, const void *ent, EdBTreeApply);
+ED_LOCAL     void ed_bt_print(EdBTree *, int fd, size_t esize, FILE *, EdBTreePrint);
+ED_LOCAL      int ed_bt_verify(EdBTree *, int fd, size_t esize, FILE *);
 
 
 /* Index Module */

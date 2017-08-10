@@ -12,8 +12,8 @@ extern "C" {
 
 void PrintStack(EdBacktrace *bt)
 {
-	int idx = bt->Find("ed_pguntrack");
-	if (idx < 0) { idx = bt->Find("ed_pgtrack"); }
+	int idx = bt->Find("ed_pg_untrack");
+	if (idx < 0) { idx = bt->Find("ed_pg_track"); }
 	bt->Print(idx < 0 ? 0 : idx + 1, stderr);
 }
 
@@ -32,7 +32,7 @@ static EdPgtrack *track = NULL;
 static int track_errors = 0;
 
 void 
-ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count)
+ed_pg_track(EdPgno no, uint8_t *pg, EdPgno count)
 {
 	if (pg == NULL) { return; }
 
@@ -82,7 +82,7 @@ ed_pgtrack(EdPgno no, uint8_t *pg, EdPgno count)
 }
 
 void 
-ed_pguntrack(uint8_t *pg, EdPgno count)
+ed_pg_untrack(uint8_t *pg, EdPgno count)
 {
 	if (pthread_rwlock_wrlock(&track_lock) < 0) {
 		fprintf(stderr, "*** failed to lock: %s\n", strerror(errno));
@@ -138,7 +138,7 @@ ed_pguntrack(uint8_t *pg, EdPgno count)
 }
 
 int
-ed_pgcheck(void)
+ed_pg_check(void)
 {
 	if (pthread_rwlock_rdlock(&track_lock) < 0) {
 		fprintf(stderr, "*** failed to lock: %s\n", strerror(errno));

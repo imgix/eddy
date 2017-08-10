@@ -39,14 +39,14 @@ task(void *data)
 	int rc;
 
 	for (int x = 0; x < sets; x++) {
-		rc = ed_pgalloc(&cache->index.alloc, p, pages, false);
+		rc = ed_pg_alloc(&cache->index.alloc, p, pages, false);
 		if (rc < 0) {
 			warnx("failed to allocate page: %s", ed_strerror(rc));
 			break;
 		}
 		else if (rc < pages) {
 			ed_index_lock(&cache->index, ED_LOCK_EX, true);
-			int nrc = ed_pgalloc(&cache->index.alloc, p+rc, pages-rc, true);
+			int nrc = ed_pg_alloc(&cache->index.alloc, p+rc, pages-rc, true);
 			if (nrc < 0) { warnx("failed to allocate page: %s", ed_strerror(nrc)); }
 			else { rc += nrc; }
 			ed_index_lock(&cache->index, ED_LOCK_UN, true);
@@ -64,7 +64,7 @@ task(void *data)
 		if (usec > 0) { usleep(usec); }
 		if (rc > 0) {
 			ed_index_lock(&cache->index, ED_LOCK_EX, true);
-			ed_pgfree(&cache->index.alloc, p, rc);
+			ed_pg_free(&cache->index.alloc, p, rc);
 			ed_index_lock(&cache->index, ED_LOCK_UN, true);
 		}
 	}
@@ -139,7 +139,7 @@ main(int argc, char **argv)
 	ed_cache_close(&cache);
 
 #if ED_MMAP_DEBUG
-	if (ed_pgcheck() > 0) { return EXIT_FAILURE; }
+	if (ed_pg_check() > 0) { return EXIT_FAILURE; }
 #endif
 	return EXIT_SUCCESS;
 }
