@@ -119,7 +119,7 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 	EdNodeKey key = {
 		.hash = ed_hash(attr->key, attr->key_size, cache->index.seed),
 		.exp = ed_expire(cache->index.epoch, attr->expiry),
-		.meta = ED_PAGE_NONE,
+		.meta = ED_PG_NONE,
 		.slab = ED_BLK_NONE,
 	};
 	printf("set: key=%.*s, hash=%llu, ttl=%ld\n", (int)attr->key_size, attr->key, key.hash, attr->expiry);

@@ -1,19 +1,6 @@
 #include "eddy-private.h"
 
 /**
- * The implements the transaction system for working with multiple database
- * btrees. These aren't "real" transactions, in that only a single change
- * operation is supported per database. However, single changes made to
- * multiple databases are handled as a single change. This is all that's
- * needed for the index, so the simplicity is preferrable for the moment.
- * The design of the API is intended to accomodate full transactions if that
- * does become necessary.
- */
-
-#define ED_TX_CLOSED 0
-#define ED_TX_OPEN 1
-
-/**
  * @brief   Wraps a mapped page into a node.
  *
  * Nodes are a memory representation used to simplify tracking parent
@@ -42,10 +29,10 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
 	size_t sznodes = sizeof(tx->nodes[0]) * nnodes;
 
 	size_t szscratch = 0;
-	for (unsigned i = 0; i < ntype; i++) { szscratch += ED_ALIGN(type[i].entry_size); }
+	for (unsigned i = 0; i < ntype; i++) { szscratch += ed_align_max(type[i].entry_size); }
 
-	size_t offnodes = ED_ALIGN(sztx);
-	size_t offscratch = ED_ALIGN(offnodes + sznodes);
+	size_t offnodes = ed_align_max(sztx);
+	size_t offscratch = ed_align_max(offnodes + sznodes);
 
 	if ((tx = calloc(1, offscratch + szscratch)) == NULL) {
 		rc = ED_ERRNO;
@@ -61,7 +48,7 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
 	for (unsigned i = 0; i < ntype; i++) {
 		EdPgno *no = type[i].no;
 		if (no == NULL) { rc = ed_esys(EINVAL); break; }
-		if (*no != ED_PAGE_NONE) {
+		if (*no != ED_PG_NONE) {
 			rc = ed_txn_map(tx, *no, NULL, 0, &tx->db[i].head);
 			if (rc < 0) { break; }
 			tx->db[i].tail = tx->db[i].head;
@@ -70,7 +57,7 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
 		tx->db[i].scratch = scratch;
 		tx->db[i].entry_size = type[i].entry_size;
 		tx->ndb++;
-		scratch += ED_ALIGN(type[i].entry_size);
+		scratch += ed_align_max(type[i].entry_size);
 	}
 
 	if (rc < 0) { goto error; }

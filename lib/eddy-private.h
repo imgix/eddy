@@ -24,11 +24,6 @@
 # error Platform not supported
 #endif
 
-#define ED_FSAVE(f) ((uint32_t)((f) & UINT64_C(0x00000000FFFFFFFF)))
-#define ED_FOPEN(f) ((f) & UINT64_C(0xFFFFFFFF00000000))
-
-#define ED_LOCAL __attribute__((visibility ("hidden")))
-
 #ifndef ED_ALLOC_COUNT
 # define ED_ALLOC_COUNT 16
 #endif
@@ -41,82 +36,42 @@
 # endif
 #endif
 
-#define ED_ALIGN(n) ((((n) + (ED_MAX_ALIGN-1)) / ED_MAX_ALIGN) * ED_MAX_ALIGN)
-
-#define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
-
+#define ED_LOCAL __attribute__((visibility ("hidden")))
 #define ED_INLINE static inline __attribute__((always_inline))
 
-#if BYTE_ORDER == LITTLE_ENDIAN
-# define ed_b16(v) __builtin_bswap16(v)
-# define ed_l16(v) (v)
-# define ed_b32(v) __builtin_bswap32(v)
-# define ed_l32(v) (v)
-# define ed_b64(v) __builtin_bswap64(v)
-# define ed_l64(v) (v)
-#elif BYTE_ORDER == BIG_ENDIAN
-# define ed_b16(v) (v)
-# define ed_l16(v) __builtin_bswap16(v)
-# define ed_b32(v) (v)
-# define ed_l32(v) __builtin_bswap32(v)
-# define ed_b64(v) (v)
-# define ed_l64(v) __builtin_bswap64(v)
-#endif
-
-#define ed_ptr_b32(T, b, off) ((const T *)((const uint8_t *)(b) + ed_b32(off)))
-
-#define ed_verbose(f, ...) do { \
-	if ((f) & ED_FVERBOSE) { fprintf(stderr, __VA_ARGS__); fflush(stderr); } \
-} while (0)
-
-#define ED_PGINDEX     UINT32_C(0x998ddcb0)
-#define ED_PGFREE_HEAD UINT32_C(0xc3e873b2)
-#define ED_PGFREE_CHLD UINT32_C(0xea104f71)
-#define ED_PGBRANCH    UINT32_C(0x2c17687a)
-#define ED_PGLEAF      UINT32_C(0x2dd39a85)
-#define ED_PGOVERFLOW  UINT32_C(0x09c2fd2f)
-
-#define ED_NODE_PAGE_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodePage))
-#define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeKey))
-
-#define ED_PAGE_NONE UINT32_MAX
-#define ED_BLK_NONE UINT64_MAX
-#define ED_TIME_DELETE 0
-#define ED_TIME_INF UINT32_MAX
-
-#define ED_IS_FILE(mode) (S_ISREG(mode))
-#define ED_IS_DEVICE(mode) (S_ISCHR(mode) || S_ISBLK(mode))
-#define ED_IS_MODE(mode) (ED_IS_FILE(mode) || ED_IS_DEVICE(mode))
+typedef struct EdLck EdLck;
 
 typedef uint32_t EdPgno;
 typedef uint64_t EdBlkno;
-typedef uint64_t EdHash;
-
 typedef struct EdPg EdPg;
-typedef struct EdPgFree EdPgFree;
-typedef struct EdPgTail EdPgTail;
 typedef struct EdPgAlloc EdPgAlloc;
 typedef struct EdPgAllocHdr EdPgAllocHdr;
-typedef struct EdPgMap EdPgMap;
+typedef struct EdPgFree EdPgFree;
+typedef struct EdPgTail EdPgTail;
 typedef struct EdPgNode EdPgNode;
 
 typedef struct EdBpt EdBpt;
-typedef enum EdBptApply {
-	ED_BPT_NONE,
-	ED_BPT_INSERT,
-	ED_BPT_REPLACE,
-	ED_BPT_DELETE
-} EdBptApply;
 
 typedef struct EdTxn EdTxn;
 typedef struct EdTxnType EdTxnType;
 typedef struct EdTxnSearch EdTxnSearch;
 
-typedef struct EdNodePage EdNodePage;
-typedef struct EdNodeKey EdNodeKey;
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
+
+typedef struct EdNodePage EdNodePage;
+typedef struct EdNodeKey EdNodeKey;
 typedef struct EdObjectHdr EdObjectHdr;
+
+
+
+/**
+ * @defgroup  lck  Lock Module
+ *
+ * A combined thread and file lock with shared and exclusive locking modes.
+ *
+ * @{
+ */
 
 typedef enum EdLckType {
 	ED_LCK_SH = F_RDLCK,
@@ -124,180 +79,10 @@ typedef enum EdLckType {
 	ED_LCK_UN = F_UNLCK,
 } EdLckType;
 
-typedef struct EdLck {
+struct EdLck {
 	struct flock f;
 	pthread_rwlock_t rw;
-} EdLck;
-
-struct EdPgAlloc {
-	EdPgAllocHdr *hdr;
-	void *pg;
-	EdPgFree *free;
-	uint64_t flags;
-	int fd;
-	uint8_t dirty, free_dirty;
-	bool from_new;
 };
-
-struct EdIdx {
-	EdLck lock;
-	EdPgAlloc alloc;
-	uint64_t flags;
-	uint64_t seed;
-	int64_t epoch;
-	EdIdxHdr *hdr;
-	EdBpt *blocks;
-	EdBpt *keys;
-};
-
-struct EdCache {
-	EdIdx index;
-	atomic_int ref;
-	int fd;
-	size_t bytes_used;
-	size_t pages_used;
-};
-
-struct EdObject {
-	EdCache *cache;
-	time_t expiry;
-	const void *data;
-	const void *key;
-	const void *meta;
-	size_t datalen;
-	uint16_t keylen;
-	uint16_t metalen;
-	EdObjectHdr *hdr;
-};
-
-struct EdTxn {
-	EdLck *lock;         // reference to shared lock
-	EdPgAlloc *alloc;     // page allocator
-	EdPg **pg;            // array to hold allocated pages
-	unsigned npg;         // number of pages allocated
-	unsigned npgused;     // number of pages used
-
-	struct EdPgNode {
-		union {
-			EdPg *page;       // mapped page
-			EdBpt *tree;    // mapped page as a tree
-		};
-		EdPgNode *parent;     // parent node
-		uint16_t pindex;      // index of page in the parent
-		uint8_t dirty;        // dirty state of the page
-	} *nodes;             // array of node wrapped pages
-	unsigned nnodes;      // length of node array
-	unsigned nnodesused;  // number of nodes used
-
-	int isopen;
-	bool rdonly;
-
-	unsigned ndb;             // number of search objects
-	struct EdTxnSearch {
-		EdPgNode *head;       // first node searched
-		EdPgNode *tail;       // current tail node
-		EdPgno *root;         // pointer to page number of root node
-		uint64_t key;         // key searched for
-		void *entry;          // pointer to the entry in the leaf
-		size_t entry_size;    // size in bytes of the entry
-		uint32_t entry_index; // index of the entry in the leaf
-		int nsplits;          // number of nodes requiring splits for an insert
-		int match;            // return code of the search
-		int nmatches;         // number of matched keys so far
-		void *scratch;        // new entry content
-		EdBptApply apply;   // replace, insert, or delete entry
-	} db[1];
-};
-
-struct EdTxnType {
-	EdPgno *no;
-	size_t entry_size;
-};
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic error "-Wpadded"
-
-struct EdPg {
-	EdPgno no;
-	uint32_t type;
-};
-
-struct EdPgFree {
-	EdPg base;
-	EdPgno count;
-#define ED_PGFREE_COUNT ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
-	EdPgno pages[ED_PGFREE_COUNT];
-};
-
-struct EdPgAllocHdr {
-	uint16_t size_page;
-	uint16_t size_block;
-	EdPgno free_list;
-	_Atomic struct EdPgTail {
-		EdPgno start;
-		EdPgno off;
-	} tail;
-};
-
-struct EdIdxHdr {
-	EdPg base;
-	char magic[4];
-	char endian;
-	uint8_t mark;
-	uint16_t version;
-	uint32_t flags;
-	uint32_t pos;
-	EdPgno key_tree;
-	EdPgno block_tree;
-	uint64_t seed;
-	int64_t epoch;
-	EdPgAllocHdr alloc;
-	uint8_t size_align;
-	uint8_t alloc_count;
-	uint8_t _pad[2];
-	EdPgno slab_page_count;
-	uint64_t slab_ino;
-	char slab_path[1024];
-};
-
-struct EdObjectHdr {
-	uint64_t hash;
-	uint32_t datalen;
-	uint16_t keylen;
-	uint16_t metalen;
-};
-
-struct EdBpt {
-	EdPg base;
-	EdPgno right;
-	uint16_t vers;
-	uint16_t nkeys;
-	uint8_t data[PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 4];
-};
-
-struct EdNodePage {
-	EdBlkno block; // XXX last block of the entry?
-	uint32_t exp;
-	EdPgno meta;
-};
-
-struct EdNodeKey {
-	EdHash hash;
-	uint32_t exp;
-	EdPgno meta;
-	EdBlkno slab;
-};
-
-#pragma GCC diagnostic pop
-
-
-/**
- * @defgroup  lock  Lock Module
- *
- * A combined thread and file lock with shared and exclusive locking modes.
- *
- * @{
- */
 
 /**
  * @brief  Initializes the lock in an unlocked state.
@@ -372,51 +157,137 @@ ed_lck_f(EdLck *lock, int fd, EdLckType type, bool wait);
 
 /** @} */
 
-/*** Page Module ***/
+
+
+/**
+ * @defgroup  pg  Page Module
+ *
+ * Page utility functions.
+ *
+ * @{
+ */
+
+#define ED_PG_INDEX     UINT32_C(0x998ddcb0)
+#define ED_PG_FREE_HEAD UINT32_C(0xc3e873b2)
+#define ED_PG_FREE_CHLD UINT32_C(0xea104f71)
+#define ED_PG_BRANCH    UINT32_C(0x2c17687a)
+#define ED_PG_LEAF      UINT32_C(0x2dd39a85)
+#define ED_PG_OVERFLOW  UINT32_C(0x09c2fd2f)
+
+#define ED_PG_NONE UINT32_MAX
+#define ED_BLK_NONE UINT64_MAX
+
+#define ED_PG_FREE_COUNT ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
+
+struct EdPgNode {
+	union {
+		EdPg *page;       // mapped page
+		EdBpt *tree;    // mapped page as a tree
+	};
+	EdPgNode *parent;     // parent node
+	uint16_t pindex;      // index of page in the parent
+	uint8_t dirty;        // dirty state of the page
+};
+
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
 ED_LOCAL      int ed_pg_sync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
 ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pg_unload(EdPg **pgp);
 ED_LOCAL     void ed_pg_mark(EdPg *pg, EdPgno *no, uint8_t *dirty);
+
+/** @} */
+
+
+
+/**
+ * @defgroup  pgalloc  Page Allocator Module
+ *
+ * This implement the file-backed page allocator used by the index. This is
+ * pulled out into its own module primarily to aid in testability.
+ *
+ * @{
+ */
+
+struct EdPgAlloc {
+	EdPgAllocHdr *hdr;
+	void *pg;
+	EdPgFree *free;
+	uint64_t flags;
+	int fd;
+	uint8_t dirty, free_dirty;
+	bool from_new;
+};
+
+ED_LOCAL      int ed_pg_alloc(EdPgAlloc *, EdPg **, EdPgno n, bool exclusive);
+ED_LOCAL     void ed_pg_free(EdPgAlloc *, EdPg **, EdPgno n);
 ED_LOCAL      int ed_pg_alloc_new(EdPgAlloc *, const char *, size_t meta, uint64_t flags);
 ED_LOCAL     void ed_pg_alloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
 ED_LOCAL     void ed_pg_alloc_close(EdPgAlloc *);
 ED_LOCAL     void ed_pg_alloc_sync(EdPgAlloc *);
 ED_LOCAL   void * ed_pg_alloc_meta(EdPgAlloc *alloc);
-ED_LOCAL      int ed_pg_alloc(EdPgAlloc *, EdPg **, EdPgno n, bool exclusive);
-ED_LOCAL     void ed_pg_free(EdPgAlloc *, EdPg **, EdPgno n);
-ED_LOCAL EdPgFree * ed_pg_free_list(EdPgAlloc *);
+ED_LOCAL EdPgFree * ed_pg_alloc_free_list(EdPgAlloc *);
+
+/** @} */
+
+
+
 #if ED_MMAP_DEBUG
+/**
+ * @defgroup  pgtrack  Page Usage Tracking Module
+ *
+ * When enabled, tracks improper page uses including leaked pages, double
+ * unmaps, and unmapping uninitialized addresses.
+ *
+ * @{
+ */
+
 ED_LOCAL     void ed_pg_track(EdPgno no, uint8_t *pg, EdPgno count);
 ED_LOCAL     void ed_pg_untrack(uint8_t *pg, EdPgno count);
 ED_LOCAL      int ed_pg_check(void);
+
+/** @} */
 #endif
 
 
-/*** Backtrace Module ***/
+
 #if ED_BACKTRACE
+/**
+ * @defgroup  backtrace  Backtrace Module
+ *
+ * When enabled, provides stack traces for error conditions with the page
+ * tracker and transactions.
+ *
+ * @{
+ */
+
 typedef struct EdBacktrace EdBacktrace;
 
 ED_LOCAL      int ed_backtrace_new(EdBacktrace **);
 ED_LOCAL     void ed_backtrace_free(EdBacktrace **);
 ED_LOCAL     void ed_backtrace_print(EdBacktrace *, int skip, FILE *);
 ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
+
+/** @} */
 #endif
 
 
-/*** Transaction Module ***/
-ED_LOCAL      int ed_txn_new(EdTxn **, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype);
-ED_LOCAL      int ed_txn_open(EdTxn *, bool rdonly, uint64_t flags);
-ED_LOCAL      int ed_txn_commit(EdTxn **, uint64_t flags);
-ED_LOCAL     void ed_txn_close(EdTxn **, uint64_t flags);
-ED_LOCAL      int ed_txn_map(EdTxn *, EdPgno, EdPgNode *par, uint16_t pidx, EdPgNode **out);
-ED_LOCAL EdPgNode * ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
-ED_LOCAL EdTxnSearch * ed_txn_search(EdTxn *tx, unsigned db, bool reset);
 
+/**
+ * @defgroup  bpt  B+Tree Module
+ *
+ * @{
+ */
 
-/*** B+Tree Module ***/
+typedef enum EdBptApply {
+	ED_BPT_NONE,
+	ED_BPT_INSERT,
+	ED_BPT_REPLACE,
+	ED_BPT_DELETE
+} EdBptApply;
+
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
+
 ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
 ED_LOCAL     void ed_bpt_init(EdBpt *bt);
 ED_LOCAL      int ed_bpt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent);
@@ -427,8 +298,91 @@ ED_LOCAL     void ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApp
 ED_LOCAL     void ed_bpt_print(EdBpt *, int fd, size_t esize, FILE *, EdBptPrint);
 ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 
+/** @} */
 
-/*** Index Module ***/
+
+
+/**
+ * @brief  txn  Transaction Module
+ *
+ * This implements the transaction system for working with multiple database
+ * b+trees. These aren't "real" transactions, in that only a single change
+ * operation is supported per database. However, single changes made to
+ * multiple databases are handled as a single change. This is all that's
+ * needed for the index, so the simplicity is preferrable for the moment.
+ * The design of the API is intended to accomodate full transactions if that
+ * does become necessary.
+ *
+ * @{
+ */
+
+#define ED_TX_CLOSED 0
+#define ED_TX_OPEN 1
+
+struct EdTxnSearch {
+	EdPgNode *head;       // first node searched
+	EdPgNode *tail;       // current tail node
+	EdPgno *root;         // pointer to page number of root node
+	uint64_t key;         // key searched for
+	void *entry;          // pointer to the entry in the leaf
+	size_t entry_size;    // size in bytes of the entry
+	uint32_t entry_index; // index of the entry in the leaf
+	int nsplits;          // number of nodes requiring splits for an insert
+	int match;            // return code of the search
+	int nmatches;         // number of matched keys so far
+	void *scratch;        // new entry content
+	EdBptApply apply;     // replace, insert, or delete entry
+};
+
+struct EdTxn {
+	EdLck *lock;          // reference to shared lock
+	EdPgAlloc *alloc;     // page allocator
+	EdPg **pg;            // array to hold allocated pages
+	unsigned npg;         // number of pages allocated
+	unsigned npgused;     // number of pages used
+	EdPgNode *nodes;      // array of node wrapped pages
+	unsigned nnodes;      // length of node array
+	unsigned nnodesused;  // number of nodes used
+	int isopen;           // has #ed_txn_open() been called
+	bool rdonly;          // was #ed_txn_open called in read-only mode
+	unsigned ndb;         // number of search objects
+	EdTxnSearch db[1];    // search object flexible array member
+};
+
+struct EdTxnType {
+	EdPgno *no;
+	size_t entry_size;
+};
+
+ED_LOCAL      int ed_txn_new(EdTxn **, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype);
+ED_LOCAL      int ed_txn_open(EdTxn *, bool rdonly, uint64_t flags);
+ED_LOCAL      int ed_txn_commit(EdTxn **, uint64_t flags);
+ED_LOCAL     void ed_txn_close(EdTxn **, uint64_t flags);
+ED_LOCAL      int ed_txn_map(EdTxn *, EdPgno, EdPgNode *par, uint16_t pidx, EdPgNode **out);
+ED_LOCAL EdPgNode * ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
+ED_LOCAL EdTxnSearch * ed_txn_search(EdTxn *tx, unsigned db, bool reset);
+
+/** @} */
+
+
+
+/**
+ * @defgroup  idx  Index Module
+ *
+ * @{
+ */
+
+struct EdIdx {
+	EdLck lock;
+	EdPgAlloc alloc;
+	uint64_t flags;
+	uint64_t seed;
+	int64_t epoch;
+	EdIdxHdr *hdr;
+	EdBpt *blocks;
+	EdBpt *keys;
+};
+
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL      int ed_idx_load_trees(EdIdx *);
@@ -436,14 +390,33 @@ ED_LOCAL      int ed_idx_save_trees(EdIdx *);
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type, bool wait);
 ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
 
+/** @} */
 
-/*** Random Module ***/
+
+
+/**
+ * @defgroup  rnd  Random Module
+ *
+ * @{
+ */
+
 ED_LOCAL      int ed_rnd_open(void);
 ED_LOCAL  ssize_t ed_rnd_buf(int fd, void *buf, size_t len);
 ED_LOCAL      int ed_rnd_u64(int fd, uint64_t *);
 
+/** @} */
 
-/*** Time Module ***/
+
+
+/**
+ * @defgroup  time  Time Module
+ *
+ * @{
+ */
+
+#define ED_TIME_DELETE 0
+#define ED_TIME_INF UINT32_MAX
+
 ED_LOCAL  int64_t ed_now(int64_t epoch);
 ED_LOCAL uint32_t ed_expire(int64_t epoch, time_t ttlsec);
 ED_LOCAL   time_t ed_ttl_at(int64_t epoch, uint32_t exp, time_t t);
@@ -451,10 +424,61 @@ ED_LOCAL   time_t ed_ttl_now(int64_t epoch, uint32_t exp);
 ED_LOCAL     bool ed_expired_at(int64_t epoch, uint32_t exp, time_t t);
 ED_LOCAL     bool ed_expired_now(int64_t epoch, uint32_t exp);
 
+/** @} */
 
-/*** File Module ***/
-ED_LOCAL      int ed_mkfile(int fd, off_t size);
 
+
+/**
+ * @defgroup  util  Utility Functions
+ *
+ * @{
+ */
+
+#define ed_fsave(f) ((uint32_t)((f) & UINT64_C(0x00000000FFFFFFFF)))
+#define ed_fopen(f) ((f) & UINT64_C(0xFFFFFFFF00000000))
+
+#define ed_align_max(n) ((((n) + (ED_MAX_ALIGN-1)) / ED_MAX_ALIGN) * ED_MAX_ALIGN)
+
+#define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+#if BYTE_ORDER == LITTLE_ENDIAN
+# define ed_b16(v) __builtin_bswap16(v)
+# define ed_l16(v) (v)
+# define ed_b32(v) __builtin_bswap32(v)
+# define ed_l32(v) (v)
+# define ed_b64(v) __builtin_bswap64(v)
+# define ed_l64(v) (v)
+#elif BYTE_ORDER == BIG_ENDIAN
+# define ed_b16(v) (v)
+# define ed_l16(v) __builtin_bswap16(v)
+# define ed_b32(v) (v)
+# define ed_l32(v) __builtin_bswap32(v)
+# define ed_b64(v) (v)
+# define ed_l64(v) __builtin_bswap64(v)
+#endif
+
+#define ed_ptr_b32(T, b, off) ((const T *)((const uint8_t *)(b) + ed_b32(off)))
+
+#define ed_verbose(f, ...) do { \
+	if ((f) & ED_FVERBOSE) { fprintf(stderr, __VA_ARGS__); fflush(stderr); } \
+} while (0)
+
+#define ED_IS_FILE(mode) (S_ISREG(mode))
+#define ED_IS_DEVICE(mode) (S_ISCHR(mode) || S_ISBLK(mode))
+#define ED_IS_MODE(mode) (ED_IS_FILE(mode) || ED_IS_DEVICE(mode))
+
+/**
+ * @brief  Change the size of the open file descriptor.
+ *
+ * This attempts to use the most efficient means for expanding a file for the
+ * host platform.
+ *
+ * @param  fd  File descriptor open for writing
+ * @param  size  The target size of the file
+ * @return  0 on success <0 on failure
+ */
+ED_LOCAL int
+ed_mkfile(int fd, off_t size);
 
 /**
  * @brief  64-bit seeded hash function.
@@ -466,7 +490,6 @@ ED_LOCAL      int ed_mkfile(int fd, off_t size);
  */
 ED_LOCAL uint64_t
 ed_hash(const uint8_t *val, size_t len, uint64_t seed);
-
 
 static inline uint32_t __attribute__((unused))
 ed_fetch32(const void *p)
@@ -483,6 +506,108 @@ ed_fetch64(const void *p)
 	memcpy(&val, p, sizeof(val));
 	return val;
 }
+
+/** @} */
+
+
+
+#define ED_NODE_PAGE_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodePage))
+#define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeKey))
+
+struct EdCache {
+	EdIdx index;
+	atomic_int ref;
+	int fd;
+	size_t bytes_used;
+	size_t pages_used;
+};
+
+struct EdObject {
+	EdCache *cache;
+	time_t expiry;
+	const void *data;
+	const void *key;
+	const void *meta;
+	size_t datalen;
+	uint16_t keylen;
+	uint16_t metalen;
+	EdObjectHdr *hdr;
+};
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic error "-Wpadded"
+
+struct EdPg {
+	EdPgno no;
+	uint32_t type;
+};
+
+struct EdPgFree {
+	EdPg base;
+	EdPgno count;
+	EdPgno pages[ED_PG_FREE_COUNT];
+};
+
+struct EdPgAllocHdr {
+	uint16_t size_page;
+	uint16_t size_block;
+	EdPgno free_list;
+	_Atomic struct EdPgTail {
+		EdPgno start;
+		EdPgno off;
+	} tail;
+};
+
+struct EdIdxHdr {
+	EdPg base;
+	char magic[4];
+	char endian;
+	uint8_t mark;
+	uint16_t version;
+	uint32_t flags;
+	uint32_t pos;
+	EdPgno key_tree;
+	EdPgno block_tree;
+	uint64_t seed;
+	int64_t epoch;
+	EdPgAllocHdr alloc;
+	uint8_t size_align;
+	uint8_t alloc_count;
+	uint8_t _pad[2];
+	EdPgno slab_page_count;
+	uint64_t slab_ino;
+	char slab_path[1024];
+};
+
+struct EdObjectHdr {
+	uint64_t hash;
+	uint32_t datalen;
+	uint16_t keylen;
+	uint16_t metalen;
+};
+
+struct EdBpt {
+	EdPg base;
+	EdPgno right;
+	uint16_t vers;
+	uint16_t nkeys;
+	uint8_t data[PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 4];
+};
+
+struct EdNodePage {
+	EdBlkno block; // XXX last block of the entry?
+	uint32_t exp;
+	EdPgno meta;
+};
+
+struct EdNodeKey {
+	uint64_t hash;
+	uint32_t exp;
+	EdPgno meta;
+	EdBlkno slab;
+};
+
+#pragma GCC diagnostic pop
 
 #endif
 

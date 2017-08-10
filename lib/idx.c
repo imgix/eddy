@@ -40,7 +40,7 @@ _Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
 
 
 static const EdIdxHdr INDEX_DEFAULT = {
-	.base = { 0, ED_PGINDEX },
+	.base = { 0, ED_PG_INDEX },
 	.magic = { 'E', 'D', 'D', 'Y' },
 #if BYTE_ORDER == LITTLE_ENDIAN
 	.endian = 'l',
@@ -51,8 +51,8 @@ static const EdIdxHdr INDEX_DEFAULT = {
 #endif
 	.mark = 0xfc,
 	.version = 2,
-	.key_tree = ED_PAGE_NONE,
-	.block_tree = ED_PAGE_NONE,
+	.key_tree = ED_PG_NONE,
+	.block_tree = ED_PG_NONE,
 	.alloc = {
 		.size_page = PAGESIZE,
 		.size_block = PAGESIZE,
@@ -155,7 +155,7 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 	uint64_t flags = cfg->flags;
 
 	if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
-	hdrnew.flags = ED_FSAVE(flags);
+	hdrnew.flags = ed_fsave(flags);
 	hdrnew.epoch = (int64_t)time(NULL);
 	hdrnew.alloc.free_list = PG_ROOT_FREE;
 	hdrnew.alloc.tail = (EdPgTail){ PG_NINIT, 0 };
@@ -218,7 +218,7 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 			memset(hdr, 0, size);
 			memcpy(hdr, &hdrnew, sizeof(hdrnew));
 			free_list->base.no = PG_ROOT_FREE;
-			free_list->base.type = ED_PGFREE_HEAD;
+			free_list->base.type = ED_PG_FREE_HEAD;
 			free_list->count = 0;
 			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
 		} while (0);
@@ -227,7 +227,7 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 	}
 	if (rc < 0) { goto error; }
 
-	uint64_t f = hdr->flags | ED_FOPEN(flags);
+	uint64_t f = hdr->flags | ed_fopen(flags);
 	ed_lck_init(&index->lock, 0, PAGESIZE);
 	ed_pg_alloc_init(&index->alloc, &hdr->alloc, fd, f);
 	index->alloc.free = free_list;
@@ -326,7 +326,7 @@ stat_free(EdIdx *index, uint8_t *vec, EdPgFree *fs, FILE *out)
 	if (rc == 0 && c > 0) {
 		EdPgFree *p = ed_pg_map(index->alloc.fd, fs->pages[0], 1);
 		if (p == MAP_FAILED) { return ED_ERRNO; }
-		if (p->base.type == ED_PGFREE_CHLD || p->base.type == ED_PGFREE_HEAD) {
+		if (p->base.type == ED_PG_FREE_CHLD || p->base.type == ED_PG_FREE_HEAD) {
 			rc = stat_free(index, vec, (EdPgFree *)p, out);
 		}
 		ed_pg_unmap(p, 1);
@@ -385,7 +385,7 @@ ed_idx_stat(EdIdx *index, FILE *out, int flags)
 		if (rc < 0) { goto done; }
 
 		BITSET(vec, index->alloc.hdr->free_list);
-		rc = stat_free(index, vec, ed_pg_free_list(&index->alloc), out);
+		rc = stat_free(index, vec, ed_pg_alloc_free_list(&index->alloc), out);
 
 		ed_idx_lock(index, ED_LCK_UN, true);
 		if (rc < 0) { goto done; }

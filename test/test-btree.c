@@ -91,7 +91,7 @@ test_basic(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -142,7 +142,7 @@ test_repeat(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -203,7 +203,7 @@ test_large(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -247,7 +247,7 @@ test_large_sequential(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -290,7 +290,7 @@ test_large_sequential_reverse(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -333,7 +333,7 @@ test_split_leaf_middle_left(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -388,7 +388,7 @@ test_split_leaf_middle_right(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -443,7 +443,7 @@ test_split_middle_branch(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -497,7 +497,7 @@ test_remove_small(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;
@@ -574,7 +574,7 @@ test_remove_large(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	Tree *t = ed_pg_alloc_meta(&alloc);
-	t->head = ED_PAGE_NONE;
+	t->head = ED_PG_NONE;
 
 	EdTxnType type[] = { { &t->head, sizeof(Entry) } };
 	EdTxn *tx;

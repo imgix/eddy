@@ -33,7 +33,7 @@ test_basic(void)
 
 	ed_pg_free(&alloc, pages, ed_len(pages));
 
-	free = ed_pg_free_list(&alloc);
+	free = ed_pg_alloc_free_list(&alloc);
 	mu_assert_int_eq(free->count, 2);
 
 	ed_pg_alloc_close(&alloc);
@@ -41,7 +41,7 @@ test_basic(void)
 
 	mu_assert_int_eq(tail.off, 2);
 
-	free = ed_pg_free_list(&alloc);
+	free = ed_pg_alloc_free_list(&alloc);
 	mu_assert_int_eq(free->count, 2);
 }
 

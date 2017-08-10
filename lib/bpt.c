@@ -36,7 +36,7 @@ _Static_assert(sizeof(EdBpt) == PAGESIZE,
 #define LEAF_ORDER(esize) \
 	(sizeof(((EdBpt *)0)->data) / (esize))
 
-#define IS_BRANCH(n) ((n)->base.type == ED_PGBRANCH)
+#define IS_BRANCH(n) ((n)->base.type == ED_PG_BRANCH)
 #define IS_BRANCH_FULL(n) ((n)->nkeys == (BRANCH_ORDER-1))
 #define IS_LEAF_FULL(n, esize) ((n)->nkeys == LEAF_ORDER(esize))
 #define IS_FULL(n, esize) (IS_BRANCH(n) ? IS_BRANCH_FULL(n) : IS_LEAF_FULL(n, esize))
@@ -96,9 +96,9 @@ ed_bpt_capacity(size_t esize, size_t depth)
 void
 ed_bpt_init(EdBpt *bt)
 {
-	bt->base.type = ED_PGLEAF;
+	bt->base.type = ED_PG_LEAF;
 	bt->nkeys = 0;
-	bt->right = ED_PAGE_NONE;
+	bt->right = ED_PG_NONE;
 }
 
 static EdPgno *
@@ -195,13 +195,13 @@ ed_bpt_next(EdTxn *tx, unsigned db, void **ent)
 	uint32_t i = srch->entry_index;
 	if (i == leaf->nkeys-1) {
 		EdPgno right = leaf->right;
-		if (right == ED_PAGE_NONE) { goto done; }
+		if (right == ED_PG_NONE) { goto done; }
 
 		rc = ed_txn_map(tx, right, node, 0, &node);
 		if (rc < 0) { goto done; }
 
 		leaf = node->tree;
-		if (leaf->base.type != ED_PGOVERFLOW) { goto done; }
+		if (leaf->base.type != ED_PG_OVERFLOW) { goto done; }
 
 		p = leaf->data;
 		i = 0;
@@ -388,9 +388,9 @@ insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right
 		parent = ed_txn_alloc(tx, NULL, 0);
 		srch->head = parent;
 		p = parent->tree;
-		p->base.type = ED_PGBRANCH;
+		p->base.type = ED_PG_BRANCH;
 		p->nkeys = 0;
-		p->right = ED_PAGE_NONE;
+		p->right = ED_PG_NONE;
 
 		// Assign the left pointer. (right is assigned below)
 		pos = BRANCH_PTR_SIZE;
@@ -413,7 +413,7 @@ insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right
 
 			EdPgNode *leftb = parent, *rightb = ed_txn_alloc(tx, leftb->parent, leftb->pindex + 1);
 
-			rightb->tree->base.type = ED_PGBRANCH;
+			rightb->tree->base.type = ED_PG_BRANCH;
 			rightb->tree->nkeys = n - mid;
 			rightb->tree->right = leftb->tree->right;
 			leftb->tree->nkeys = mid - 1;
@@ -487,16 +487,16 @@ overflow_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 	EdPgNode *node;
 	size_t esize = srch->entry_size;
 
-	if (leaf->tree->right != ED_PAGE_NONE) {
+	if (leaf->tree->right != ED_PG_NONE) {
 		if (ed_txn_map(tx, leaf->tree->right, leaf, 0, &node) == 0) {
-			if (node->tree->base.type == ED_PGOVERFLOW && node->tree->nkeys < LEAF_ORDER(esize)) {
+			if (node->tree->base.type == ED_PG_OVERFLOW && node->tree->nkeys < LEAF_ORDER(esize)) {
 				goto done;
 			}
 		}
 	}
 
 	node = ed_txn_alloc(tx, leaf, 0);
-	node->tree->base.type = ED_PGOVERFLOW;
+	node->tree->base.type = ED_PG_OVERFLOW;
 	node->tree->nkeys = 0;
 	node->tree->right = leaf->tree->right;
 	leaf->tree->right = node->tree->base.no;
@@ -524,7 +524,7 @@ split_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf, int mid)
 
 	EdPgNode *left = leaf, *right = ed_txn_alloc(tx, left->parent, left->pindex + 1);
 
-	right->tree->base.type = ED_PGLEAF;
+	right->tree->base.type = ED_PG_LEAF;
 	right->tree->nkeys = n - mid;
 	right->tree->right = left->tree->right;
 	left->tree->nkeys = mid;
@@ -561,8 +561,8 @@ ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApply a)
 		// If the root was NULL, create a new root node.
 		if (leaf == NULL) {
 			leaf = ed_txn_alloc(tx, NULL, 0);
-			leaf->tree->base.type = ED_PGLEAF;
-			leaf->tree->right = ED_PAGE_NONE;
+			leaf->tree->base.type = ED_PG_LEAF;
+			leaf->tree->right = ED_PG_NONE;
 			srch->entry = leaf->tree->data;
 			srch->entry_index = 0;
 			srch->head = srch->tail = leaf;
@@ -722,9 +722,9 @@ static void
 print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool *stack, int top)
 {
 	fprintf(out, "%s p%u, nkeys=%u/%zu, right=p%jd",
-			leaf->base.type == ED_PGLEAF ? "leaf" : "overflow",
+			leaf->base.type == ED_PG_LEAF ? "leaf" : "overflow",
 			leaf->base.no, leaf->nkeys, LEAF_ORDER(esize),
-			leaf->right == ED_PAGE_NONE ? INTMAX_C(-1) : (intmax_t)leaf->right);
+			leaf->right == ED_PG_NONE ? INTMAX_C(-1) : (intmax_t)leaf->right);
 
 	uint32_t n = leaf->nkeys;
 	if (n == 0) {
@@ -745,9 +745,9 @@ print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool 
 	}
 	print_box(out, n, n, stack, top);
 
-	if (leaf->right != ED_PAGE_NONE) {
+	if (leaf->right != ED_PG_NONE) {
 		EdBpt *next = ed_pg_map(fd, leaf->right, 1);
-		if (next->base.type == ED_PGOVERFLOW) {
+		if (next->base.type == ED_PG_OVERFLOW) {
 			print_tree(out, stack, top-1);
 			fprintf(out, "= %llu, ", ed_fetch64(next->data));
 			print_leaf(fd, esize, next, out, print, stack, top);
@@ -761,7 +761,7 @@ print_branch(int fd, size_t esize, EdBpt *branch, FILE *out, EdBptPrint print, b
 {
 	fprintf(out, "branch p%u, nkeys=%u/%zu, right=p%jd\n",
 			branch->base.no, branch->nkeys, BRANCH_ORDER,
-			branch->right == ED_PAGE_NONE ? INTMAX_C(-1) : (intmax_t)branch->right);
+			branch->right == ED_PG_NONE ? INTMAX_C(-1) : (intmax_t)branch->right);
 
 	uint32_t end = branch->nkeys;
 	uint8_t *p = branch->data + BRANCH_PTR_SIZE;
@@ -783,11 +783,11 @@ static void
 print_node(int fd, size_t esize, EdBpt *t, FILE *out, EdBptPrint print, bool *stack, int top)
 {
 	switch (t->base.type) {
-	case ED_PGOVERFLOW:
-	case ED_PGLEAF:
+	case ED_PG_OVERFLOW:
+	case ED_PG_LEAF:
 		print_leaf(fd, esize, t, out, print, stack, top);
 		break;
-	case ED_PGBRANCH:
+	case ED_PG_BRANCH:
 		print_branch(fd, esize, t, out, print, stack, top);
 		break;
 	}
@@ -852,15 +852,15 @@ verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t ma
 	}
 
 	EdPgno ptr = l->right;
-	while (ptr != ED_PAGE_NONE) {
+	while (ptr != ED_PG_NONE) {
 		EdBpt *next = ed_pg_map(fd, ptr, 1);
 		int rc = 0;
-		if (next->base.type == ED_PGOVERFLOW) {
+		if (next->base.type == ED_PG_OVERFLOW) {
 			rc = verify_overflow(fd, esize, next, out, last);
 			ptr = next->right;
 		}
 		else {
-			ptr = ED_PAGE_NONE;
+			ptr = ED_PG_NONE;
 		}
 		ed_pg_unmap(next, 1);
 		if (rc < 0) { return -1; }
@@ -871,7 +871,7 @@ verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t ma
 int
 verify_node(int fd, size_t esize, EdBpt *t, FILE *out, uint64_t min, uint64_t max)
 {
-	if (t->base.type == ED_PGLEAF) {
+	if (t->base.type == ED_PG_LEAF) {
 		return verify_leaf(fd, esize, t, out, min, max);
 	}
 
