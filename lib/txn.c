@@ -76,6 +76,7 @@ ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags)
 	EdLckType lock = rdonly ? ED_LCK_SH : ED_LCK_EX;
 	int rc = ed_lck(tx->lock, tx->alloc->fd, lock, true, flags);
 	if (rc < 0) { return rc; }
+	tx->cflags = flags & ED_TX_CRIT_FLAGS;
 	tx->isopen = true;
 	tx->rdonly = rdonly;
 	return 0;
@@ -121,6 +122,7 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 {
 	EdTxn *tx = *txp;
 	if (tx == NULL) { return; }
+	flags = (flags & ~ED_TX_CRIT_FLAGS) | tx->cflags;
 
 	if (tx->isopen) {
 		ed_lck(tx->lock, tx->alloc->fd, ED_LCK_UN, true, flags);

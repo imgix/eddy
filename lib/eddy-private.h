@@ -321,6 +321,8 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 #define ED_TX_CLOSED 0
 #define ED_TX_OPEN 1
 
+#define ED_TX_CRIT_FLAGS (ED_FNOTLCK|ED_FNOFLCK)
+
 /**
  * @brief  Transaction database instance information
  *
@@ -368,7 +370,8 @@ struct EdTxn {
 	EdPgNode *nodes;      /**< Array of node wrapped pages */
 	unsigned nnodes;      /**< Length of node array */
 	unsigned nnodesused;  /**< Number of nodes used */
-	int isopen;           /**< Has #ed_txn_open() been called */
+	uint64_t cflags;       /**< Flags mixed into commit/close */
+	bool isopen;          /**< Has #ed_txn_open() been called */
 	bool rdonly;          /**< Was #ed_txn_open called in read-only mode */
 	unsigned ndb;         /**< Number of search objects */
 	EdTxnDb db[1];        /**< Search object flexible array member */
@@ -419,6 +422,8 @@ ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags);
  * <dl>
  *     <dt>#ED_FNOSYNC</dt>
  *     <dd>Disable file syncing.</dd>
+ *     <dt>#ED_FASYNC</dt>
+ *     <dd>Don't wait for pages to complete syncing.</dd>
  *     <dt>#ED_FRESET</dt>
  *     <dd>Reset the transaction for another use.</dd>
  *     <dt>#ED_FNOTLCK</dt>
@@ -441,6 +446,8 @@ ed_txn_commit(EdTxn **txp, uint64_t flags);
  * <dl>
  *     <dt>#ED_FNOSYNC</dt>
  *     <dd>Disable file syncing.</dd>
+ *     <dt>#ED_FASYNC</dt>
+ *     <dd>Don't wait for pages to complete syncing.</dd>
  *     <dt>#ED_FRESET</dt>
  *     <dd>Reset the transaction for another use.</dd>
  *     <dt>#ED_FNOTLCK</dt>
