@@ -322,7 +322,20 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 #define ED_TX_OPEN 1
 
 /**
+ * @brief  Transaction database instance information
+ *
+ * This describes each database involved in the transaction. An array of these
+ * is passed to #ed_txn_new().
+ */
+struct EdTxnType {
+	EdPgno *no;           /**< Pointer to the page number for the root of the b+tree */
+	size_t entry_size;    /**< Size in bytes of the entry value in the b+tree */
+};
+
+/**
  * @brief  Transaction database reference
+ *
+ * This is the object allocated for each database involved in the transaction.
  */
 struct EdTxnDb {
 	EdPgNode *head;       /**< First node searched */
@@ -339,6 +352,13 @@ struct EdTxnDb {
 	EdBptApply apply;     /**< Replace, insert, or delete entry */
 };
 
+/**
+ * @brief  Transaction object
+ *
+ * This holds all information for an active or reset transaction. Once
+ * allocated, the transaction cannot be changed. However, it may be reset and
+ * used for multiple transactions agains the same database set.
+ */
 struct EdTxn {
 	EdLck *lock;          /**< Reference to shared lock */
 	EdPgAlloc *alloc;     /**< Page allocator */
@@ -354,18 +374,125 @@ struct EdTxn {
 	EdTxnDb db[1];        /**< Search object flexible array member */
 };
 
-struct EdTxnType {
-	EdPgno *no;
-	size_t entry_size;
-};
+/**
+ * @brief  Allocates a new transaction for working with a specific set of databases.
+ *
+ * The object is deallocated when calling #ed_txn_commit() or #ed_txn_close().
+ * However, the transaction may be reused by passing #ED_FRESET to either of
+ * these functions.
+ *
+ * @param  txp  Indirect pointer to a assign the allocation to
+ * @param  alloc  A page allocator instance
+ * @param  lock  An initialized lock object
+ * @param  type  An Array of #EdTxnType structs
+ * @param  ntype  The number of #EdTxnType structs
+ * @return  0 on success <0 on error
+ */
+ED_LOCAL int
+ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype);
 
-ED_LOCAL      int ed_txn_new(EdTxn **, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype);
-ED_LOCAL      int ed_txn_open(EdTxn *, bool rdonly, uint64_t flags);
-ED_LOCAL      int ed_txn_commit(EdTxn **, uint64_t flags);
-ED_LOCAL     void ed_txn_close(EdTxn **, uint64_t flags);
-ED_LOCAL      int ed_txn_map(EdTxn *, EdPgno, EdPgNode *par, uint16_t pidx, EdPgNode **out);
-ED_LOCAL EdPgNode * ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
-ED_LOCAL EdTxnDb * ed_txn_db(EdTxn *tx, unsigned db, bool reset);
+/**
+ * @brief  Starts an allocated transaction
+ *
+ * This must be called before reading or writing to any database objects.
+ * 
+ * Supported flags are:
+ * <dl>
+ *     <dt>#ED_FNOTLCK</dt>
+ *     <dd>Disable thread locking.</dd>
+ *     <dt>#ED_FNOFLCK</dt>
+ *     <dd>Disable file locking.</dd>
+ * </dl>
+ *
+ * @param  tx  Closed transaction object
+ * @param  rdonly  The database will only be read from
+ * @param  flags  Behavior modification flags
+ * @return  0 on success <0 on error
+ */
+ED_LOCAL int
+ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags);
+
+/**
+ * @brief  Commits the changes to each database
+ *
+ * Supported flags are:
+ * <dl>
+ *     <dt>#ED_FNOSYNC</dt>
+ *     <dd>Disable file syncing.</dd>
+ *     <dt>#ED_FRESET</dt>
+ *     <dd>Reset the transaction for another use.</dd>
+ *     <dt>#ED_FNOTLCK</dt>
+ *     <dd>Disable thread locking.</dd>
+ *     <dt>#ED_FNOFLCK</dt>
+ *     <dd>Disable file locking.</dd>
+ * </dl>
+ *
+ * @param  txp  Indirect pointer an open transaction
+ * @param  flags  Behavior modification flags
+ * @return  0 on success <0 on error
+ */
+ED_LOCAL int
+ed_txn_commit(EdTxn **txp, uint64_t flags);
+
+/**
+ * @brief  Closes the transaction and abandons any pending changes
+ *
+ * Supported flags are:
+ * <dl>
+ *     <dt>#ED_FNOSYNC</dt>
+ *     <dd>Disable file syncing.</dd>
+ *     <dt>#ED_FRESET</dt>
+ *     <dd>Reset the transaction for another use.</dd>
+ *     <dt>#ED_FNOTLCK</dt>
+ *     <dd>Disable thread locking.</dd>
+ *     <dt>#ED_FNOFLCK</dt>
+ *     <dd>Disable file locking.</dd>
+ * </dl>
+ *
+ * @param  txp  Indirect pointer an open transaction
+ * @param  flags  Behavior modification flags
+ * @return  0 on success <0 on error
+ */
+ED_LOCAL void
+ed_txn_close(EdTxn **, uint64_t flags);
+
+/**
+ * @brief  Maps a page wrapped into a node
+ *
+ * The page is unmapped and possibly synced when the transaction is complete.
+ *
+ * @param  tx  Transaction object
+ * @param  no  Page number to map
+ * @param  par  Parent node or `NULL`
+ * @param  pidx  Index of the page in the parent
+ * @param  out  Node pointer to assign to
+ * @return  0 on success <0 on error
+ */
+ED_LOCAL int
+ed_txn_map(EdTxn *tx, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out);
+
+/**
+ * @brief  Retrieves the next allocated page wrapped into a node
+ *
+ * The number of pages needed is determined by the modifications made to the
+ * databases. Requesting too many pages will result in an abort.
+ *
+ * @param  tx  Transaction object
+ * @param  par  Parent node or `NULL`
+ * @param  pidx  Index of the page in the parent
+ * @return  Node object
+ */
+ED_LOCAL EdPgNode *
+ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
+
+/**
+ * @brief  Gets the #EdTxnDb object for the numbered database
+ * @param  tx  Transaction object
+ * @param  db  Database number, 0-based
+ * @param  reset  Reset the search and modification state
+ */
+ED_LOCAL EdTxnDb *
+ed_txn_db(EdTxn *tx, unsigned db, bool reset);
 
 /** @} */
 
