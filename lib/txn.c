@@ -129,10 +129,10 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 	EdPg *heads[tx->ndb];
 	if (flags & ED_FRESET) {
 		for (unsigned i = 0; i < tx->ndb; i++) {
-			EdTxnSearch *srch = &tx->db[i];
-			if (srch->head) {
-				heads[i] = srch->head->page;
-				srch->head->page = NULL;
+			EdTxnDb *dbp = &tx->db[i];
+			if (dbp->head) {
+				heads[i] = dbp->head->page;
+				dbp->head->page = NULL;
 			}
 			else {
 				heads[i] = NULL;
@@ -156,16 +156,16 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 		tx->nnodesused = 0;
 		tx->isopen = false;
 		for (unsigned i = 0; i < tx->ndb; i++) {
-			EdTxnSearch *srch = &tx->db[i];
-			srch->tail = srch->head = heads[i] ?
+			EdTxnDb *dbp = &tx->db[i];
+			dbp->tail = dbp->head = heads[i] ?
 				wrap_node(tx, heads[i], NULL, 0, 0) : NULL;
-			srch->key = 0;
-			srch->entry = NULL;
-			srch->entry_index = 0;
-			srch->nsplits = 0;
-			srch->match = 0;
-			srch->nmatches = 0;
-			srch->apply = ED_BPT_NONE;
+			dbp->key = 0;
+			dbp->entry = NULL;
+			dbp->entry_index = 0;
+			dbp->nsplits = 0;
+			dbp->match = 0;
+			dbp->nmatches = 0;
+			dbp->apply = ED_BPT_NONE;
 		}
 	}
 	else {
@@ -207,20 +207,20 @@ ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx)
 	return wrap_node(tx, tx->pg[tx->npgused++], par, pidx, 1);
 }
 
-EdTxnSearch *
-ed_txn_search(EdTxn *tx, unsigned db, bool reset)
+EdTxnDb *
+ed_txn_db(EdTxn *tx, unsigned db, bool reset)
 {
 	assert(db < tx->ndb);
-	EdTxnSearch *srch = &tx->db[db];
+	EdTxnDb *dbp = &tx->db[db];
 	if (reset) {
-		srch->tail = srch->head;
-		srch->entry = NULL;
-		srch->entry_index = 0;
-		srch->nsplits = 0;
-		srch->match = 0;
-		srch->nmatches = 0;
-		srch->apply = ED_BPT_NONE;
+		dbp->tail = dbp->head;
+		dbp->entry = NULL;
+		dbp->entry_index = 0;
+		dbp->nsplits = 0;
+		dbp->match = 0;
+		dbp->nmatches = 0;
+		dbp->apply = ED_BPT_NONE;
 	}
-	return srch;
+	return dbp;
 }
 

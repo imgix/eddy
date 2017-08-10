@@ -124,28 +124,28 @@ ed_bpt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent)
 		return ed_esys(EINVAL);
 	}
 
-	EdTxnSearch *srch = ed_txn_search(tx, db, true);
-	srch->key = key;
+	EdTxnDb *dbp = ed_txn_db(tx, db, true);
+	dbp->key = key;
 
 	int rc = 0;
 	uint32_t i = 0, n = 0;
 	uint8_t *data = NULL;
-	size_t esize = srch->entry_size;
+	size_t esize = dbp->entry_size;
 
-	if (srch->head == NULL) {
-		srch->nsplits = 1;
+	if (dbp->head == NULL) {
+		dbp->nsplits = 1;
 		goto done;
 	}
 
-	EdPgNode *node = srch->head;
+	EdPgNode *node = dbp->head;
 
 	// The root node needs two pages when splitting.
-	srch->nsplits = IS_FULL(node->tree, esize);
+	dbp->nsplits = IS_FULL(node->tree, esize);
 
 	// Search down the branches of the tree.
 	while (IS_BRANCH(node->tree)) {
-		if (IS_BRANCH_FULL(node->tree)) { srch->nsplits++; }
-		else { srch->nsplits = 0; }
+		if (IS_BRANCH_FULL(node->tree)) { dbp->nsplits++; }
+		else { dbp->nsplits = 0; }
 		EdPgno *ptr = search_branch(node->tree, key);
 		uint16_t bidx = branch_index(node->tree, ptr);
 		EdPgno no = ed_fetch32(node->tree->data + bidx*BRANCH_ENTRY_SIZE);
@@ -153,10 +153,10 @@ ed_bpt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent)
 		rc = ed_txn_map(tx, no, node, bidx, &next);
 		if (rc < 0) { goto done; }
 		node = next;
-		srch->tail = node;
+		dbp->tail = node;
 	}
-	if (IS_LEAF_FULL(node->tree, esize)) { srch->nsplits++; }
-	else { srch->nsplits = 0; }
+	if (IS_LEAF_FULL(node->tree, esize)) { dbp->nsplits++; }
+	else { dbp->nsplits = 0; }
 
 	// Search the leaf node.
 	data = node->tree->data;
@@ -173,26 +173,26 @@ ed_bpt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent)
 
 done:
 	if (rc >= 0) {
-		srch->entry = data;
-		srch->entry_index = i;
-		srch->nmatches = rc;
+		dbp->entry = data;
+		dbp->entry_index = i;
+		dbp->nmatches = rc;
 		if (ent) { *ent = data; }
 	}
-	srch->match = rc;
+	dbp->match = rc;
 	return rc;
 }
 
 int
 ed_bpt_next(EdTxn *tx, unsigned db, void **ent)
 {
-	EdTxnSearch *srch = &tx->db[db];
-	if (srch->match != 1) { return srch->match; }
+	EdTxnDb *dbp = &tx->db[db];
+	if (dbp->match != 1) { return dbp->match; }
 
 	int rc = 0;
-	EdPgNode *node = srch->tail;
+	EdPgNode *node = dbp->tail;
 	EdBpt *leaf = node->tree;
-	uint8_t *p = srch->entry;
-	uint32_t i = srch->entry_index;
+	uint8_t *p = dbp->entry;
+	uint32_t i = dbp->entry_index;
 	if (i == leaf->nkeys-1) {
 		EdPgno right = leaf->right;
 		if (right == ED_PG_NONE) { goto done; }
@@ -207,20 +207,20 @@ ed_bpt_next(EdTxn *tx, unsigned db, void **ent)
 		i = 0;
 	}
 	else {
-		p += srch->entry_size;
+		p += dbp->entry_size;
 		i++;
 	}
-	srch->entry = p;
-	srch->entry_index = i;
-	if (srch->key == ed_fetch64(p)) {
-		srch->tail = node;
-		srch->nmatches++;
+	dbp->entry = p;
+	dbp->entry_index = i;
+	if (dbp->key == ed_fetch64(p)) {
+		dbp->tail = node;
+		dbp->nmatches++;
 		if (ent) { *ent = p; }
 		rc = 1;
 	}
 
 done:
-	srch->match = rc;
+	dbp->match = rc;
 	return rc;
 }
 
@@ -228,15 +228,15 @@ int
 ed_bpt_set(EdTxn *tx, unsigned db, const void *ent, bool replace)
 {
 	if (tx->rdonly) { return ed_esys(EINVAL); }
-	EdTxnSearch *srch = ed_txn_search(tx, db, false);
-	if (ed_fetch64(ent) != srch->key) { return ED_EINDEX_KEY_MATCH; }
-	memcpy(srch->scratch, ent, srch->entry_size);
-	if (replace && srch->match == 1) {
-		srch->apply = ED_BPT_REPLACE;
+	EdTxnDb *dbp = ed_txn_db(tx, db, false);
+	if (ed_fetch64(ent) != dbp->key) { return ED_EINDEX_KEY_MATCH; }
+	memcpy(dbp->scratch, ent, dbp->entry_size);
+	if (replace && dbp->match == 1) {
+		dbp->apply = ED_BPT_REPLACE;
 		return 0;
 	}
 	else {
-		srch->apply = ED_BPT_INSERT;
+		dbp->apply = ED_BPT_INSERT;
 		return 1;
 	}
 }
@@ -245,30 +245,30 @@ int
 ed_bpt_del(EdTxn *tx, unsigned db)
 {
 	if (tx->rdonly) { return ed_esys(EINVAL); }
-	EdTxnSearch *srch = ed_txn_search(tx, db, false);
-	if (srch->match == 1) {
-		srch->apply = ED_BPT_DELETE;
+	EdTxnDb *dbp = ed_txn_db(tx, db, false);
+	if (dbp->match == 1) {
+		dbp->apply = ED_BPT_DELETE;
 		return 1;
 	}
 	else {
-		srch->apply = ED_BPT_NONE;
+		dbp->apply = ED_BPT_NONE;
 		return 0;
 	}
 }
 
 static int
-redistribute_leaf_left(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
+redistribute_leaf_left(EdTxn *tx, EdTxnDb *dbp, EdPgNode *leaf)
 {
 	// If the leaf is the first child, don't redistribute.
 	if (leaf->pindex == 0) { return INS_NONE; }
 	// Don't move left if the new insert is at the beggining.
-	if (srch->entry_index == 0) { return INS_NONE; }
+	if (dbp->entry_index == 0) { return INS_NONE; }
 
 	EdPgNode *ln;
 	int rc = map_extra(tx, leaf->parent, leaf->pindex-1, &ln);
 	if (rc < 0) { return rc == -1 ? INS_NONE : rc; }
 
-	size_t esize = srch->entry_size;
+	size_t esize = dbp->entry_size;
 	uint16_t ord = LEAF_ORDER(esize);
 	EdBpt *l = ln->tree;
 
@@ -278,7 +278,7 @@ redistribute_leaf_left(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 	// Move half the available nodes into the left leaf.
 	uint32_t n = (ord - l->nkeys + 1) / 2;
 	// But don't move past the entry index.
-	uint32_t max = srch->entry_index;
+	uint32_t max = dbp->entry_index;
 	if (n > max) { n = max; }
 
 	// Check if the split point spans a repeating key.
@@ -301,8 +301,8 @@ redistribute_leaf_left(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 	leaf->tree->nkeys -= n;
 
 	// Slide the entry index down.
-	srch->entry_index -= n;
-	srch->entry = leaf->tree->data + srch->entry_index*esize;
+	dbp->entry_index -= n;
+	dbp->entry = leaf->tree->data + dbp->entry_index*esize;
 
 	ln->dirty = 1;
 	leaf->dirty = 1;
@@ -311,16 +311,16 @@ redistribute_leaf_left(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 }
 
 static int
-redistribute_leaf_right(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
+redistribute_leaf_right(EdTxn *tx, EdTxnDb *dbp, EdPgNode *leaf)
 {
 	// If the leaf is the last child, don't redistribute.
 	if (leaf->pindex == leaf->parent->tree->nkeys) { return INS_NONE; }
 
-	size_t esize = srch->entry_size;
+	size_t esize = dbp->entry_size;
 	uint16_t ord = LEAF_ORDER(esize);
 
 	// Don't move right if the insert is at the end.
-	if (srch->entry_index == ord) { return INS_NONE; }
+	if (dbp->entry_index == ord) { return INS_NONE; }
 
 	EdPgNode *rn;
 	int rc = map_extra(tx, leaf->parent, leaf->pindex+1, &rn);
@@ -334,7 +334,7 @@ redistribute_leaf_right(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 	// Move half the available nodes into the right leaf.
 	uint32_t n = (ord - r->nkeys + 1) / 2;
 	// But don't move past the entry index.
-	uint32_t max = (uint32_t)ord - srch->entry_index;
+	uint32_t max = (uint32_t)ord - dbp->entry_index;
 	if (n > max) { n = max; }
 
 	// Check if the split point spans a repeating key.
@@ -363,19 +363,19 @@ redistribute_leaf_right(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 }
 
 static int
-redistribute_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
+redistribute_leaf(EdTxn *tx, EdTxnDb *dbp, EdPgNode *leaf)
 {
 	if (leaf->parent == NULL) { return INS_NONE; }
 
-	int rc = redistribute_leaf_right(tx, srch, leaf);
+	int rc = redistribute_leaf_right(tx, dbp, leaf);
 	if (rc == 0) {
-		rc = redistribute_leaf_left(tx, srch, leaf);
+		rc = redistribute_leaf_left(tx, dbp, leaf);
 	}
 	return rc;
 }
 
 static void
-insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right, uint64_t rkey)
+insert_into_parent(EdTxn *tx, EdTxnDb *dbp, EdPgNode *left, EdPgNode *right, uint64_t rkey)
 {
 	EdPgNode *parent = left->parent;
 	EdBpt *p;
@@ -386,7 +386,7 @@ insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right
 	if (parent == NULL) {
 		// Initialize new parent node from the allocation array.
 		parent = ed_txn_alloc(tx, NULL, 0);
-		srch->head = parent;
+		dbp->head = parent;
 		p = parent->tree;
 		p->base.type = ED_PG_BRANCH;
 		p->nkeys = 0;
@@ -427,7 +427,7 @@ insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right
 				p = rightb->tree;
 			}
 
-			insert_into_parent(tx, srch, leftb, rightb, rbkey);
+			insert_into_parent(tx, dbp, leftb, rightb, rbkey);
 		}
 
 		// The parent has space, so shift space for the right node.
@@ -443,26 +443,26 @@ insert_into_parent(EdTxn *tx, EdTxnSearch *srch, EdPgNode *left, EdPgNode *right
 }
 
 static int
-split_point(EdTxnSearch *srch, EdBpt *l)
+split_point(EdTxnDb *dbp, EdBpt *l)
 {
 	uint16_t n = l->nkeys, mid = n/2, min, max;
 	uint64_t key;
-	size_t esize = srch->entry_size;
+	size_t esize = dbp->entry_size;
 
 	// The split cannot be between repeated keys.
 	// If the searched index is around the mid point, use the key and search position.
-	if (srch->nmatches > 0 &&
-			mid <= srch->entry_index &&
-			mid >= srch->entry_index - srch->nmatches + 1) {
-		key = srch->key;
-		min = srch->entry_index - srch->nmatches + 1;
-		max = srch->entry_index + 1;
+	if (dbp->nmatches > 0 &&
+			mid <= dbp->entry_index &&
+			mid >= dbp->entry_index - dbp->nmatches + 1) {
+		key = dbp->key;
+		min = dbp->entry_index - dbp->nmatches + 1;
+		max = dbp->entry_index + 1;
 	}
 	// Otherwise search back for the start of any repeat sequence.
 	else {
 		key = leaf_key(l, mid, esize);
-		if (key == srch->key) {
-			min = srch->entry_index - srch->nmatches + 1;
+		if (key == dbp->key) {
+			min = dbp->entry_index - dbp->nmatches + 1;
 		}
 		else {
 			for (min = mid; min > 0 && leaf_key(l, min-1, esize) == key; min--) {}
@@ -480,12 +480,12 @@ split_point(EdTxnSearch *srch, EdBpt *l)
 }
 
 static int
-overflow_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
+overflow_leaf(EdTxn *tx, EdTxnDb *dbp, EdPgNode *leaf)
 {
-	assert(leaf->tree->nkeys == LEAF_ORDER(srch->entry_size));
+	assert(leaf->tree->nkeys == LEAF_ORDER(dbp->entry_size));
 
 	EdPgNode *node;
-	size_t esize = srch->entry_size;
+	size_t esize = dbp->entry_size;
 
 	if (leaf->tree->right != ED_PG_NONE) {
 		if (ed_txn_map(tx, leaf->tree->right, leaf, 0, &node) == 0) {
@@ -502,22 +502,22 @@ overflow_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf)
 	leaf->tree->right = node->tree->base.no;
 
 done:
-	srch->tail = node;
-	srch->entry = node->tree->data + esize*node->tree->nkeys;
-	srch->entry_index = node->tree->nkeys;
+	dbp->tail = node;
+	dbp->entry = node->tree->data + esize*node->tree->nkeys;
+	dbp->entry_index = node->tree->nkeys;
 	return INS_NOSHIFT;
 }
 
 static int
-split_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf, int mid)
+split_leaf(EdTxn *tx, EdTxnDb *dbp, EdPgNode *leaf, int mid)
 {
-	size_t esize = srch->entry_size;
+	size_t esize = dbp->entry_size;
 	uint32_t n = leaf->tree->nkeys;
 	size_t off = mid * esize;
 
 	// If the new key will be the first entry on right, use the search key.
-	uint64_t rkey = (uint16_t)mid == srch->entry_index ?
-		srch->key : ed_fetch64(leaf->tree->data+off);
+	uint64_t rkey = (uint16_t)mid == dbp->entry_index ?
+		dbp->key : ed_fetch64(leaf->tree->data+off);
 
 	assert(ed_fetch64(leaf->tree->data + off - esize) < rkey);
 	assert(rkey <= ed_fetch64(leaf->tree->data + off));
@@ -533,13 +533,13 @@ split_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf, int mid)
 
 	memcpy(right->tree->data, left->tree->data+off, sizeof(left->tree->data) - off);
 
-	if (srch->entry_index >= (uint16_t)mid) {
-		srch->entry_index -= mid;
-		srch->entry = right->tree->data + srch->entry_index*esize;
-		srch->tail = right;
+	if (dbp->entry_index >= (uint16_t)mid) {
+		dbp->entry_index -= mid;
+		dbp->entry = right->tree->data + dbp->entry_index*esize;
+		dbp->tail = right;
 	}
 
-	insert_into_parent(tx, srch, left, right, rkey);
+	insert_into_parent(tx, dbp, left, right, rkey);
 
 	return INS_SHIFT;
 }
@@ -547,9 +547,9 @@ split_leaf(EdTxn *tx, EdTxnSearch *srch, EdPgNode *leaf, int mid)
 void
 ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApply a)
 {
-	EdTxnSearch *srch = ed_txn_search(tx, db, false);
-	EdPgNode *leaf = srch->tail;
-	size_t esize = srch->entry_size;
+	EdTxnDb *dbp = ed_txn_db(tx, db, false);
+	EdPgNode *leaf = dbp->tail;
+	size_t esize = dbp->entry_size;
 	int rc = INS_SHIFT;
 
 	switch (a) {
@@ -563,51 +563,51 @@ ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApply a)
 			leaf = ed_txn_alloc(tx, NULL, 0);
 			leaf->tree->base.type = ED_PG_LEAF;
 			leaf->tree->right = ED_PG_NONE;
-			srch->entry = leaf->tree->data;
-			srch->entry_index = 0;
-			srch->head = srch->tail = leaf;
+			dbp->entry = leaf->tree->data;
+			dbp->entry_index = 0;
+			dbp->head = dbp->tail = leaf;
 			rc = INS_NOSHIFT;
 		}
 		// Otherwise use the leaf from the search.
 		// If the leaf is full, it needs to be redistributed or split.
 		else if (IS_LEAF_FULL(leaf->tree, esize)) {
-			rc = redistribute_leaf(tx, srch, leaf);
+			rc = redistribute_leaf(tx, dbp, leaf);
 			if (rc == INS_NONE) {
-				int mid = split_point(srch, leaf->tree);
+				int mid = split_point(dbp, leaf->tree);
 				rc = mid < 0 ?
-					overflow_leaf(tx, srch, leaf) :
-					split_leaf(tx, srch, leaf, mid);
-				leaf = srch->tail;
+					overflow_leaf(tx, dbp, leaf) :
+					split_leaf(tx, dbp, leaf, mid);
+				leaf = dbp->tail;
 			}
 		}
 
 		// Insert the new entry before the current entry position.
-		uint8_t *p = srch->entry;
-		assert(srch->entry_index < LEAF_ORDER(esize));
-		assert(p == leaf->tree->data + (srch->entry_index*esize));
+		uint8_t *p = dbp->entry;
+		assert(dbp->entry_index < LEAF_ORDER(esize));
+		assert(p == leaf->tree->data + (dbp->entry_index*esize));
 
 		if (rc == INS_SHIFT) {
-			memmove(p+esize, p, (leaf->tree->nkeys - srch->entry_index) * esize);
+			memmove(p+esize, p, (leaf->tree->nkeys - dbp->entry_index) * esize);
 		}
 		memcpy(p, ent, esize);
 		leaf->tree->nkeys++;
-		if (srch->entry_index == 0 && leaf->parent != NULL) {
+		if (dbp->entry_index == 0 && leaf->parent != NULL) {
 			branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(p));
 		}
-		if (*srch->root != srch->head->page->no) {
-			*srch->root = srch->head->page->no;
+		if (*dbp->root != dbp->head->page->no) {
+			*dbp->root = dbp->head->page->no;
 		}
-		srch->nsplits = 0;
-		srch->match = 1;
+		dbp->nsplits = 0;
+		dbp->match = 1;
 		break;
 
 	case ED_BPT_REPLACE:
-		memcpy(srch->entry, ent, srch->entry_size);
+		memcpy(dbp->entry, ent, dbp->entry_size);
 		break;
 
 	case ED_BPT_DELETE:
-		memmove(srch->entry, (uint8_t *)srch->entry + esize,
-				(leaf->tree->nkeys - srch->entry_index - 1) * esize);
+		memmove(dbp->entry, (uint8_t *)dbp->entry + esize,
+				(leaf->tree->nkeys - dbp->entry_index - 1) * esize);
 		if (leaf->tree->nkeys == 1) {
 			// FIXME: this is terrible
 			leaf->tree->nkeys = 0;
@@ -616,8 +616,8 @@ ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApply a)
 		else {
 			leaf->tree->nkeys--;
 			leaf->dirty = 1;
-			if (leaf->parent && srch->entry_index == 0) {
-				branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(srch->entry));
+			if (leaf->parent && dbp->entry_index == 0) {
+				branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(dbp->entry));
 			}
 		}
 		break;

@@ -39,6 +39,8 @@
 #define ED_LOCAL __attribute__((visibility ("hidden")))
 #define ED_INLINE static inline __attribute__((always_inline))
 
+
+
 typedef struct EdLck EdLck;
 
 typedef uint32_t EdPgno;
@@ -54,7 +56,7 @@ typedef struct EdBpt EdBpt;
 
 typedef struct EdTxn EdTxn;
 typedef struct EdTxnType EdTxnType;
-typedef struct EdTxnSearch EdTxnSearch;
+typedef struct EdTxnDb EdTxnDb;
 
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
@@ -319,34 +321,37 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 #define ED_TX_CLOSED 0
 #define ED_TX_OPEN 1
 
-struct EdTxnSearch {
-	EdPgNode *head;       // first node searched
-	EdPgNode *tail;       // current tail node
-	EdPgno *root;         // pointer to page number of root node
-	uint64_t key;         // key searched for
-	void *entry;          // pointer to the entry in the leaf
-	size_t entry_size;    // size in bytes of the entry
-	uint32_t entry_index; // index of the entry in the leaf
-	int nsplits;          // number of nodes requiring splits for an insert
-	int match;            // return code of the search
-	int nmatches;         // number of matched keys so far
-	void *scratch;        // new entry content
-	EdBptApply apply;     // replace, insert, or delete entry
+/**
+ * @brief  Transaction database reference
+ */
+struct EdTxnDb {
+	EdPgNode *head;       /**< First node searched */
+	EdPgNode *tail;       /**< Current tail node */
+	EdPgno *root;         /**< Pointer to page number of root node */
+	uint64_t key;         /**< Key searched for */
+	void *entry;          /**< Pointer to the entry in the leaf */
+	size_t entry_size;    /**< Size in bytes of the entry */
+	uint32_t entry_index; /**< Index of the entry in the leaf */
+	int nsplits;          /**< Number of nodes requiring splits for an insert */
+	int match;            /**< Return code of the search */
+	int nmatches;         /**< Number of matched keys so far */
+	void *scratch;        /**< New entry content */
+	EdBptApply apply;     /**< Replace, insert, or delete entry */
 };
 
 struct EdTxn {
-	EdLck *lock;          // reference to shared lock
-	EdPgAlloc *alloc;     // page allocator
-	EdPg **pg;            // array to hold allocated pages
-	unsigned npg;         // number of pages allocated
-	unsigned npgused;     // number of pages used
-	EdPgNode *nodes;      // array of node wrapped pages
-	unsigned nnodes;      // length of node array
-	unsigned nnodesused;  // number of nodes used
-	int isopen;           // has #ed_txn_open() been called
-	bool rdonly;          // was #ed_txn_open called in read-only mode
-	unsigned ndb;         // number of search objects
-	EdTxnSearch db[1];    // search object flexible array member
+	EdLck *lock;          /**< Reference to shared lock */
+	EdPgAlloc *alloc;     /**< Page allocator */
+	EdPg **pg;            /**< Array to hold allocated pages */
+	unsigned npg;         /**< Number of pages allocated */
+	unsigned npgused;     /**< Number of pages used */
+	EdPgNode *nodes;      /**< Array of node wrapped pages */
+	unsigned nnodes;      /**< Length of node array */
+	unsigned nnodesused;  /**< Number of nodes used */
+	int isopen;           /**< Has #ed_txn_open() been called */
+	bool rdonly;          /**< Was #ed_txn_open called in read-only mode */
+	unsigned ndb;         /**< Number of search objects */
+	EdTxnDb db[1];        /**< Search object flexible array member */
 };
 
 struct EdTxnType {
@@ -360,7 +365,7 @@ ED_LOCAL      int ed_txn_commit(EdTxn **, uint64_t flags);
 ED_LOCAL     void ed_txn_close(EdTxn **, uint64_t flags);
 ED_LOCAL      int ed_txn_map(EdTxn *, EdPgno, EdPgNode *par, uint16_t pidx, EdPgNode **out);
 ED_LOCAL EdPgNode * ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
-ED_LOCAL EdTxnSearch * ed_txn_search(EdTxn *tx, unsigned db, bool reset);
+ED_LOCAL EdTxnDb * ed_txn_db(EdTxn *tx, unsigned db, bool reset);
 
 /** @} */
 
