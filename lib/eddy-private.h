@@ -576,7 +576,11 @@ ED_LOCAL     bool ed_expired_now(int64_t epoch, uint32_t exp);
 #define ed_fsave(f) ((uint32_t)((f) & UINT64_C(0x00000000FFFFFFFF)))
 #define ed_fopen(f) ((f) & UINT64_C(0xFFFFFFFF00000000))
 
-#define ed_align_max(n) ((((n) + (ED_MAX_ALIGN-1)) / ED_MAX_ALIGN) * ED_MAX_ALIGN)
+#define ed_count_max(n) (((n) + (ED_MAX_ALIGN-1)) / ED_MAX_ALIGN)
+#define ed_align_max(n) (ed_count_max(n) * ED_MAX_ALIGN)
+
+#define ed_count_pg(n) (((n) + (PAGESIZE-1)) / PAGESIZE)
+#define ed_align_pg(n) (ed_count_pg(n) * PAGESIZE)
 
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -687,14 +691,16 @@ struct EdPgFree {
 	EdPgno pages[ED_PG_FREE_COUNT];
 };
 
+struct EdPgTail {
+	EdPgno start;
+	EdPgno off;
+};
+
 struct EdPgAllocHdr {
 	uint16_t size_page;
 	uint16_t size_block;
 	EdPgno free_list;
-	_Atomic struct EdPgTail {
-		EdPgno start;
-		EdPgno off;
-	} tail;
+	_Atomic EdPgTail tail;
 };
 
 struct EdIdxHdr {

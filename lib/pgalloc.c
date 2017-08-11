@@ -252,17 +252,21 @@ ed_pg_alloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags)
 		goto done;
 	}
 
-	if ((map = ed_pg_map(fd, 0, 2)) == MAP_FAILED) {
+	EdPg *top;
+	EdPgAllocHdr *hdr;
+	EdPgFree *free_list;
+
+	off_t hdrpages = ed_count_pg(ed_align_max(sizeof(*top)) + ed_align_max(sizeof(*hdr)) + meta);
+	off_t allpages = hdrpages + 1 + ED_ALLOC_COUNT;
+
+	if ((map = ed_pg_map(fd, 0, hdrpages + 1)) == MAP_FAILED) {
 		rc = ED_ERRNO;
 		goto done;
 	}
 
-	EdPg *top = (EdPg *)map;
-	EdPgAllocHdr *hdr = (EdPgAllocHdr *)(map + 16);
-	off_t hdrpages = (16 + sizeof(*hdr) + meta + (PAGESIZE-1)) / PAGESIZE;
-	off_t allpages = hdrpages + 1 + ED_ALLOC_COUNT;
-
-	EdPgFree *free_list = (EdPgFree *)(map + PAGESIZE);
+	top = (EdPg *)map;
+	hdr = (EdPgAllocHdr *)(map + ed_align_max(sizeof(*top)));
+	free_list = (EdPgFree *)(map + PAGESIZE);
 
 	if (stat.st_size < allpages*PAGESIZE) {
 		if (ftruncate(fd, allpages*PAGESIZE) < 0) {
@@ -298,14 +302,14 @@ done:
 void *
 ed_pg_alloc_meta(EdPgAlloc *alloc)
 {
-	return (uint8_t *)alloc->hdr + sizeof(*alloc->hdr);
+	return (uint8_t *)alloc->hdr + ed_align_max(sizeof(*alloc->hdr));
 }
 
 void
 ed_pg_alloc_init(EdPgAlloc *alloc, EdPgAllocHdr *hdr, int fd, uint64_t flags)
 {
 	alloc->hdr = hdr;
-	alloc->pg = (void *)((uintptr_t)alloc->hdr/PAGESIZE * PAGESIZE);
+	alloc->pg = (void *)((uintptr_t)hdr/PAGESIZE * PAGESIZE);
 	alloc->free = NULL;
 	alloc->flags = flags;
 	alloc->fd = fd;
