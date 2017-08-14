@@ -55,7 +55,8 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
 		if (*no != ED_PG_NONE) {
 			rc = ed_txn_map(tx, *no, NULL, 0, &tx->db[i].head);
 			if (rc < 0) { break; }
-			assert(tx->db[i].head->page->type == ED_PG_BRANCH || tx->db[i].head->page->type == ED_PG_LEAF);
+			assert(tx->db[i].head != NULL && tx->db[i].head->page != NULL &&
+				(tx->db[i].head->page->type == ED_PG_BRANCH || tx->db[i].head->page->type == ED_PG_LEAF));
 			tx->db[i].tail = tx->db[i].head;
 		}
 		tx->db[i].root = no;

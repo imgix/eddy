@@ -144,6 +144,12 @@ ifndef VERBOSE
   INSTALL_PREFIX = @echo "install\t$(2)" && 
 endif
 
+ifeq ($(UNAME),Darwin)
+  OPEN:= @open
+else
+  OPEN:= @echo open 
+endif
+
 
 
 # Build only the executable tools.
@@ -159,10 +165,10 @@ static: $(LIB)/$(A)
 dynamic: $(LIB)/$(SOMIN) $(LIB)/$(SOMAJ) $(LIB)/$(SO)
 
 analyze:
-	@which scan-build >/dev/null || (echo 'scan-build required: pip install scan-build' && exit 1)
+	@which scan-build >/dev/null || (echo 'scan-build required: pip install typing scan-build' && exit 1)
 	rm -rf build/analyze
 	scan-build -o build/analyze/tmp $(MAKE) BUILD=analyze
-	@which open >/dev/null && open build/analyze/tmp/scan-build*/index.html
+	$(OPEN) build/analyze/tmp/scan-build*/index.html
 
 # Build and run tests.
 test: $(TESTSRC:test/test-%.c=test-%)
