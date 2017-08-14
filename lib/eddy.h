@@ -10,7 +10,7 @@
 
 #define ED_EXPORT extern __attribute__((visibility ("default")))
 
-/** @defgroup  ed_flags  EdConfig and ed_cache_open flags
+/** @defgroup  flags  EdConfig and ed_cache_open flags
  * @{
  */
 #define ED_FCHECKSUM     UINT32_C(        0x00000001) /** Calculate checksums for entries. */
