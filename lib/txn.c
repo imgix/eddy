@@ -22,6 +22,10 @@ wrap_node(EdTxn *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 int
 ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype)
 {
+	if (ntype == 0 || ntype > ED_TXN_MAX_TYPE) {
+		return ed_esys(EINVAL);
+	}
+
 	unsigned nnodes = ntype * 16;
 	int rc = 0;
 	EdTxn *tx;
@@ -77,7 +81,7 @@ ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags)
 	EdLckType lock = rdonly ? ED_LCK_SH : ED_LCK_EX;
 	int rc = ed_lck(tx->lock, tx->alloc->fd, lock, true, flags);
 	if (rc < 0) { return rc; }
-	tx->cflags = flags & ED_TX_CRIT_FLAGS;
+	tx->cflags = flags & ED_TXN_CRIT_FLAGS;
 	tx->isopen = true;
 	tx->rdonly = rdonly;
 	return 0;
@@ -123,13 +127,13 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 {
 	EdTxn *tx = *txp;
 	if (tx == NULL) { return; }
-	flags = (flags & ~ED_TX_CRIT_FLAGS) | tx->cflags;
+	flags = (flags & ~ED_TXN_CRIT_FLAGS) | tx->cflags;
 
 	if (tx->isopen) {
 		ed_lck(tx->lock, tx->alloc->fd, ED_LCK_UN, true, flags);
 	}
 
-	EdPg *heads[tx->ndb];
+	EdPg *heads[ED_TXN_MAX_TYPE];
 	if (flags & ED_FRESET) {
 		for (unsigned i = 0; i < tx->ndb; i++) {
 			EdTxnDb *dbp = &tx->db[i];

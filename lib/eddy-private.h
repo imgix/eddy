@@ -318,10 +318,12 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
  * @{
  */
 
-#define ED_TX_CLOSED 0
-#define ED_TX_OPEN 1
+#define ED_TXN_MAX_TYPE 16
 
-#define ED_TX_CRIT_FLAGS (ED_FNOTLCK|ED_FNOFLCK)
+#define ED_TXN_CLOSED 0
+#define ED_TXN_OPEN 1
+
+#define ED_TXN_CRIT_FLAGS (ED_FNOTLCK|ED_FNOFLCK)
 
 /**
  * @brief  Transaction database instance information
