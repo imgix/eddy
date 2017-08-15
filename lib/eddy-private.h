@@ -284,7 +284,9 @@ typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
 ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
 ED_LOCAL     void ed_bpt_init(EdBpt *bt);
 ED_LOCAL      int ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent);
+ED_LOCAL      int ed_bpt_first(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_next(EdTxn *txn, unsigned db, void **ent);
+ED_LOCAL      int ed_bpt_loop(const EdTxn *txn, unsigned db);
 ED_LOCAL      int ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace);
 ED_LOCAL      int ed_bpt_del(EdTxn *txn, unsigned db);
 ED_LOCAL     void ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply);
@@ -335,12 +337,16 @@ struct EdTxnDb {
 	EdPgNode *tail;       /**< Current tail node */
 	EdPgno *root;         /**< Pointer to page number of root node */
 	uint64_t key;         /**< Key searched for */
+	void *start;          /**< Pointer to the first entry */
 	void *entry;          /**< Pointer to the entry in the leaf */
 	size_t entry_size;    /**< Size in bytes of the entry */
 	uint32_t entry_index; /**< Index of the entry in the leaf */
 	int nsplits;          /**< Number of nodes requiring splits for an insert */
 	int match;            /**< Return code of the search */
 	int nmatches;         /**< Number of matched keys so far */
+	int nloops;           /**< Number of full iterations */
+	bool haskey;          /**< Mark if the cursor started with a find key */
+	bool caninsert;       /**< Mark if the cursor either started as, or has become, read-only */
 	void *scratch;        /**< New entry content */
 	EdBptApply apply;     /**< Replace, insert, or delete entry */
 };

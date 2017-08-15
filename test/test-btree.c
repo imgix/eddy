@@ -187,6 +187,24 @@ test_repeat(void)
 	for (unsigned i = 1; i < 200; i++) {
 		mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 1);
 	}
+
+	Entry *ent;
+
+	ent = NULL;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 20);
+
+	ent = NULL;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 0);
+
+	ent = NULL;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 10); // the key was implicitly dropped by traversing the cursor
+
 	ed_txn_close(&txn, FCLOSE);
 }
 

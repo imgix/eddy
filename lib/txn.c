@@ -175,6 +175,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			dbp->tail = dbp->head = heads[i] ?
 				wrap_node(txn, heads[i], NULL, 0, 0) : NULL;
 			dbp->key = 0;
+			dbp->start = NULL;
 			dbp->entry = NULL;
 			dbp->entry_index = 0;
 			dbp->nsplits = 0;

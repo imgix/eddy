@@ -126,18 +126,17 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, true);
 	dbp->key = key;
+	dbp->haskey = true;
 
 	int rc = 0;
 	uint32_t i = 0, n = 0;
 	uint8_t *data = NULL;
 	size_t esize = dbp->entry_size;
-
-	if (dbp->head == NULL) {
+	EdPgNode *node = dbp->head;
+	if (node == NULL) {
 		dbp->nsplits = 1;
 		goto done;
 	}
-
-	EdPgNode *node = dbp->head;
 
 	// The root node needs two pages when splitting.
 	dbp->nsplits = IS_FULL(node->tree, esize);
@@ -173,12 +172,55 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 
 done:
 	if (rc >= 0) {
-		dbp->entry = data;
+		dbp->entry = dbp->start = data;
 		dbp->entry_index = i;
 		dbp->nmatches = rc;
+		dbp->nloops = 0;
+		dbp->caninsert = !txn->isrdonly;
 		if (ent) { *ent = data; }
 	}
 	dbp->match = rc;
+	return rc;
+}
+
+static int
+locate_first(EdTxn *txn, EdTxnDb *dbp)
+{
+	dbp->haskey = false;
+	dbp->caninsert = false;
+
+	int rc = 0;
+	EdPgNode *node = dbp->head;
+	if (node == NULL) { goto done; }
+
+	while (IS_BRANCH(node->tree)) {
+		EdPgno no = ed_fetch32(node->tree->data);
+		EdPgNode *next;
+		rc = ed_txn_map(txn, no, node, 0, &next);
+		if (rc < 0) { goto done; }
+		node = next;
+		dbp->tail = node;
+	}
+
+done:
+	dbp->match = rc;
+	dbp->nmatches = 0;
+	return rc;
+}
+
+int
+ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
+{
+	EdTxnDb *dbp = &txn->db[db];
+
+	int rc = locate_first(txn, dbp);
+	if (rc == 0) {
+		void *data = dbp->tail->tree->data;
+		dbp->entry = dbp->start = data;
+		dbp->entry_index = 0;
+		dbp->nloops = 0;
+		if (ent) { *ent = data; }
+	}
 	return rc;
 }
 
@@ -186,50 +228,71 @@ int
 ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
-	if (dbp->match != 1) { return dbp->match; }
-
 	int rc = 0;
 	EdPgNode *node = dbp->tail;
 	EdBpt *leaf = node->tree;
 	uint8_t *p = dbp->entry;
 	uint32_t i = dbp->entry_index;
+
 	if (i == leaf->nkeys-1) {
 		EdPgno right = leaf->right;
-		if (right == ED_PG_NONE) { goto done; }
+		if (right == ED_PG_NONE) {
+			rc = locate_first(txn, dbp);
+			if (rc < 0) { goto done; }
+		}
+		else {
+			rc = ed_txn_map(txn, right, node, 0, &node);
+			if (rc < 0) { goto done; }
 
-		rc = ed_txn_map(txn, right, node, 0, &node);
-		if (rc < 0) { goto done; }
-
-		leaf = node->tree;
-		if (leaf->base.type != ED_PG_OVERFLOW) { goto done; }
-
-		p = leaf->data;
+			leaf = node->tree;
+			if (leaf->base.type != ED_PG_OVERFLOW) {
+				node->parent = NULL;
+				node->pindex = 0;
+			}
+			dbp->tail = node;
+		}
+		p = dbp->tail->tree->data;
 		i = 0;
 	}
 	else {
 		p += dbp->entry_size;
 		i++;
 	}
+
 	dbp->entry = p;
 	dbp->entry_index = i;
-	if (dbp->key == ed_fetch64(p)) {
-		dbp->tail = node;
-		dbp->nmatches++;
-		if (ent) { *ent = p; }
-		rc = 1;
+	if (ent) { *ent = p; }
+
+	if (dbp->haskey) {
+		if (dbp->key == ed_fetch64(p)) {
+			dbp->nmatches++;
+			rc = 1;
+		}
+		else {
+			dbp->haskey = false;
+			dbp->caninsert = false;
+		}
 	}
 
 done:
+	if (dbp->entry == dbp->start) { dbp->nloops++; }
 	dbp->match = rc;
 	return rc;
 }
 
 int
+ed_bpt_loop(const EdTxn *txn, unsigned db)
+{
+	return txn->db[db].nloops;
+}
+
+int
 ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 {
-	if (txn->isrdonly) { return ed_esys(EINVAL); }
+	if (txn->isrdonly) { return ED_EINDEX_RDONLY; }
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
-	if (ed_fetch64(ent) != dbp->key) { return ED_EINDEX_KEY_MATCH; }
+	if (!dbp->caninsert) { return ED_EINDEX_RDONLY; }
+	if (!dbp->haskey || ed_fetch64(ent) != dbp->key) { return ED_EINDEX_KEY_MATCH; }
 	memcpy(dbp->scratch, ent, dbp->entry_size);
 	if (replace && dbp->match == 1) {
 		dbp->apply = ED_BPT_REPLACE;
@@ -244,7 +307,7 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 int
 ed_bpt_del(EdTxn *txn, unsigned db)
 {
-	if (txn->isrdonly) { return ed_esys(EINVAL); }
+	if (txn->isrdonly) { return ED_EINDEX_RDONLY; }
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
 	if (dbp->match == 1) {
 		dbp->apply = ED_BPT_DELETE;
