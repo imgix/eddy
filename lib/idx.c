@@ -381,7 +381,7 @@ ed_idx_stat(EdIdx *index, FILE *out, int flags)
 		fprintf(out, "    free:\n");
 		stat_tail(index, vec, out);
 
-		rc = ed_idx_lock(index, ED_LCK_EX);
+		rc = ed_idx_lock(index, ED_LCK_SH);
 		if (rc < 0) { goto done; }
 
 		BITSET(vec, index->alloc.hdr->free_list);
