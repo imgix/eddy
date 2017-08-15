@@ -206,6 +206,7 @@ ed_discard(EdObject *obj);
 #define ED_EINDEX_DEPTH          ed_eindex(13) /** Error code if a btree depth exceeds maximum. */
 #define ED_EINDEX_KEY_MATCH      ed_eindex(14) /** Error code if an entry key doesn't match the tree key. */
 #define ED_EINDEX_RANDOM         ed_eindex(15) /** Error code if /dev/urandom seed failed. */
+#define ED_EINDEX_RDONLY         ed_eindex(16) /** Error code if the search cursor is read-only. */
 
 #define ED_ESLAB_MODE            ed_eslab(0)   /** Error code when the slab file mode is invalid. */
 #define ED_ESLAB_SIZE            ed_eslab(1)   /** Error code when the slab size requested is invalid. */
