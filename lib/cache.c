@@ -6,7 +6,7 @@ ed_cache_open(EdCache **cachep, const EdConfig *cfg)
 	EdCache *cache = malloc(sizeof(*cache));
 	if (cache == NULL) { return ED_ERRNO; }
 
-	int rc = ed_idx_open(&cache->index, cfg, &cache->fd);
+	int rc = ed_idx_open(&cache->idx, cfg, &cache->fd);
 	if (rc < 0) {
 		free(cache);
 		return rc;
@@ -35,7 +35,7 @@ ed_cache_close(EdCache **cachep)
 	if (cache != NULL) {
 		*cachep = NULL;
 		if (atomic_fetch_sub(&cache->ref, 1) == 1) {
-			ed_idx_close(&cache->index);
+			ed_idx_close(&cache->idx);
 			close(cache->fd);
 			free(cache);
 		}
@@ -47,7 +47,7 @@ ed_cache_stat(EdCache *cache, FILE *out, int flags)
 {
 	if (out == NULL) { out = stdout; }
 
-	int rc = ed_idx_stat(&cache->index, out, flags);
+	int rc = ed_idx_stat(&cache->idx, out, flags);
 	if (rc < 0) { return rc; }
 	fprintf(out,
 		"slab:\n"
@@ -62,15 +62,15 @@ ed_cache_stat(EdCache *cache, FILE *out, int flags)
 		"    size: %zu\n"
 		"    count: %zu\n"
 		"    cursor: %zu\n",
-		cache->index.hdr->slab_path,
-		cache->index.hdr->slab_ino,
+		cache->idx.hdr->slab_path,
+		cache->idx.hdr->slab_ino,
 		(size_t)0,
 		(size_t)cache->bytes_used,
 		(size_t)0,
 		(size_t)cache->pages_used,
 		(size_t)PAGESIZE,
-		(size_t)cache->index.hdr->slab_page_count,
-		(size_t)cache->index.hdr->pos
+		(size_t)cache->idx.hdr->slab_page_count,
+		(size_t)cache->idx.hdr->pos
 	);
 	return 0;
 }
@@ -82,28 +82,28 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	(void)key;
 	(void)len;
 #if 0
-	uint64_t h = ed_hash(key, len, cache->index.seed);
+	uint64_t h = ed_hash(key, len, cache->idx.seed);
 	EdBSearch srch;
 	EdNodeKey *k;
 	int rc;
 	printf("get: key=%.*s, hash=%llu\n", (int)len, key, h);
 
-	rc = ed_idx_lock(&cache->index, ED_LCK_EX, true);
+	rc = ed_idx_lock(&cache->idx, ED_LCK_EX);
 	if (rc < 0) { return 0; }
 	
-	rc = ed_idx_load_trees(&cache->index);
+	rc = ed_idx_load_trees(&cache->idx);
 	if (rc < 0) { goto unlock; }
 
-	rc = ed_btree_search(&cache->index.keys, cache->index.alloc.fd, h, sizeof(*k), &srch);
+	rc = ed_btree_search(&cache->idx.keys, cache->idx.alloc.fd, h, sizeof(*k), &srch);
 	if (rc == 1) {
 		k = srch.entry;
-		printf("get: ttl=%ld\n", ed_ttl_now(cache->index.epoch, k->exp));
+		printf("get: ttl=%ld\n", ed_ttl_now(cache->idx.epoch, k->exp));
 	}
 	ed_bsearch_final(&srch);
 	if (rc < 0) { goto unlock; }
 
 unlock:
-	ed_idx_lock(&cache->index, ED_LCK_UN, true);
+	ed_idx_lock(&cache->idx, ED_LCK_UN);
 #endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
@@ -117,8 +117,8 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 #if 0
 	EdBSearch srch;
 	EdNodeKey key = {
-		.hash = ed_hash(attr->key, attr->key_size, cache->index.seed),
-		.exp = ed_expire(cache->index.epoch, attr->expiry),
+		.hash = ed_hash(attr->key, attr->key_size, cache->idx.seed),
+		.exp = ed_expire(cache->idx.epoch, attr->expiry),
 		.meta = ED_PG_NONE,
 		.slab = ED_BLK_NONE,
 	};
@@ -126,21 +126,21 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 
 	int rc;
 
-	rc = ed_idx_lock(&cache->index, ED_LCK_EX, true);
+	rc = ed_idx_lock(&cache->idx, ED_LCK_EX);
 	if (rc < 0) { return 0; }
 
-	rc = ed_idx_load_trees(&cache->index);
+	rc = ed_idx_load_trees(&cache->idx);
 	if (rc < 0) { goto unlock; }
 
-	rc = ed_btree_search(&cache->index.keys, cache->index.alloc.fd, key.hash, sizeof(key), &srch);
+	rc = ed_btree_search(&cache->idx.keys, cache->idx.alloc.fd, key.hash, sizeof(key), &srch);
 	if (rc < 0) { goto unlock; }
-	rc = ed_bsearch_ins(&srch, &key, &cache->index.alloc);
+	rc = ed_bsearch_ins(&srch, &key, &cache->idx.alloc);
 	ed_bsearch_final(&srch);
 	if (rc < 0) { goto unlock; }
 
 unlock:
-	ed_idx_save_trees(&cache->index);
-	ed_idx_lock(&cache->index, ED_LCK_UN, true);
+	ed_idx_save_trees(&cache->idx);
+	ed_idx_lock(&cache->idx, ED_LCK_UN);
 #endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);

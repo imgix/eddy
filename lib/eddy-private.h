@@ -643,7 +643,7 @@ ed_fetch64(const void *p)
 #define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeKey))
 
 struct EdCache {
-	EdIdx index;
+	EdIdx idx;
 	atomic_int ref;
 	int fd;
 	size_t bytes_used;

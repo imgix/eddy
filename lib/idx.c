@@ -38,6 +38,8 @@ _Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
 #define PG_NEXTRA 1
 #define PG_NINIT (PG_NHDR + PG_NEXTRA)
 
+#define ed_idx_flags(f) ((f) & ~ED_FRESET)
+
 
 static const EdIdxHdr INDEX_DEFAULT = {
 	.base = { 0, ED_PG_INDEX },
@@ -147,7 +149,7 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
 	open(path, (O_CLOEXEC|O_RDWR | (((f) & (ifset)) ? O_CREAT : 0)), 0600)
 
 int
-ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
+ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 {
 	EdIdxHdr *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
@@ -227,16 +229,17 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 	}
 	if (rc < 0) { goto error; }
 
-	uint64_t f = hdr->flags | ed_fopen(flags);
-	ed_lck_init(&index->lck, 0, PAGESIZE);
-	ed_pg_alloc_init(&index->alloc, &hdr->alloc, fd, f);
-	index->alloc.free = free_list;
-	index->flags = f;
-	index->seed = hdr->seed;
-	index->epoch = hdr->epoch;
-	index->hdr = hdr;
-	index->keys = NULL;
-	index->blocks = NULL;
+	uint64_t f = ed_idx_flags(hdr->flags | ed_fopen(flags));
+	ed_lck_init(&idx->lck, 0, PAGESIZE);
+	ed_pg_alloc_init(&idx->alloc, &hdr->alloc, fd, f);
+	idx->alloc.free = free_list;
+	idx->flags = f;
+	idx->seed = hdr->seed;
+	idx->epoch = hdr->epoch;
+	idx->hdr = hdr;
+	idx->keys = NULL;
+	idx->blocks = NULL;
+
 	*slab_fd = sfd;
 	return 0;
 
@@ -248,37 +251,37 @@ error:
 }
 
 void
-ed_idx_close(EdIdx *index)
+ed_idx_close(EdIdx *idx)
 {
-	if (index == NULL) { return; }
-	ed_pg_alloc_close(&index->alloc);
-	ed_pg_unmap(index->hdr, PG_NHDR);
-	index->hdr = NULL;
+	if (idx == NULL) { return; }
+	ed_pg_alloc_close(&idx->alloc);
+	ed_pg_unmap(idx->hdr, PG_NHDR);
+	idx->hdr = NULL;
 }
 
 int
-ed_idx_load_trees(EdIdx *index)
+ed_idx_load_trees(EdIdx *idx)
 {
-	if (ed_pg_load(index->alloc.fd, (EdPg **)&index->keys, index->hdr->key_tree) == MAP_FAILED ||
-		ed_pg_load(index->alloc.fd, (EdPg **)&index->blocks, index->hdr->block_tree) == MAP_FAILED) {
+	if (ed_pg_load(idx->alloc.fd, (EdPg **)&idx->keys, idx->hdr->key_tree) == MAP_FAILED ||
+		ed_pg_load(idx->alloc.fd, (EdPg **)&idx->blocks, idx->hdr->block_tree) == MAP_FAILED) {
 		return ED_ERRNO;
 	}
 	return 0;
 }
 
 int
-ed_idx_save_trees(EdIdx *index)
+ed_idx_save_trees(EdIdx *idx)
 {
-	ed_pg_mark(&index->keys->base, &index->hdr->key_tree, &index->alloc.dirty);
-	ed_pg_mark(&index->blocks->base, &index->hdr->block_tree, &index->alloc.dirty);
-	ed_pg_alloc_sync(&index->alloc);
+	ed_pg_mark(&idx->keys->base, &idx->hdr->key_tree, &idx->alloc.dirty);
+	ed_pg_mark(&idx->blocks->base, &idx->hdr->block_tree, &idx->alloc.dirty);
+	ed_pg_alloc_sync(&idx->alloc);
 	return 0;
 }
 
 int
-ed_idx_lock(EdIdx *index, EdLckType type)
+ed_idx_lock(EdIdx *idx, EdLckType type)
 {
-	return ed_lck(&index->lck, index->alloc.fd, type, index->flags);
+	return ed_lck(&idx->lck, idx->alloc.fd, type, idx->flags);
 }
 
 // Tests and sets a page number in the bit vector.
@@ -319,15 +322,15 @@ stat_pages(uint8_t *vec, EdPgno pgno, EdPgno *pages, EdPgno cnt, FILE *out)
 
 // Verifies the integrity of a free list. This will recur to any child free pages.
 static int
-stat_free(EdIdx *index, uint8_t *vec, EdPgFree *fs, FILE *out)
+stat_free(EdIdx *idx, uint8_t *vec, EdPgFree *fs, FILE *out)
 {
 	EdPgno c = fs->count;
 	int rc = stat_pages(vec, fs->base.no, fs->pages, c, out);
 	if (rc == 0 && c > 0) {
-		EdPgFree *p = ed_pg_map(index->alloc.fd, fs->pages[0], 1);
+		EdPgFree *p = ed_pg_map(idx->alloc.fd, fs->pages[0], 1);
 		if (p == MAP_FAILED) { return ED_ERRNO; }
 		if (p->base.type == ED_PG_FREE_CHLD || p->base.type == ED_PG_FREE_HEAD) {
-			rc = stat_free(index, vec, (EdPgFree *)p, out);
+			rc = stat_free(idx, vec, (EdPgFree *)p, out);
 		}
 		ed_pg_unmap(p, 1);
 	}
@@ -335,9 +338,9 @@ stat_free(EdIdx *index, uint8_t *vec, EdPgFree *fs, FILE *out)
 }
 
 static int
-stat_tail(EdIdx *index, uint8_t *vec, FILE *out)
+stat_tail(EdIdx *idx, uint8_t *vec, FILE *out)
 {
-	EdPgTail tail = atomic_load(&index->hdr->alloc.tail);
+	EdPgTail tail = atomic_load(&idx->hdr->alloc.tail);
 	EdPgno buf[ED_ALLOC_COUNT], n = ED_ALLOC_COUNT - tail.off;
 	for (EdPgno i = 0; i < n; i++) {
 		buf[i] = tail.start + tail.off + i;
@@ -346,10 +349,10 @@ stat_tail(EdIdx *index, uint8_t *vec, FILE *out)
 }
 
 int
-ed_idx_stat(EdIdx *index, FILE *out, int flags)
+ed_idx_stat(EdIdx *idx, FILE *out, int flags)
 {
 	struct stat s;
-	if (fstat(index->alloc.fd, &s) < 0) { return ED_ERRNO; }
+	if (fstat(idx->alloc.fd, &s) < 0) { return ED_ERRNO; }
 
 	int rc = 0;
 	EdPgno pgno = s.st_size / PAGESIZE;
@@ -379,15 +382,15 @@ ed_idx_stat(EdIdx *index, FILE *out, int flags)
 		}
 
 		fprintf(out, "    free:\n");
-		stat_tail(index, vec, out);
+		stat_tail(idx, vec, out);
 
-		rc = ed_idx_lock(index, ED_LCK_SH);
+		rc = ed_idx_lock(idx, ED_LCK_SH);
 		if (rc < 0) { goto done; }
 
-		BITSET(vec, index->alloc.hdr->free_list);
-		rc = stat_free(index, vec, ed_pg_alloc_free_list(&index->alloc), out);
+		BITSET(vec, idx->alloc.hdr->free_list);
+		rc = stat_free(idx, vec, ed_pg_alloc_free_list(&idx->alloc), out);
 
-		ed_idx_lock(index, ED_LCK_UN);
+		ed_idx_lock(idx, ED_LCK_UN);
 		if (rc < 0) { goto done; }
 
 		fprintf(out, "    lost: [");
