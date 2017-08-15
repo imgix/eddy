@@ -76,15 +76,16 @@ error:
 }
 
 int
-ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags)
+ed_txn_open(EdTxn *tx, uint64_t flags)
 {
 	if (tx == NULL || tx->isopen) { return ed_esys(EINVAL); }
+	bool rdonly = flags & ED_FRDONLY;
 	EdLckType lock = rdonly ? ED_LCK_SH : ED_LCK_EX;
-	int rc = ed_lck(tx->lock, tx->alloc->fd, lock, true, flags);
+	int rc = ed_lck(tx->lock, tx->alloc->fd, lock, flags);
 	if (rc < 0) { return rc; }
-	tx->cflags = flags & ED_TXN_CRIT_FLAGS;
+	tx->cflags = flags & ED_TXN_FCRIT;
+	tx->isrdonly = rdonly;
 	tx->isopen = true;
-	tx->rdonly = rdonly;
 	return 0;
 }
 
@@ -92,7 +93,7 @@ int
 ed_txn_commit(EdTxn **txp, uint64_t flags)
 {
 	EdTxn *tx = *txp;
-	if (tx == NULL || !tx->isopen || tx->rdonly) { return ed_esys(EINVAL); }
+	if (tx == NULL || !tx->isopen || tx->isrdonly) { return ed_esys(EINVAL); }
 
 	int rc = 0;
 	unsigned npg = 0;
@@ -128,10 +129,10 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 {
 	EdTxn *tx = *txp;
 	if (tx == NULL) { return; }
-	flags = (flags & ~ED_TXN_CRIT_FLAGS) | tx->cflags;
+	flags = ed_txn_fclose(flags, tx->cflags);
 
 	if (tx->isopen) {
-		ed_lck(tx->lock, tx->alloc->fd, ED_LCK_UN, true, flags);
+		ed_lck(tx->lock, tx->alloc->fd, ED_LCK_UN, flags);
 	}
 
 	EdPg *heads[ED_TXN_MAX_TYPE];

@@ -133,29 +133,20 @@ ed_lck_final(EdLck *lock);
  *     <dd>Disable thread locking.</dd>
  *     <dt>#ED_FNOFLCK</dt>
  *     <dd>Disable file locking.</dd>
+ *     <dt>#ED_FNOBLOCK</dt>
+ *     <dd>Return EAGAIN if locking would block.</dd>
  * </dl>
+ *
+ * When unlocking, the #ED_FNOTLCK and #ED_FNOFLCK flags must be equivalent
+ * to those used when locking.
  *
  * @param  lock  Pointer to a lock value
  * @param  fd  Open file descriptor to lock
  * @param  type  The lock action to take
- * @param  wait  Block the thread until the lock may be acquired
  * @param  flags  Modify locking behavior
  */
 ED_LOCAL int
-ed_lck(EdLck *lock, int fd, EdLckType type, bool wait, uint64_t flags);
-
-/**
- * @brief  Controls the lock state for file locking only.
- *
- * This must be used with care.
- *
- * @param  lock  Pointer to a lock value
- * @param  fd  Open file descriptor to lock
- * @param  type  The lock action to take
- * @param  wait  Block the thread until the lock may be acquired
- */
-ED_LOCAL int
-ed_lck_f(EdLck *lock, int fd, EdLckType type, bool wait);
+ed_lck(EdLck *lock, int fd, EdLckType type, uint64_t flags);
 
 /** @} */
 
@@ -323,7 +314,9 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 #define ED_TXN_CLOSED 0
 #define ED_TXN_OPEN 1
 
-#define ED_TXN_CRIT_FLAGS (ED_FNOTLCK|ED_FNOFLCK)
+#define ED_TXN_FCRIT (ED_FNOTLCK|ED_FNOFLCK)
+
+#define ed_txn_fclose(f, crit) ((f) & (~(ED_TXN_FCRIT|ED_FNOBLOCK)) | (crit))
 
 /**
  * @brief  Transaction database instance information
@@ -372,9 +365,9 @@ struct EdTxn {
 	EdPgNode *nodes;      /**< Array of node wrapped pages */
 	unsigned nnodes;      /**< Length of node array */
 	unsigned nnodesused;  /**< Number of nodes used */
-	uint64_t cflags;       /**< Flags mixed into commit/close */
+	uint64_t cflags;      /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
+	bool isrdonly;        /**< Was #ed_txn_open() called with #ED_FRDONLY */
 	bool isopen;          /**< Has #ed_txn_open() been called */
-	bool rdonly;          /**< Was #ed_txn_open called in read-only mode */
 	unsigned ndb;         /**< Number of search objects */
 	EdTxnDb db[1];        /**< Search object flexible array member */
 };
@@ -403,23 +396,26 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
  * 
  * Supported flags are:
  * <dl>
+ *     <dt>#ED_FRDONLY</dt>
+ *     <dd>The operation will not write any changes.</dd>
  *     <dt>#ED_FNOTLCK</dt>
  *     <dd>Disable thread locking.</dd>
  *     <dt>#ED_FNOFLCK</dt>
  *     <dd>Disable file locking.</dd>
+ *     <dt>#ED_FNOBLOCK</dt>
+ *     <dd>Return EAGAIN if the required lock would block.</dd>
  * </dl>
  *
  * @param  tx  Closed transaction object
- * @param  rdonly  The database will only be read from
  * @param  flags  Behavior modification flags
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags);
+ed_txn_open(EdTxn *tx, uint64_t flags);
 
 /**
  * @brief  Commits the changes to each database
- *
+ * 
  * Supported flags are:
  * <dl>
  *     <dt>#ED_FNOSYNC</dt>
@@ -428,14 +424,9 @@ ed_txn_open(EdTxn *tx, bool rdonly, uint64_t flags);
  *     <dd>Don't wait for pages to complete syncing.</dd>
  *     <dt>#ED_FRESET</dt>
  *     <dd>Reset the transaction for another use.</dd>
- *     <dt>#ED_FNOTLCK</dt>
- *     <dd>Disable thread locking.</dd>
- *     <dt>#ED_FNOFLCK</dt>
- *     <dd>Disable file locking.</dd>
  * </dl>
  *
  * @param  txp  Indirect pointer an open transaction
- * @param  flags  Behavior modification flags
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
@@ -443,7 +434,7 @@ ed_txn_commit(EdTxn **txp, uint64_t flags);
 
 /**
  * @brief  Closes the transaction and abandons any pending changes
- *
+ * 
  * Supported flags are:
  * <dl>
  *     <dt>#ED_FNOSYNC</dt>
@@ -452,10 +443,6 @@ ed_txn_commit(EdTxn **txp, uint64_t flags);
  *     <dd>Don't wait for pages to complete syncing.</dd>
  *     <dt>#ED_FRESET</dt>
  *     <dd>Reset the transaction for another use.</dd>
- *     <dt>#ED_FNOTLCK</dt>
- *     <dd>Disable thread locking.</dd>
- *     <dt>#ED_FNOFLCK</dt>
- *     <dd>Disable file locking.</dd>
  * </dl>
  *
  * @param  txp  Indirect pointer an open transaction
@@ -463,7 +450,7 @@ ed_txn_commit(EdTxn **txp, uint64_t flags);
  * @return  0 on success <0 on error
  */
 ED_LOCAL void
-ed_txn_close(EdTxn **, uint64_t flags);
+ed_txn_close(EdTxn **txp, uint64_t flags);
 
 /**
  * @brief  Maps a page wrapped into a node
@@ -528,7 +515,7 @@ ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL      int ed_idx_load_trees(EdIdx *);
 ED_LOCAL      int ed_idx_save_trees(EdIdx *);
-ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type, bool wait);
+ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
 ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
 
 /** @} */

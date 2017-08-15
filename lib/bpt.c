@@ -227,7 +227,7 @@ done:
 int
 ed_bpt_set(EdTxn *tx, unsigned db, const void *ent, bool replace)
 {
-	if (tx->rdonly) { return ed_esys(EINVAL); }
+	if (tx->isrdonly) { return ed_esys(EINVAL); }
 	EdTxnDb *dbp = ed_txn_db(tx, db, false);
 	if (ed_fetch64(ent) != dbp->key) { return ED_EINDEX_KEY_MATCH; }
 	memcpy(dbp->scratch, ent, dbp->entry_size);
@@ -244,7 +244,7 @@ ed_bpt_set(EdTxn *tx, unsigned db, const void *ent, bool replace)
 int
 ed_bpt_del(EdTxn *tx, unsigned db)
 {
-	if (tx->rdonly) { return ed_esys(EINVAL); }
+	if (tx->isrdonly) { return ed_esys(EINVAL); }
 	EdTxnDb *dbp = ed_txn_db(tx, db, false);
 	if (dbp->match == 1) {
 		dbp->apply = ED_BPT_DELETE;
