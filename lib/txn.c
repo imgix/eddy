@@ -11,11 +11,11 @@
  * relationships as well as the dirty state of the page's contents.
  */
 static EdPgNode *
-wrap_node(EdTxn *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
+wrap_node(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 {
-	assert(tx->nnodesused < tx->nnodes);
+	assert(txn->nnodesused < txn->nnodes);
 
-	EdPgNode *n = &tx->nodes[tx->nnodesused++];
+	EdPgNode *n = &txn->nodes[txn->nnodesused++];
 	n->page = pg;
 	n->parent = par;
 	n->pindex = pidx;
@@ -24,7 +24,7 @@ wrap_node(EdTxn *tx, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 }
 
 int
-ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype)
+ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned ntype)
 {
 	if (ntype == 0 || ntype > ED_TXN_MAX_TYPE) {
 		return ed_esys(EINVAL);
@@ -32,9 +32,9 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
 
 	unsigned nnodes = ntype * 16;
 	int rc = 0;
-	EdTxn *tx;
-	size_t sztx = sizeof(*tx) + (ntype-1)*sizeof(tx->db[0]);
-	size_t sznodes = sizeof(tx->nodes[0]) * nnodes;
+	EdTxn *txn;
+	size_t sztx = sizeof(*txn) + (ntype-1)*sizeof(txn->db[0]);
+	size_t sznodes = sizeof(txn->nodes[0]) * nnodes;
 
 	size_t szscratch = 0;
 	for (unsigned i = 0; i < ntype; i++) { szscratch += ed_align_max(type[i].entry_size); }
@@ -42,107 +42,107 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
 	size_t offnodes = ed_align_max(sztx);
 	size_t offscratch = ed_align_max(offnodes + sznodes);
 
-	if ((tx = calloc(1, offscratch + szscratch)) == NULL) {
+	if ((txn = calloc(1, offscratch + szscratch)) == NULL) {
 		rc = ED_ERRNO;
 		goto error;
 	}
 
-	tx->lock = lock;
-	tx->alloc = alloc;
-	tx->nodes = (EdPgNode *)((uint8_t *)tx + offnodes);
-	tx->nnodes = nnodes;
+	txn->lck = lck;
+	txn->alloc = alloc;
+	txn->nodes = (EdPgNode *)((uint8_t *)txn + offnodes);
+	txn->nnodes = nnodes;
 
-	uint8_t *scratch = (uint8_t *)tx + offscratch;
+	uint8_t *scratch = (uint8_t *)txn + offscratch;
 	for (unsigned i = 0; i < ntype; i++) {
 		EdPgno *no = type[i].no;
 		if (no == NULL) { rc = ed_esys(EINVAL); break; }
 		if (*no != ED_PG_NONE) {
-			rc = ed_txn_map(tx, *no, NULL, 0, &tx->db[i].head);
+			rc = ed_txn_map(txn, *no, NULL, 0, &txn->db[i].head);
 			if (rc < 0) { break; }
-			assert(tx->db[i].head != NULL && tx->db[i].head->page != NULL &&
-				(tx->db[i].head->page->type == ED_PG_BRANCH || tx->db[i].head->page->type == ED_PG_LEAF));
-			tx->db[i].tail = tx->db[i].head;
+			assert(txn->db[i].head != NULL && txn->db[i].head->page != NULL &&
+				(txn->db[i].head->page->type == ED_PG_BRANCH || txn->db[i].head->page->type == ED_PG_LEAF));
+			txn->db[i].tail = txn->db[i].head;
 		}
-		tx->db[i].root = no;
-		tx->db[i].scratch = scratch;
-		tx->db[i].entry_size = type[i].entry_size;
-		tx->ndb++;
+		txn->db[i].root = no;
+		txn->db[i].scratch = scratch;
+		txn->db[i].entry_size = type[i].entry_size;
+		txn->ndb++;
 		scratch += ed_align_max(type[i].entry_size);
 	}
 
 	if (rc < 0) { goto error; }
-	*txp = tx;
+	*txnp = txn;
 	return 0;
 
 error:
-	ed_txn_close(&tx, ED_FNOSYNC);
+	ed_txn_close(&txn, ED_FNOSYNC);
 	return rc;
 }
 
 int
-ed_txn_open(EdTxn *tx, uint64_t flags)
+ed_txn_open(EdTxn *txn, uint64_t flags)
 {
-	if (tx == NULL || tx->isopen) { return ed_esys(EINVAL); }
+	if (txn == NULL || txn->isopen) { return ed_esys(EINVAL); }
 	bool rdonly = flags & ED_FRDONLY;
-	EdLckType lock = rdonly ? ED_LCK_SH : ED_LCK_EX;
-	int rc = ed_lck(tx->lock, tx->alloc->fd, lock, flags);
+	EdLckType lck = rdonly ? ED_LCK_SH : ED_LCK_EX;
+	int rc = ed_lck(txn->lck, txn->alloc->fd, lck, flags);
 	if (rc < 0) { return rc; }
-	tx->cflags = flags & ED_TXN_FCRIT;
-	tx->isrdonly = rdonly;
-	tx->isopen = true;
+	txn->cflags = flags & ED_TXN_FCRIT;
+	txn->isrdonly = rdonly;
+	txn->isopen = true;
 	return 0;
 }
 
 int
-ed_txn_commit(EdTxn **txp, uint64_t flags)
+ed_txn_commit(EdTxn **txnp, uint64_t flags)
 {
-	EdTxn *tx = *txp;
-	if (tx == NULL || !tx->isopen || tx->isrdonly) { return ed_esys(EINVAL); }
+	EdTxn *txn = *txnp;
+	if (txn == NULL || !txn->isopen || txn->isrdonly) { return ed_esys(EINVAL); }
 
 	int rc = 0;
 	unsigned npg = 0;
-	for (unsigned i = 0; i < tx->ndb; i++) {
-		if (tx->db[i].apply == ED_BPT_INSERT) { npg += tx->db[i].nsplits; }
+	for (unsigned i = 0; i < txn->ndb; i++) {
+		if (txn->db[i].apply == ED_BPT_INSERT) { npg += txn->db[i].nsplits; }
 	}
-	if (npg > tx->nnodes) {
+	if (npg > txn->nnodes) {
 		rc = ed_esys(ENOBUFS); // FIXME: proper error code
 		goto done;
 	}
 	if (npg > 0) {
-		if ((tx->pg = calloc(npg, sizeof(tx->pg[0]))) == NULL) {
+		if ((txn->pg = calloc(npg, sizeof(txn->pg[0]))) == NULL) {
 			rc = ED_ERRNO;
 			goto done;
 		}
-		rc = ed_pg_alloc(tx->alloc, tx->pg, npg, true);
+		rc = ed_pg_alloc(txn->alloc, txn->pg, npg, true);
 		if (rc < 0) { goto done; }
-		tx->npg = npg;
+		txn->npg = npg;
 		rc = 0;
 	}
 
-	for (unsigned i = 0; i < tx->ndb; i++) {
-		ed_bpt_apply(tx, i, tx->db[i].scratch, tx->db[i].apply);
+	for (unsigned i = 0; i < txn->ndb; i++) {
+		ed_bpt_apply(txn, i, txn->db[i].scratch, txn->db[i].apply);
 	}
 
 done:
-	ed_txn_close(txp, flags);
+	ed_txn_close(txnp, flags);
 	return rc;
 }
 
 void
-ed_txn_close(EdTxn **txp, uint64_t flags)
+ed_txn_close(EdTxn **txnp, uint64_t flags)
 {
-	EdTxn *tx = *txp;
-	if (tx == NULL) { return; }
-	flags = ed_txn_fclose(flags, tx->cflags);
+	EdTxn *txn = *txnp;
+	if (txn == NULL) { return; }
+	flags = ed_txn_fclose(flags, txn->cflags);
 
-	if (tx->isopen) {
-		ed_lck(tx->lock, tx->alloc->fd, ED_LCK_UN, flags);
+	if (txn->isopen) {
+		ed_lck(txn->lck, txn->alloc->fd, ED_LCK_UN, flags);
 	}
 
 	EdPg *heads[ED_TXN_MAX_TYPE];
 	if (flags & ED_FRESET) {
-		for (unsigned i = 0; i < tx->ndb; i++) {
-			EdTxnDb *dbp = &tx->db[i];
+		for (unsigned i = 0; i < txn->ndb; i++) {
+			EdTxnDb *dbp = &txn->db[i];
 			if (dbp->head) {
 				heads[i] = dbp->head->page;
 				dbp->head->page = NULL;
@@ -153,27 +153,27 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 		}
 	}
 
-	for (int i = (int)tx->nnodesused-1; i >= 0; i--) {
-		ed_pg_sync(tx->nodes[i].page, 1, flags, tx->nodes[i].dirty);
-		if (tx->nodes[i].page) {
-			ed_pg_unmap(tx->nodes[i].page, 1);
+	for (int i = (int)txn->nnodesused-1; i >= 0; i--) {
+		ed_pg_sync(txn->nodes[i].page, 1, flags, txn->nodes[i].dirty);
+		if (txn->nodes[i].page) {
+			ed_pg_unmap(txn->nodes[i].page, 1);
 		}
 	}
-	ed_pg_free(tx->alloc, tx->pg+tx->npgused, tx->npg-tx->npgused);
-	free(tx->pg);
+	ed_pg_free(txn->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
+	free(txn->pg);
 
-	ed_pg_alloc_sync(tx->alloc);
+	ed_pg_alloc_sync(txn->alloc);
 
 	if (flags & ED_FRESET) {
-		tx->pg = NULL;
-		tx->npg = 0;
-		tx->npgused = 0;
-		tx->nnodesused = 0;
-		tx->isopen = false;
-		for (unsigned i = 0; i < tx->ndb; i++) {
-			EdTxnDb *dbp = &tx->db[i];
+		txn->pg = NULL;
+		txn->npg = 0;
+		txn->npgused = 0;
+		txn->nnodesused = 0;
+		txn->isopen = false;
+		for (unsigned i = 0; i < txn->ndb; i++) {
+			EdTxnDb *dbp = &txn->db[i];
 			dbp->tail = dbp->head = heads[i] ?
-				wrap_node(tx, heads[i], NULL, 0, 0) : NULL;
+				wrap_node(txn, heads[i], NULL, 0, 0) : NULL;
 			dbp->key = 0;
 			dbp->entry = NULL;
 			dbp->entry_index = 0;
@@ -184,49 +184,49 @@ ed_txn_close(EdTxn **txp, uint64_t flags)
 		}
 	}
 	else {
-		free(tx);
-		*txp = NULL;
+		free(txn);
+		*txnp = NULL;
 	}
 }
 
 int
-ed_txn_map(EdTxn *tx, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
+ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
 {
-	for (int i = (int)tx->nnodesused-1; i >= 0; i--) {
-		if (tx->nodes[i].page->no == no) {
-			*out = &tx->nodes[i];
+	for (int i = (int)txn->nnodesused-1; i >= 0; i--) {
+		if (txn->nodes[i].page->no == no) {
+			*out = &txn->nodes[i];
 			return 0;
 		}
 	}
 
-	if (tx->nnodesused == tx->nnodes) {
+	if (txn->nnodesused == txn->nnodes) {
 		return ed_esys(ENOBUFS); // FIXME: proper error code
 	}
 
-	EdPg *pg = ed_pg_map(tx->alloc->fd, no, 1);
+	EdPg *pg = ed_pg_map(txn->alloc->fd, no, 1);
 	if (pg == MAP_FAILED) { return ED_ERRNO; }
-	*out = wrap_node(tx, pg, par, pidx, 0);
+	*out = wrap_node(txn, pg, par, pidx, 0);
 	return 0;
 }
 
 EdPgNode *
-ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx)
+ed_txn_alloc(EdTxn *txn, EdPgNode *par, uint16_t pidx)
 {
-	if (tx->npg == tx->npgused || tx->nnodesused == tx->nnodes) {
-		fprintf(stderr, "*** too few pages allocated for transaction (%u)\n", tx->npg);
+	if (txn->npg == txn->npgused || txn->nnodesused == txn->nnodes) {
+		fprintf(stderr, "*** too few pages allocated for transaction (%u)\n", txn->npg);
 #if ED_BACKTRACE
 		ed_backtrace_print(NULL, 0, stderr);
 #endif
 		abort();
 	}
-	return wrap_node(tx, tx->pg[tx->npgused++], par, pidx, 1);
+	return wrap_node(txn, txn->pg[txn->npgused++], par, pidx, 1);
 }
 
 EdTxnDb *
-ed_txn_db(EdTxn *tx, unsigned db, bool reset)
+ed_txn_db(EdTxn *txn, unsigned db, bool reset)
 {
-	assert(db < tx->ndb);
-	EdTxnDb *dbp = &tx->db[db];
+	assert(db < txn->ndb);
+	EdTxnDb *dbp = &txn->db[db];
 	if (reset) {
 		dbp->tail = dbp->head;
 		dbp->entry = NULL;

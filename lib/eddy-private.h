@@ -93,22 +93,22 @@ struct EdLck {
  * A byte range is specified for file locking, allowing multiple independant
  * locks per file.
  *
- * @param  lock  Pointer to a lock value
+ * @param  lck  Pointer to a lock value
  * @param  start  Starting byte off
  * @param  len  Number of bytes from #start
  */
 ED_LOCAL void
-ed_lck_init(EdLck *lock, off_t start, off_t len);
+ed_lck_init(EdLck *lck, off_t start, off_t len);
 
 /**
  * @brief  Cleans up any resources for the lock.
  *
  * It is expected that the lock has been released by #ed_lck().
  *
- * @param  lock  Pointer to a lock value
+ * @param  lck  Pointer to a lock value
  */
 ED_LOCAL void
-ed_lck_final(EdLck *lock);
+ed_lck_final(EdLck *lck);
 
 /**
  * @brief  Controls the lock state.
@@ -140,13 +140,13 @@ ed_lck_final(EdLck *lock);
  * When unlocking, the #ED_FNOTLCK and #ED_FNOFLCK flags must be equivalent
  * to those used when locking.
  *
- * @param  lock  Pointer to a lock value
+ * @param  lck  Pointer to a lock value
  * @param  fd  Open file descriptor to lock
  * @param  type  The lock action to take
  * @param  flags  Modify locking behavior
  */
 ED_LOCAL int
-ed_lck(EdLck *lock, int fd, EdLckType type, uint64_t flags);
+ed_lck(EdLck *lck, int fd, EdLckType type, uint64_t flags);
 
 /** @} */
 
@@ -283,11 +283,11 @@ typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
 
 ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
 ED_LOCAL     void ed_bpt_init(EdBpt *bt);
-ED_LOCAL      int ed_bpt_find(EdTxn *tx, unsigned db, uint64_t key, void **ent);
-ED_LOCAL      int ed_bpt_next(EdTxn *tx, unsigned db, void **ent);
-ED_LOCAL      int ed_bpt_set(EdTxn *tx, unsigned db, const void *ent, bool replace);
-ED_LOCAL      int ed_bpt_del(EdTxn *tx, unsigned db);
-ED_LOCAL     void ed_bpt_apply(EdTxn *tx, unsigned db, const void *ent, EdBptApply);
+ED_LOCAL      int ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent);
+ED_LOCAL      int ed_bpt_next(EdTxn *txn, unsigned db, void **ent);
+ED_LOCAL      int ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace);
+ED_LOCAL      int ed_bpt_del(EdTxn *txn, unsigned db);
+ED_LOCAL     void ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply);
 ED_LOCAL     void ed_bpt_print(EdBpt *, int fd, size_t esize, FILE *, EdBptPrint);
 ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 
@@ -353,7 +353,7 @@ struct EdTxnDb {
  * used for multiple transactions agains the same database set.
  */
 struct EdTxn {
-	EdLck *lock;          /**< Reference to shared lock */
+	EdLck *lck;           /**< Reference to shared lock */
 	EdPgAlloc *alloc;     /**< Page allocator */
 	EdPg **pg;            /**< Array to hold allocated pages */
 	unsigned npg;         /**< Number of pages allocated */
@@ -375,15 +375,15 @@ struct EdTxn {
  * However, the transaction may be reused by passing #ED_FRESET to either of
  * these functions.
  *
- * @param  txp  Indirect pointer to a assign the allocation to
+ * @param  txnp  Indirect pointer to a assign the allocation to
  * @param  alloc  A page allocator instance
- * @param  lock  An initialized lock object
+ * @param  lck  An initialized lock object
  * @param  type  An Array of #EdTxnType structs
  * @param  ntype  The number of #EdTxnType structs
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned ntype);
+ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned ntype);
 
 /**
  * @brief  Starts an allocated transaction
@@ -402,12 +402,12 @@ ed_txn_new(EdTxn **txp, EdPgAlloc *alloc, EdLck *lock, EdTxnType *type, unsigned
  *     <dd>Return EAGAIN if the required lock would block.</dd>
  * </dl>
  *
- * @param  tx  Closed transaction object
+ * @param  txn  Closed transaction object
  * @param  flags  Behavior modification flags
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_open(EdTxn *tx, uint64_t flags);
+ed_txn_open(EdTxn *txn, uint64_t flags);
 
 /**
  * @brief  Commits the changes to each database
@@ -422,11 +422,11 @@ ed_txn_open(EdTxn *tx, uint64_t flags);
  *     <dd>Reset the transaction for another use.</dd>
  * </dl>
  *
- * @param  txp  Indirect pointer an open transaction
+ * @param  txnp  Indirect pointer an open transaction
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_commit(EdTxn **txp, uint64_t flags);
+ed_txn_commit(EdTxn **txnp, uint64_t flags);
 
 /**
  * @brief  Closes the transaction and abandons any pending changes
@@ -441,19 +441,19 @@ ed_txn_commit(EdTxn **txp, uint64_t flags);
  *     <dd>Reset the transaction for another use.</dd>
  * </dl>
  *
- * @param  txp  Indirect pointer an open transaction
+ * @param  txnp  Indirect pointer an open transaction
  * @param  flags  Behavior modification flags
  * @return  0 on success <0 on error
  */
 ED_LOCAL void
-ed_txn_close(EdTxn **txp, uint64_t flags);
+ed_txn_close(EdTxn **txnp, uint64_t flags);
 
 /**
  * @brief  Maps a page wrapped into a node
  *
  * The page is unmapped and possibly synced when the transaction is complete.
  *
- * @param  tx  Transaction object
+ * @param  txn  Transaction object
  * @param  no  Page number to map
  * @param  par  Parent node or `NULL`
  * @param  pidx  Index of the page in the parent
@@ -461,7 +461,7 @@ ed_txn_close(EdTxn **txp, uint64_t flags);
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_map(EdTxn *tx, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out);
+ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out);
 
 /**
  * @brief  Retrieves the next allocated page wrapped into a node
@@ -469,22 +469,22 @@ ed_txn_map(EdTxn *tx, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out);
  * The number of pages needed is determined by the modifications made to the
  * databases. Requesting too many pages will result in an abort.
  *
- * @param  tx  Transaction object
+ * @param  txn  Transaction object
  * @param  par  Parent node or `NULL`
  * @param  pidx  Index of the page in the parent
  * @return  Node object
  */
 ED_LOCAL EdPgNode *
-ed_txn_alloc(EdTxn *tx, EdPgNode *par, uint16_t pidx);
+ed_txn_alloc(EdTxn *txn, EdPgNode *par, uint16_t pidx);
 
 /**
  * @brief  Gets the #EdTxnDb object for the numbered database
- * @param  tx  Transaction object
+ * @param  txn  Transaction object
  * @param  db  Database number, 0-based
  * @param  reset  Reset the search and modification state
  */
 ED_LOCAL EdTxnDb *
-ed_txn_db(EdTxn *tx, unsigned db, bool reset);
+ed_txn_db(EdTxn *txn, unsigned db, bool reset);
 
 /** @} */
 
@@ -497,7 +497,7 @@ ed_txn_db(EdTxn *tx, unsigned db, bool reset);
  */
 
 struct EdIdx {
-	EdLck lock;
+	EdLck lck;
 	EdPgAlloc alloc;
 	uint64_t flags;
 	uint64_t seed;

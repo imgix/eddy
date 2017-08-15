@@ -179,10 +179,10 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
-	EdLck lock;
-	ed_lck_init(&lock, 0, PAGESIZE);
+	EdLck lck;
+	ed_lck_init(&lck, 0, PAGESIZE);
 
-	rc = ed_lck(&lock, fd, ED_LCK_EX, cfg->flags|ED_FNOTLCK);
+	rc = ed_lck(&lck, fd, ED_LCK_EX, cfg->flags|ED_FNOTLCK);
 	if (rc == 0) {
 		do {
 			const char *slab_path = hdrnew.slab_path;
@@ -222,13 +222,13 @@ ed_idx_open(EdIdx *index, const EdConfig *cfg, int *slab_fd)
 			free_list->count = 0;
 			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
 		} while (0);
-		ed_lck(&lock, fd, ED_LCK_UN, cfg->flags|ED_FNOTLCK);
-		ed_lck_final(&lock);
+		ed_lck(&lck, fd, ED_LCK_UN, cfg->flags|ED_FNOTLCK);
+		ed_lck_final(&lck);
 	}
 	if (rc < 0) { goto error; }
 
 	uint64_t f = hdr->flags | ed_fopen(flags);
-	ed_lck_init(&index->lock, 0, PAGESIZE);
+	ed_lck_init(&index->lck, 0, PAGESIZE);
 	ed_pg_alloc_init(&index->alloc, &hdr->alloc, fd, f);
 	index->alloc.free = free_list;
 	index->flags = f;
@@ -278,7 +278,7 @@ ed_idx_save_trees(EdIdx *index)
 int
 ed_idx_lock(EdIdx *index, EdLckType type)
 {
-	return ed_lck(&index->lock, index->alloc.fd, type, index->flags);
+	return ed_lck(&index->lck, index->alloc.fd, type, index->flags);
 }
 
 // Tests and sets a page number in the bit vector.
