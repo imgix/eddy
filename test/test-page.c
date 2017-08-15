@@ -1,4 +1,4 @@
-#include "eddy-private.h"
+#include "../lib/eddy-private.h"
 #include "mu.h"
 
 static EdPgAlloc alloc;

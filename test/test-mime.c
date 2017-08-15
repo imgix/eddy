@@ -1,4 +1,4 @@
-#include "eddy-mime.h"
+#include "../lib/eddy-mime.h"
 #include "mu.h"
 
 #define CACHE "mime.cache"
