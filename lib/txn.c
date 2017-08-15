@@ -1,5 +1,9 @@
 #include "eddy-private.h"
 
+#define ED_TXN_FCRIT (ED_FNOTLCK|ED_FNOFLCK)
+
+#define ed_txn_fclose(f, crit) ((f) & (~(ED_TXN_FCRIT|ED_FNOBLOCK)) | (crit))
+
 /**
  * @brief   Wraps a mapped page into a node.
  *

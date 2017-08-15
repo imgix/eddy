@@ -314,10 +314,6 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 #define ED_TXN_CLOSED 0
 #define ED_TXN_OPEN 1
 
-#define ED_TXN_FCRIT (ED_FNOTLCK|ED_FNOFLCK)
-
-#define ed_txn_fclose(f, crit) ((f) & (~(ED_TXN_FCRIT|ED_FNOBLOCK)) | (crit))
-
 /**
  * @brief  Transaction database instance information
  *
