@@ -331,6 +331,7 @@ struct EdTxnType {
  * @brief  Transaction database reference
  *
  * This is the object allocated for each database involved in the transaction.
+ * Additionally, it acts as a cursor for iterating through records in the tree.
  */
 struct EdTxnDb {
 	EdPgNode *head;       /**< First node searched */
