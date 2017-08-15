@@ -21,8 +21,8 @@
 
 _Static_assert(sizeof(EdIdxHdr) <= PAGESIZE,
 		"EdIdxHdr too big");
-_Static_assert(sizeof(EdBpt) + ED_NODE_PAGE_COUNT*sizeof(EdNodePage) <= PAGESIZE,
-		"ED_PAGE_PAGE_COUNT is too high");
+_Static_assert(sizeof(EdBpt) + ED_NODE_BLOCK_COUNT*sizeof(EdNodeBlock) <= PAGESIZE,
+		"ED_PAGE_BLOCK_COUNT is too high");
 _Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
 		"ED_NODE_KEY_COUNT is too high");
 
@@ -239,6 +239,19 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	idx->hdr = hdr;
 	idx->keys = NULL;
 	idx->blocks = NULL;
+	idx->txn = NULL;
+
+	EdTxnType type[] = {
+		{ &hdr->key_tree, sizeof(EdNodeKey) },
+		{ &hdr->block_tree, sizeof(EdNodeBlock) },
+	};
+
+	rc = ed_txn_new(&idx->txn, &idx->alloc, &idx->lck, type, ed_len(type));
+	if (rc < 0) {
+		ed_lck_final(&idx->lck);
+		ed_pg_alloc_close(&idx->alloc);
+		goto error;
+	}
 
 	*slab_fd = sfd;
 	return 0;
@@ -254,8 +267,10 @@ void
 ed_idx_close(EdIdx *idx)
 {
 	if (idx == NULL) { return; }
+	ed_lck_final(&idx->lck);
 	ed_pg_alloc_close(&idx->alloc);
 	ed_pg_unmap(idx->hdr, PG_NHDR);
+	ed_txn_close(&idx->txn, idx->flags);
 	idx->hdr = NULL;
 }
 

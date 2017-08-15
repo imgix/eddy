@@ -61,7 +61,7 @@ typedef struct EdTxnDb EdTxnDb;
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
 
-typedef struct EdNodePage EdNodePage;
+typedef struct EdNodeBlock EdNodeBlock;
 typedef struct EdNodeKey EdNodeKey;
 typedef struct EdObjectHdr EdObjectHdr;
 
@@ -505,6 +505,7 @@ struct EdIdx {
 	EdIdxHdr *hdr;
 	EdBpt *blocks;
 	EdBpt *keys;
+	EdTxn *txn;
 };
 
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
@@ -639,7 +640,7 @@ ed_fetch64(const void *p)
 
 
 
-#define ED_NODE_PAGE_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodePage))
+#define ED_NODE_BLOCK_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeBlock))
 #define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeKey))
 
 struct EdCache {
@@ -724,7 +725,7 @@ struct EdBpt {
 	uint8_t data[PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 4];
 };
 
-struct EdNodePage {
+struct EdNodeBlock {
 	EdBlkno block; // XXX last block of the entry?
 	uint32_t exp;
 	EdPgno meta;
