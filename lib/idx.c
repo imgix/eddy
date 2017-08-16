@@ -274,23 +274,46 @@ ed_idx_close(EdIdx *idx)
 	idx->hdr = NULL;
 }
 
-int
-ed_idx_load_trees(EdIdx *idx)
+void
+idx_set_obj(EdObject *obj, EdObjectHdr *hdr)
 {
-	if (ed_pg_load(idx->alloc.fd, (EdPg **)&idx->keys, idx->hdr->key_tree) == MAP_FAILED ||
-		ed_pg_load(idx->alloc.fd, (EdPg **)&idx->blocks, idx->hdr->block_tree) == MAP_FAILED) {
-		return ED_ERRNO;
-	}
-	return 0;
+	obj->key = (uint8_t *)hdr + sizeof(*hdr);
+	obj->keylen = hdr->keylen;
+	obj->meta = (uint8_t *)obj->key + ed_align_max(hdr->keylen);
+	obj->metalen = hdr->metalen;
+	obj->data = (uint8_t *)obj->meta + ed_align_pg(hdr->metalen);
+	obj->datalen = hdr->datalen;
+	obj->hdr = hdr;
 }
 
 int
-ed_idx_save_trees(EdIdx *idx)
+ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 {
-	ed_pg_mark(&idx->keys->base, &idx->hdr->key_tree, &idx->alloc.dirty);
-	ed_pg_mark(&idx->blocks->base, &idx->hdr->block_tree, &idx->alloc.dirty);
-	ed_pg_alloc_sync(&idx->alloc);
-	return 0;
+	uint64_t h = ed_hash(k, klen, idx->seed);
+	time_t now = time(NULL);
+
+	int rc = ed_txn_open(idx->txn, idx->flags|ED_FRDONLY);
+	if (rc < 0) { return rc; }
+
+	EdNodeKey *nkey;
+	rc = ed_bpt_find(idx->txn, 0, h, (void **)&nkey);
+	for (; rc == 1; rc = ed_bpt_next(idx->txn, 0, (void **)&nkey)) {
+		if (!ed_expired_at(idx->epoch, nkey->exp, now)) {
+			EdObjectHdr *hdr = ed_pg_map(obj->cache->fd, nkey->no, nkey->count);
+			if (hdr == MAP_FAILED) {
+				rc = ED_ERRNO;
+				break;
+			}
+			if (hdr->keylen == klen && memcmp((uint8_t *)hdr+sizeof(*hdr), k, klen) == 0) {
+				obj->expiry = ed_expiry_epoch(idx->epoch, nkey->exp);
+				idx_set_obj(obj, hdr);
+				break;
+			}
+			ed_pg_unmap(hdr, nkey->count);
+		}
+	}
+	ed_txn_close(&idx->txn, idx->flags|ED_FRESET);
+	return rc;
 }
 
 int

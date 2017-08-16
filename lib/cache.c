@@ -81,30 +81,6 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	(void)cache;
 	(void)key;
 	(void)len;
-#if 0
-	uint64_t h = ed_hash(key, len, cache->idx.seed);
-	EdBSearch srch;
-	EdNodeKey *k;
-	int rc;
-	printf("get: key=%.*s, hash=%llu\n", (int)len, key, h);
-
-	rc = ed_idx_lock(&cache->idx, ED_LCK_EX);
-	if (rc < 0) { return 0; }
-	
-	rc = ed_idx_load_trees(&cache->idx);
-	if (rc < 0) { goto unlock; }
-
-	rc = ed_btree_search(&cache->idx.keys, cache->idx.alloc.fd, h, sizeof(*k), &srch);
-	if (rc == 1) {
-		k = srch.entry;
-		printf("get: ttl=%ld\n", ed_ttl_now(cache->idx.epoch, k->exp));
-	}
-	ed_bsearch_final(&srch);
-	if (rc < 0) { goto unlock; }
-
-unlock:
-	ed_idx_lock(&cache->idx, ED_LCK_UN);
-#endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
 }
@@ -114,34 +90,6 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 {
 	(void)cache;
 	(void)attr;
-#if 0
-	EdBSearch srch;
-	EdNodeKey key = {
-		.hash = ed_hash(attr->key, attr->key_size, cache->idx.seed),
-		.exp = ed_expire(cache->idx.epoch, attr->expiry),
-		.meta = ED_PG_NONE,
-		.slab = ED_BLK_NONE,
-	};
-	printf("set: key=%.*s, hash=%llu, ttl=%ld\n", (int)attr->key_size, attr->key, key.hash, attr->expiry);
-
-	int rc;
-
-	rc = ed_idx_lock(&cache->idx, ED_LCK_EX);
-	if (rc < 0) { return 0; }
-
-	rc = ed_idx_load_trees(&cache->idx);
-	if (rc < 0) { goto unlock; }
-
-	rc = ed_btree_search(&cache->idx.keys, cache->idx.alloc.fd, key.hash, sizeof(key), &srch);
-	if (rc < 0) { goto unlock; }
-	rc = ed_bsearch_ins(&srch, &key, &cache->idx.alloc);
-	ed_bsearch_final(&srch);
-	if (rc < 0) { goto unlock; }
-
-unlock:
-	ed_idx_save_trees(&cache->idx);
-	ed_idx_lock(&cache->idx, ED_LCK_UN);
-#endif
 	*objp = NULL;
 	return ed_esys(ENOTSUP);
 }

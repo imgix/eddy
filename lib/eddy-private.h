@@ -513,8 +513,8 @@ struct EdIdx {
 
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
 ED_LOCAL     void ed_idx_close(EdIdx *);
-ED_LOCAL      int ed_idx_load_trees(EdIdx *);
-ED_LOCAL      int ed_idx_save_trees(EdIdx *);
+ED_LOCAL      int ed_idx_get(EdIdx *, const void *key, size_t len, EdObject *obj);
+ED_LOCAL      int ed_idx_put(EdIdx *, const void *key, size_t len, EdObject *obj);
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
 ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
 
@@ -679,9 +679,9 @@ struct EdObject {
 	const void *data;
 	const void *key;
 	const void *meta;
-	size_t datalen;
 	uint16_t keylen;
 	uint16_t metalen;
+	uint32_t datalen;
 	EdObjectHdr *hdr;
 };
 
@@ -733,10 +733,9 @@ struct EdIdxHdr {
 };
 
 struct EdObjectHdr {
-	uint64_t hash;
-	uint32_t datalen;
 	uint16_t keylen;
 	uint16_t metalen;
+	uint32_t datalen;
 };
 
 struct EdBpt {
@@ -749,15 +748,15 @@ struct EdBpt {
 
 struct EdNodeBlock {
 	EdBlkno block; // XXX last block of the entry?
+	EdPgno no;
 	uint32_t exp;
-	EdPgno meta;
 };
 
 struct EdNodeKey {
 	uint64_t hash;
+	EdBlkno no;
+	EdPgno count;
 	uint32_t exp;
-	EdPgno meta;
-	EdBlkno slab;
 };
 
 #pragma GCC diagnostic pop
