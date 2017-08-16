@@ -29,6 +29,13 @@ ed_ttl_now(int64_t epoch, uint32_t exp)
 	return ed_ttl_at(epoch, exp, time(NULL));
 }
 
+time_t
+ed_expiry_epoch(int64_t epoch, uint32_t exp)
+{
+	if (exp == ED_TIME_INF) { return -1; };
+	return (time_t)(epoch + (int64_t)exp);
+}
+
 bool
 ed_expired_at(int64_t epoch, uint32_t exp, time_t t)
 {

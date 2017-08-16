@@ -549,6 +549,7 @@ ED_LOCAL  int64_t ed_now(int64_t epoch);
 ED_LOCAL uint32_t ed_expire(int64_t epoch, time_t ttlsec);
 ED_LOCAL   time_t ed_ttl_at(int64_t epoch, uint32_t exp, time_t t);
 ED_LOCAL   time_t ed_ttl_now(int64_t epoch, uint32_t exp);
+ED_LOCAL   time_t ed_expiry_epoch(int64_t epoch, uint32_t exp);
 ED_LOCAL     bool ed_expired_at(int64_t epoch, uint32_t exp, time_t t);
 ED_LOCAL     bool ed_expired_now(int64_t epoch, uint32_t exp);
 
