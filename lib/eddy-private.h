@@ -119,24 +119,20 @@ ed_lck_final(EdLck *lck);
  * be released before #ed_lck_final().
  * 
  * Supported values for #type are:
- * <dl>
- *     <dt>#ED_LCK_SH</dt>
- *     <dd>Acquires a read-only shared lock.</dd>
- *     <dt>#ED_LCK_EX</dt>
- *     <dd>Acquires a read-write exclusive lock.</dd>
- *     <dt>#ED_LCK_UN</dt>
- *     <dd>Unlocks either the shared or exclusive lock.</dd>
- * </dl>
+ *   - #ED_LCK_SH
+ *       - Acquires a read-only shared lock.
+ *   - #ED_LCK_EX
+ *       - Acquires a read-write exclusive lock.
+ *   - #ED_LCK_UN
+ *       - Unlocks either the shared or exclusive lock.
  * 
  * Supported flags are:
- * <dl>
- *     <dt>#ED_FNOTLCK</dt>
- *     <dd>Disable thread locking.</dd>
- *     <dt>#ED_FNOFLCK</dt>
- *     <dd>Disable file locking.</dd>
- *     <dt>#ED_FNOBLOCK</dt>
- *     <dd>Return EAGAIN if locking would block.</dd>
- * </dl>
+ *   - #ED_FNOTLCK
+ *       - Disable thread locking.
+ *   - #ED_FNOFLCK
+ *       - Disable file locking.
+ *   - #ED_FNOBLOCK
+ *       - Return EAGAIN if locking would block.
  *
  * When unlocking, the #ED_FNOTLCK and #ED_FNOFLCK flags must be equivalent
  * to those used when locking.
@@ -404,16 +400,14 @@ ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned
  * This must be called before reading or writing to any database objects.
  * 
  * Supported flags are:
- * <dl>
- *     <dt>#ED_FRDONLY</dt>
- *     <dd>The operation will not write any changes.</dd>
- *     <dt>#ED_FNOTLCK</dt>
- *     <dd>Disable thread locking.</dd>
- *     <dt>#ED_FNOFLCK</dt>
- *     <dd>Disable file locking.</dd>
- *     <dt>#ED_FNOBLOCK</dt>
- *     <dd>Return EAGAIN if the required lock would block.</dd>
- * </dl>
+ *   - #ED_FRDONLY
+ *       - The operation will not write any changes.
+ *   - #ED_FNOTLCK
+ *       - Disable thread locking.
+ *   - #ED_FNOFLCK
+ *       - Disable file locking.
+ *   - #ED_FNOBLOCK
+ *       - Return EAGAIN if the required lock would block.
  *
  * @param  txn  Closed transaction object
  * @param  flags  Behavior modification flags
@@ -426,14 +420,12 @@ ed_txn_open(EdTxn *txn, uint64_t flags);
  * @brief  Commits the changes to each database
  * 
  * Supported flags are:
- * <dl>
- *     <dt>#ED_FNOSYNC</dt>
- *     <dd>Disable file syncing.</dd>
- *     <dt>#ED_FASYNC</dt>
- *     <dd>Don't wait for pages to complete syncing.</dd>
- *     <dt>#ED_FRESET</dt>
- *     <dd>Reset the transaction for another use.</dd>
- * </dl>
+ *   - #ED_FNOSYNC
+ *       - Disable file syncing.
+ *   - #ED_FASYNC
+ *       - Don't wait for pages to complete syncing.
+ *   - #ED_FRESET
+ *       - Reset the transaction for another use.
  *
  * @param  txnp  Indirect pointer an open transaction
  * @return  0 on success <0 on error
@@ -445,14 +437,12 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags);
  * @brief  Closes the transaction and abandons any pending changes
  * 
  * Supported flags are:
- * <dl>
- *     <dt>#ED_FNOSYNC</dt>
- *     <dd>Disable file syncing.</dd>
- *     <dt>#ED_FASYNC</dt>
- *     <dd>Don't wait for pages to complete syncing.</dd>
- *     <dt>#ED_FRESET</dt>
- *     <dd>Reset the transaction for another use.</dd>
- * </dl>
+ *   - #ED_FNOSYNC
+ *       - Disable file syncing.
+ *   - #ED_FASYNC
+ *       - Don't wait for pages to complete syncing.
+ *   - #ED_FRESET
+ *       - Reset the transaction for another use.
  *
  * @param  txnp  Indirect pointer an open transaction
  * @param  flags  Behavior modification flags
