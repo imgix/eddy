@@ -10,7 +10,7 @@
  * @return  Size in bytes of the allocation required
  */
 static inline size_t
-ed_txn_node_size(unsigned nnodes)
+node_size(unsigned nnodes)
 {
 	return sizeof(EdTxnNode) + (nnodes-1)*sizeof(((EdTxnNode *)0)->nodes[0]);
 }
@@ -25,10 +25,10 @@ ed_txn_node_size(unsigned nnodes)
  * @return  0 on success, <0 on error
  */
 static inline int
-ed_txn_node_alloc(EdTxnNode **head, unsigned nnodes)
+node_alloc(EdTxnNode **head, unsigned nnodes)
 {
 	nnodes = ed_power2(nnodes);
-	EdTxnNode *next = calloc(1, ed_txn_node_size(nnodes));
+	EdTxnNode *next = calloc(1, node_size(nnodes));
 	if (next == NULL) { return ED_ERRNO; }
 	next->next = *head;
 	next->nnodes = nnodes;
@@ -43,7 +43,7 @@ ed_txn_node_alloc(EdTxnNode **head, unsigned nnodes)
  * relationships as well as the dirty state of the page's contents.
  */
 static EdPgNode *
-wrap_node(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
+node_wrap(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 {
 	assert(txn->nodes->nnodesused < txn->nodes->nnodes);
 
@@ -66,7 +66,7 @@ ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned
 	int rc = 0;
 	EdTxn *txn;
 	size_t sztx = sizeof(*txn) + (ntype-1)*sizeof(txn->db[0]);
-	size_t sznodes = ed_txn_node_size(nnodes);
+	size_t sznodes = node_size(nnodes);
 
 	size_t szscratch = 0;
 	for (unsigned i = 0; i < ntype; i++) { szscratch += ed_align_max(type[i].entry_size); }
@@ -138,7 +138,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	}
 	unsigned avail = txn->nodes->nnodes - txn->nodes->nnodesused;
 	if (npg > avail) {
-		rc = ed_txn_node_alloc(&txn->nodes, txn->nodes->nnodesused + npg);
+		rc = node_alloc(&txn->nodes, txn->nodes->nnodesused + npg);
 		if (rc < 0) { goto done; }
 	}
 	if (npg > 0) {
@@ -217,7 +217,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		for (unsigned i = 0; i < txn->ndb; i++) {
 			EdTxnDb *dbp = &txn->db[i];
 			dbp->tail = dbp->head = heads[i] ?
-				wrap_node(txn, heads[i], NULL, 0, 0) : NULL;
+				node_wrap(txn, heads[i], NULL, 0, 0) : NULL;
 			dbp->key = 0;
 			dbp->start = NULL;
 			dbp->entry = NULL;
@@ -247,13 +247,13 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
 	}
 
 	if (txn->nodes->nnodesused == txn->nodes->nnodes) {
-		int rc = ed_txn_node_alloc(&txn->nodes, txn->nodes->nnodes+1);
+		int rc = node_alloc(&txn->nodes, txn->nodes->nnodes+1);
 		if (rc < 0) { return rc; }
 	}
 
 	EdPg *pg = ed_pg_map(txn->alloc->fd, no, 1);
 	if (pg == MAP_FAILED) { return ED_ERRNO; }
-	*out = wrap_node(txn, pg, par, pidx, 0);
+	*out = node_wrap(txn, pg, par, pidx, 0);
 	return 0;
 }
 
@@ -267,7 +267,7 @@ ed_txn_alloc(EdTxn *txn, EdPgNode *par, uint16_t pidx)
 #endif
 		abort();
 	}
-	return wrap_node(txn, txn->pg[txn->npgused++], par, pidx, 1);
+	return node_wrap(txn, txn->pg[txn->npgused++], par, pidx, 1);
 }
 
 EdTxnDb *
