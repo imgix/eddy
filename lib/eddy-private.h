@@ -57,6 +57,7 @@ typedef struct EdBpt EdBpt;
 typedef struct EdTxn EdTxn;
 typedef struct EdTxnType EdTxnType;
 typedef struct EdTxnDb EdTxnDb;
+typedef struct EdTxnNode EdTxnNode;
 
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
@@ -365,14 +366,19 @@ struct EdTxn {
 	EdPg **pg;            /**< Array to hold allocated pages */
 	unsigned npg;         /**< Number of pages allocated */
 	unsigned npgused;     /**< Number of pages used */
-	EdPgNode *nodes;      /**< Array of node wrapped pages */
-	unsigned nnodes;      /**< Length of node array */
-	unsigned nnodesused;  /**< Number of nodes used */
+	EdTxnNode *nodes;     /**< Linked list of node arrays */
 	uint64_t cflags;      /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
 	bool isrdonly;        /**< Was #ed_txn_open() called with #ED_FRDONLY */
 	bool isopen;          /**< Has #ed_txn_open() been called */
 	unsigned ndb;         /**< Number of search objects */
 	EdTxnDb db[1];        /**< Search object flexible array member */
+};
+
+struct EdTxnNode {
+	EdTxnNode *next;      /**< Next chunk of nodes */
+	unsigned nnodes;      /**< Length of node array */
+	unsigned nnodesused;  /**< Number of nodes used */
+	EdPgNode nodes[1];    /**< Flexible array member of node wrapped pages */
 };
 
 /**
@@ -641,6 +647,24 @@ ed_fetch64(const void *p)
 	uint64_t val;
 	memcpy(&val, p, sizeof(val));
 	return val;
+}
+
+static inline unsigned __attribute__((unused))
+ed_power2(unsigned p)
+{
+	if (p > 0) { 
+		p--;
+		p |= p >> 1;
+		p |= p >> 2;
+		p |= p >> 4;
+		p |= p >> 8;
+		p |= p >> 16;
+		if (sizeof(p) > 32) {
+			p |= p >> 32;
+		}
+		p++;
+	}
+	return p;
 }
 
 /** @} */

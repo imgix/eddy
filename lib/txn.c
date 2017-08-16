@@ -5,6 +5,38 @@
 #define ed_txn_fclose(f, crit) ((f) & (~(ED_TXN_FCRIT|ED_FNOBLOCK)) | (crit))
 
 /**
+ * @brief  Calculates the allocation size for a node array
+ * @param  nnodes  The number of nodes desired
+ * @return  Size in bytes of the allocation required
+ */
+static inline size_t
+ed_txn_node_size(unsigned nnodes)
+{
+	return sizeof(EdTxnNode) + (nnodes-1)*sizeof(((EdTxnNode *)0)->nodes[0]);
+}
+
+/**
+ * @brief  Allocates a new node array
+ *
+ * This will allocate the next array and push it onto the link list head.
+ *
+ * @param  head  Indirect pointer to the current head node
+ * @param  nnodes  Minimum size of the array
+ * @return  0 on success, <0 on error
+ */
+static inline int
+ed_txn_node_alloc(EdTxnNode **head, unsigned nnodes)
+{
+	nnodes = ed_power2(nnodes);
+	EdTxnNode *next = calloc(1, ed_txn_node_size(nnodes));
+	if (next == NULL) { return ED_ERRNO; }
+	next->next = *head;
+	next->nnodes = nnodes;
+	*head = next;
+	return 0;
+}
+
+/**
  * @brief   Wraps a mapped page into a node.
  *
  * Nodes are a memory representation used to simplify tracking parent
@@ -13,9 +45,9 @@
 static EdPgNode *
 wrap_node(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 {
-	assert(txn->nnodesused < txn->nnodes);
+	assert(txn->nodes->nnodesused < txn->nodes->nnodes);
 
-	EdPgNode *n = &txn->nodes[txn->nnodesused++];
+	EdPgNode *n = &txn->nodes->nodes[txn->nodes->nnodesused++];
 	n->page = pg;
 	n->parent = par;
 	n->pindex = pidx;
@@ -30,11 +62,11 @@ ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned
 		return ed_esys(EINVAL);
 	}
 
-	unsigned nnodes = ntype * 16;
+	unsigned nnodes = ntype * 8;
 	int rc = 0;
 	EdTxn *txn;
 	size_t sztx = sizeof(*txn) + (ntype-1)*sizeof(txn->db[0]);
-	size_t sznodes = sizeof(txn->nodes[0]) * nnodes;
+	size_t sznodes = ed_txn_node_size(nnodes);
 
 	size_t szscratch = 0;
 	for (unsigned i = 0; i < ntype; i++) { szscratch += ed_align_max(type[i].entry_size); }
@@ -49,8 +81,8 @@ ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned
 
 	txn->lck = lck;
 	txn->alloc = alloc;
-	txn->nodes = (EdPgNode *)((uint8_t *)txn + offnodes);
-	txn->nnodes = nnodes;
+	txn->nodes = (EdTxnNode *)((uint8_t *)txn + offnodes);
+	txn->nodes->nnodes = nnodes;
 
 	uint8_t *scratch = (uint8_t *)txn + offscratch;
 	for (unsigned i = 0; i < ntype; i++) {
@@ -104,9 +136,10 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	for (unsigned i = 0; i < txn->ndb; i++) {
 		if (txn->db[i].apply == ED_BPT_INSERT) { npg += txn->db[i].nsplits; }
 	}
-	if (npg > txn->nnodes) {
-		rc = ed_esys(ENOBUFS); // FIXME: proper error code
-		goto done;
+	unsigned avail = txn->nodes->nnodes - txn->nodes->nnodesused;
+	if (npg > avail) {
+		rc = ed_txn_node_alloc(&txn->nodes, txn->nodes->nnodesused + npg);
+		if (rc < 0) { goto done; }
 	}
 	if (npg > 0) {
 		if ((txn->pg = calloc(npg, sizeof(txn->pg[0]))) == NULL) {
@@ -153,12 +186,23 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 
-	for (int i = (int)txn->nnodesused-1; i >= 0; i--) {
-		ed_pg_sync(txn->nodes[i].page, 1, flags, txn->nodes[i].dirty);
-		if (txn->nodes[i].page) {
-			ed_pg_unmap(txn->nodes[i].page, 1);
+	EdTxnNode *node = txn->nodes;
+	do {
+		for (int i = (int)node->nnodesused-1; i >= 0; i--) {
+			ed_pg_sync(node->nodes[i].page, 1, flags, node->nodes[i].dirty);
+			if (node->nodes[i].page) {
+				ed_pg_unmap(node->nodes[i].page, 1);
+			}
 		}
-	}
+		EdTxnNode *next = node->next;
+		if (next == NULL) {
+			txn->nodes = node;
+			break;
+		}
+		free(node);
+		node = next;
+	} while(1);
+
 	ed_pg_free(txn->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
 	free(txn->pg);
 
@@ -168,7 +212,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		txn->pg = NULL;
 		txn->npg = 0;
 		txn->npgused = 0;
-		txn->nnodesused = 0;
+		txn->nodes->nnodesused = 0;
 		txn->isopen = false;
 		for (unsigned i = 0; i < txn->ndb; i++) {
 			EdTxnDb *dbp = &txn->db[i];
@@ -193,15 +237,18 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 int
 ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
 {
-	for (int i = (int)txn->nnodesused-1; i >= 0; i--) {
-		if (txn->nodes[i].page->no == no) {
-			*out = &txn->nodes[i];
-			return 0;
+	for (EdTxnNode *node = txn->nodes; node != NULL; node = node->next) {
+		for (int i = (int)node->nnodesused-1; i >= 0; i--) {
+			if (node->nodes[i].page->no == no) {
+				*out = &node->nodes[i];
+				return 0;
+			}
 		}
 	}
 
-	if (txn->nnodesused == txn->nnodes) {
-		return ed_esys(ENOBUFS); // FIXME: proper error code
+	if (txn->nodes->nnodesused == txn->nodes->nnodes) {
+		int rc = ed_txn_node_alloc(&txn->nodes, txn->nodes->nnodes+1);
+		if (rc < 0) { return rc; }
 	}
 
 	EdPg *pg = ed_pg_map(txn->alloc->fd, no, 1);
@@ -213,7 +260,7 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
 EdPgNode *
 ed_txn_alloc(EdTxn *txn, EdPgNode *par, uint16_t pidx)
 {
-	if (txn->npg == txn->npgused || txn->nnodesused == txn->nnodes) {
+	if (txn->npg == txn->npgused || txn->nodes->nnodesused == txn->nodes->nnodes) {
 		fprintf(stderr, "*** too few pages allocated for transaction (%u)\n", txn->npg);
 #if ED_BACKTRACE
 		ed_backtrace_print(NULL, 0, stderr);

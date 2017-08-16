@@ -719,6 +719,50 @@ test_multi(void)
 	ed_txn_close(&txn, FCLOSE);
 }
 
+static void
+test_iter(void)
+{
+	mu_teardown = cleanup;
+
+	EdLck lock;
+	ed_lck_init(&lock, 0, PAGESIZE);
+
+	unlink(path);
+	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+
+	Tree *t = ed_pg_alloc_meta(&alloc);
+	t->db1 = ED_PG_NONE;
+
+	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxn *txn;
+	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+
+	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
+		Entry ent = { .key = rand_r(&seed) };
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+
+	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+
+	Entry *ent;
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 129126522, (void **)&ent), 1);
+	mu_assert_uint_eq(ent->key, 129126522);
+
+	int c;
+	for (c = 0; ed_bpt_loop(txn, 0) == 0; c++) {
+		mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
+	}
+	mu_assert_int_eq(c, LARGE);
+
+	ed_txn_close(&txn, FCLOSE);
+}
+
 int
 main(void)
 {
@@ -735,6 +779,7 @@ main(void)
 	mu_run(test_remove_small);
 	mu_run(test_remove_large);
 	mu_run(test_multi);
+	mu_run(test_iter);
 	return 0;
 }
 
