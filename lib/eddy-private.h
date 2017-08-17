@@ -41,6 +41,9 @@
 
 
 
+/** @brief  Seconds from an internal epoch */
+typedef uint32_t EdTime;
+
 typedef struct EdLck EdLck;
 
 typedef uint32_t EdPgno;
@@ -504,7 +507,7 @@ struct EdIdx {
 	EdPgAlloc alloc;
 	uint64_t flags;
 	uint64_t seed;
-	int64_t epoch;
+	EdTimeUnix epoch;
 	EdIdxHdr *hdr;
 	EdBpt *blocks;
 	EdBpt *keys;
@@ -542,16 +545,64 @@ ED_LOCAL      int ed_rnd_u64(int fd, uint64_t *);
  * @{
  */
 
-#define ED_TIME_DELETE 0
-#define ED_TIME_INF UINT32_MAX
+#define ED_TIME_DELETE ((EdTime)0)
+#define ED_TIME_MAX ((EdTime)UINT32_MAX-1)
+#define ED_TIME_INF ((EdTime)UINT32_MAX)
 
-ED_LOCAL  int64_t ed_now(int64_t epoch);
-ED_LOCAL uint32_t ed_expire(int64_t epoch, time_t ttlsec);
-ED_LOCAL   time_t ed_ttl_at(int64_t epoch, uint32_t exp, time_t t);
-ED_LOCAL   time_t ed_ttl_now(int64_t epoch, uint32_t exp);
-ED_LOCAL   time_t ed_expiry_epoch(int64_t epoch, uint32_t exp);
-ED_LOCAL     bool ed_expired_at(int64_t epoch, uint32_t exp, time_t t);
-ED_LOCAL     bool ed_expired_now(int64_t epoch, uint32_t exp);
+/**
+ * @brief  Converts a UNIX time to an internal epoch
+ * @param  epoch  The internal epoch as a UNIX timestamp
+ * @param  at  The UNIX time to convert
+ * @return  internal time representation
+ */
+ED_LOCAL EdTime
+ed_time_from_unix(EdTimeUnix epoch, EdTimeUnix at);
+
+/**
+ * @brief  Converts an internal time to UNIX time
+ * @param  epoch  The internal epoch as a UNIX timestamp
+ * @param  at  The internal time to convert
+ * @return  UNIX time representation
+ */
+ED_LOCAL EdTimeUnix
+ed_time_to_unix(EdTimeUnix epoch, EdTime at);
+
+/**
+ * @brief  Gets the current time in UNIX representation
+ * @return  UNIX time representation
+ */
+ED_LOCAL EdTimeUnix
+ed_now_unix(void);
+
+/**
+ * @brief  Gets the internal expiry as a time-to-live from a UNIX time
+ * @param  epoch  The internal epoch as a UNIX timestamp
+ * @param  ttl  Time-to-live in seconds or <0 for infinite
+ * @param  at  The UNIX time to convert
+ * @return  internal time representation
+ */
+ED_LOCAL EdTime
+ed_expiry_at(EdTimeUnix epoch, EdTimeTTL ttl, EdTimeUnix at);
+
+/**
+ * @brief  Gets the time-to-live from the a UNIX time
+ * @param  epoch  The internal epoch as a UNIX timestamp
+ * @param  exp  The absolute expiration in internal time
+ * @param  at  The UNIX time to convert
+ * @return  Time-to-live in seconds
+ */
+ED_LOCAL EdTimeTTL
+ed_ttl_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at);
+
+/**
+ * @brief  Tests if the internal time is expired against the a UNIX time
+ * @param  epoch  The internal epoch as a UNIX timestamp
+ * @param  exp  The absolute expiration in internal time
+ * @param  at  The UNIX time to compare
+ * @return  true if the value is expired
+ */
+ED_LOCAL bool
+ed_expired_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at);
 
 /** @} */
 
@@ -722,7 +773,7 @@ struct EdIdxHdr {
 	EdPgno key_tree;
 	EdPgno block_tree;
 	uint64_t seed;
-	int64_t epoch;
+	EdTimeUnix epoch;
 	EdPgAllocHdr alloc;
 	uint8_t size_align;
 	uint8_t alloc_count;

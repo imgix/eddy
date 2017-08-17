@@ -32,6 +32,12 @@
 #define ED_FSTAT_EXTEND  (1<<0) /** Perform an extended status check. */
 /* @} */
 
+/** @brief  Seconds in UNIX time */
+typedef int64_t EdTimeUnix;
+
+/** @brief  Relative seconds */
+typedef int64_t EdTimeTTL;
+
 typedef struct EdConfig EdConfig;
 typedef struct EdCache EdCache;
 typedef struct EdObject EdObject;
@@ -48,7 +54,7 @@ struct EdObjectAttr {
 	uint32_t object_size;
 	uint16_t key_size, meta_size;
 	const void *key, *meta;
-	time_t expiry;
+	EdTimeTTL ttl;
 };
 
 #define ed_config_make() ((EdConfig){ .flags = 0 })
@@ -81,10 +87,10 @@ ed_unlink(EdCache *cache, const void *key, size_t len);
 ED_EXPORT int
 ed_set_ttl(EdObject *obj, time_t ttl);
 
-ED_EXPORT time_t
+ED_EXPORT EdTimeTTL
 ed_tll(const EdObject *obj);
 
-ED_EXPORT time_t
+ED_EXPORT EdTimeUnix
 ed_expiry(const EdObject *obj);
 
 ED_EXPORT int64_t

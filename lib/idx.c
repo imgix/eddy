@@ -158,7 +158,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 
 	if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
 	hdrnew.flags = ed_fsave(flags);
-	hdrnew.epoch = (int64_t)time(NULL);
+	hdrnew.epoch = ed_now_unix();
 	hdrnew.alloc.free_list = PG_ROOT_FREE;
 	hdrnew.alloc.tail = (EdPgTail){ PG_NINIT, 0 };
 	if (cfg->slab_path == NULL) {
@@ -290,7 +290,7 @@ int
 ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 {
 	uint64_t h = ed_hash(k, klen, idx->seed);
-	time_t now = time(NULL);
+	EdTimeUnix now = ed_now_unix();
 
 	int rc = ed_txn_open(idx->txn, idx->flags|ED_FRDONLY);
 	if (rc < 0) { return rc; }
@@ -305,7 +305,7 @@ ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 				break;
 			}
 			if (hdr->keylen == klen && memcmp((uint8_t *)hdr+sizeof(*hdr), k, klen) == 0) {
-				obj->expiry = ed_expiry_epoch(idx->epoch, nkey->exp);
+				obj->expiry = ed_expiry_at(idx->epoch, nkey->exp, now);
 				idx_set_obj(obj, hdr);
 				break;
 			}

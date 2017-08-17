@@ -1,50 +1,50 @@
 #include "eddy-private.h"
 
-int64_t
-ed_now(int64_t epoch)
+EdTime
+ed_time_from_unix(EdTimeUnix epoch, EdTimeUnix at)
 {
-	return (int64_t)time(NULL) - epoch;
+	if (at > (EdTimeUnix)ED_TIME_MAX) { return ED_TIME_MAX; }
+	if (at < 0) { return ED_TIME_INF; }
+	if (at <= epoch) { return ED_TIME_DELETE; }
+	return (EdTime)(at - epoch);
 }
 
-uint32_t
-ed_expire(int64_t epoch, time_t ttlsec)
+EdTimeUnix
+ed_time_to_unix(EdTimeUnix epoch, EdTime at)
 {
-	if (ttlsec < 0) { return ED_TIME_INF; }
-	int64_t tlater = ed_now(epoch) + (int64_t)ttlsec;
-	if (tlater >= (int64_t)ED_TIME_INF) { return ED_TIME_INF-1; }
-	if (tlater <= 0) { return ED_TIME_DELETE; }
-	return (uint32_t)tlater;
+	if (at == ED_TIME_INF) { return -1; };
+	if (at == ED_TIME_DELETE) { return 0; }
+	return (EdTimeUnix)at + epoch;
 }
 
-time_t
-ed_ttl_at(int64_t epoch, uint32_t exp, time_t t)
+EdTimeUnix
+ed_now_unix(void)
+{
+	return (EdTimeUnix)time(NULL);
+}
+
+EdTime
+ed_expiry_at(EdTimeUnix epoch, EdTimeTTL ttl, EdTimeUnix at)
+{
+	if (ttl < 0) { return ED_TIME_INF; }
+	return ed_time_from_unix(epoch, at + ttl);
+}
+
+EdTimeTTL
+ed_ttl_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at)
 {
 	if (exp == ED_TIME_INF) { return -1; };
-	return (time_t)((int64_t)exp - ((int64_t)t - epoch));
-}
-
-time_t
-ed_ttl_now(int64_t epoch, uint32_t exp)
-{
-	return ed_ttl_at(epoch, exp, time(NULL));
-}
-
-time_t
-ed_expiry_epoch(int64_t epoch, uint32_t exp)
-{
-	if (exp == ED_TIME_INF) { return -1; };
-	return (time_t)(epoch + (int64_t)exp);
+	if (exp == ED_TIME_DELETE) { return 0; }
+	EdTimeUnix ttl = ed_time_to_unix(epoch, exp) - at;
+	return ttl < 0 ? 0 : ttl;
 }
 
 bool
-ed_expired_at(int64_t epoch, uint32_t exp, time_t t)
+ed_expired_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at)
 {
-	return exp != ED_TIME_INF && exp < (int64_t)t - epoch;
-}
-
-bool
-ed_expired_now(int64_t epoch, uint32_t exp)
-{
-	return ed_expired_at(epoch, exp, time(NULL));
+	if (exp == ED_TIME_INF) { return false; }
+	if (exp == ED_TIME_DELETE) { return true; }
+	EdTimeUnix cmp = ed_time_to_unix(epoch, exp);
+	return cmp <= at;
 }
 
