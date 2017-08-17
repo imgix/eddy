@@ -33,10 +33,10 @@
 /* @} */
 
 /** @brief  Seconds in UNIX time */
-typedef int64_t EdTimeUnix;
+typedef time_t EdTimeUnix;
 
-/** @brief  Relative seconds */
-typedef int64_t EdTimeTTL;
+/** @brief  Relative time-to-live in seconds */
+typedef time_t EdTimeTTL;
 
 typedef struct EdConfig EdConfig;
 typedef struct EdCache EdCache;
