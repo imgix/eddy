@@ -6,10 +6,6 @@
 
 #include "eddy-backtrace.h"
 
-extern "C" {
-#include <pthread.h>
-}
-
 void PrintStack(EdBacktrace *bt)
 {
 	int idx = bt->Find("ed_pg_untrack");
