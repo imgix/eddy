@@ -10,13 +10,13 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-e EXP] [-m FILE] PATH KEY [FILE]\n"
+			"usage: %s [-e TTL] [-m FILE] PATH KEY [FILE]\n"
 			"\n"
 			"about:\n"
 			"  Sets the contents of an object in the cache from stdin or a file.\n"
 			"\n"
 			"options:\n"
-			"  -e EXP    set the time-to-live in seconds\n"
+			"  -e TTL    set the time-to-live in seconds\n"
 			"  -m FILE   set the object meta data from the contents of a file\n"
 			,
 			name);
@@ -31,13 +31,13 @@ main(int argc, char **argv)
 	EdInput data = ed_input_make();
 	char *end;
 	int rc;
-	EdObjectAttr attr = { .expiry = -1 };
+	EdObjectAttr attr = { .ttl = -1 };
 
 	int ch;
 	while ((ch = getopt(argc, argv, ":hem")) != -1) {
 		switch (ch) {
 		case 'e':
-			attr.expiry = strtol(optarg, &end, 10);
+			attr.ttl = strtol(optarg, &end, 10);
 			if (*end != '\0') { errx(1, "invalid number: -%c", optopt); }
 			break;
 		case 'm':
