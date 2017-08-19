@@ -754,9 +754,13 @@ test_iter(void)
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 129126522, (void **)&ent), 1);
 	mu_assert_uint_eq(ent->key, 129126522);
 
+	uint64_t last = 0;
 	int c;
 	for (c = 0; ed_bpt_loop(txn, 0) == 0; c++) {
-		mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
+		mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+		mu_assert_uint_lt(last, ent->key);
+		last = ent->key;
+		if (last == 2147481707) { last = 0; }
 	}
 	mu_assert_int_eq(c, LARGE);
 
