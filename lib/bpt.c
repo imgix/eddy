@@ -24,6 +24,8 @@
 
 _Static_assert(sizeof(EdBpt) == PAGESIZE,
 		"EdBpt size invalid");
+_Static_assert(offsetof(EdBpt, data) % 8 == 0,
+		"EdBpt data not 8-byte aligned");
 
 #define BRANCH_KEY_SIZE 8
 #define BRANCH_PTR_SIZE (sizeof(EdPgno))
@@ -70,6 +72,13 @@ branch_set_key(EdPgNode *b, uint16_t idx, uint64_t val)
 	b->dirty = 1;
 }
 
+static inline EdPgno
+branch_ptr(EdPgNode *b, uint16_t idx)
+{
+	assert(idx <= b->tree->nkeys);
+	return ed_fetch32(b->tree->data + idx*BRANCH_ENTRY_SIZE);
+}
+
 static inline uint64_t
 leaf_key(EdBpt *l, uint16_t idx, size_t esize)
 {
@@ -81,7 +90,7 @@ static inline uint16_t
 branch_index(EdBpt *node, EdPgno *ptr)
 {
 	assert(node->data <= (uint8_t *)ptr);
-	assert((uint8_t *)ptr < node->data + BRANCH_ORDER*BRANCH_ENTRY_SIZE);
+	assert((uint8_t *)ptr < node->data + (BRANCH_ORDER*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE));
 	return ((uint8_t *)ptr - node->data) / BRANCH_ENTRY_SIZE;
 }
 
@@ -91,14 +100,6 @@ size_t
 ed_bpt_capacity(size_t esize, size_t depth)
 {
 	return llround(pow(BRANCH_ORDER, depth-1) * LEAF_ORDER(esize));
-}
-
-void
-ed_bpt_init(EdBpt *bt)
-{
-	bt->base.type = ED_PG_LEAF;
-	bt->nkeys = 0;
-	bt->right = ED_PG_NONE;
 }
 
 static EdPgno *
@@ -184,23 +185,22 @@ done:
 }
 
 static int
-locate_first(EdTxn *txn, EdTxnDb *dbp)
+move_first(EdTxn *txn, EdTxnDb *dbp, EdPgNode *from)
 {
 	dbp->haskey = false;
 	dbp->caninsert = false;
 
 	int rc = 0;
-	EdPgNode *node = dbp->head;
-	if (node == NULL) { goto done; }
+	if (from == NULL) { goto done; }
 
-	while (IS_BRANCH(node->tree)) {
-		EdPgno no = ed_fetch32(node->tree->data);
+	while (IS_BRANCH(from->tree)) {
+		EdPgno no = ed_fetch32(from->tree->data);
 		EdPgNode *next;
-		rc = ed_txn_map(txn, no, node, 0, &next);
+		rc = ed_txn_map(txn, no, from, 0, &next);
 		if (rc < 0) { goto done; }
-		node = next;
-		dbp->tail = node;
+		from = next;
 	}
+	dbp->tail = from;
 
 done:
 	dbp->match = rc;
@@ -208,12 +208,46 @@ done:
 	return rc;
 }
 
+/**
+ * @brief  Moves the db tail to a right sibling node
+ * @param  txn  Transaction object
+ * @param  dbp  Transaction database object
+ * @param  from  Node to move from
+ * @return 0 on succces, <0 on error
+ */
+static int
+move_right(EdTxn *txn, EdTxnDb *dbp, EdPgNode *from)
+{
+	// Traverse up to leaf node from any overflow nodes.
+	for (; from->page->type == ED_PG_OVERFLOW; from = from->parent) {}
+	assert(from->page->type == ED_PG_LEAF);
+
+	// Traverse up the nearest node that isn't the last key of its parent.
+	do {
+		// When at the root, wrapping is the only option.
+		if (from->parent == NULL) {
+			break;
+		}
+		// If a child node is not the last key, load the sibling.
+		if (from->pindex < from->parent->tree->nkeys) {
+			EdPgno no = branch_ptr(from->parent, from->pindex+1);
+			int rc = ed_txn_map(txn, no, from->parent, from->pindex+1, &from);
+			if (rc < 0) { return rc; }
+			break;
+		}
+		from = from->parent;
+	} while (1);
+
+	// Traverse down to the left-most leaf.
+	return move_first(txn, dbp, from);
+}
+
 int
 ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
 
-	int rc = locate_first(txn, dbp);
+	int rc = move_first(txn, dbp, dbp->head);
 	if (rc == 0) {
 		void *data = dbp->tail->tree->data;
 		dbp->entry = dbp->start = data;
@@ -235,20 +269,15 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 	uint32_t i = dbp->entry_index;
 
 	if (i == leaf->nkeys-1) {
-		EdPgno right = leaf->right;
-		if (right == ED_PG_NONE) {
-			rc = locate_first(txn, dbp);
+		EdPgno next = leaf->next;
+		if (next == ED_PG_NONE) {
+			rc = move_right(txn, dbp, node);
 			if (rc < 0) { goto done; }
 		}
 		else {
-			rc = ed_txn_map(txn, right, node, 0, &node);
+			rc = ed_txn_map(txn, next, node, 0, &node);
 			if (rc < 0) { goto done; }
-
 			leaf = node->tree;
-			if (leaf->base.type != ED_PG_OVERFLOW) {
-				node->parent = NULL;
-				node->pindex = 0;
-			}
 			dbp->tail = node;
 		}
 		p = dbp->tail->tree->data;
@@ -452,8 +481,8 @@ insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdPgNode *left, EdPgNode *right, ui
 		dbp->head = parent;
 		p = parent->tree;
 		p->base.type = ED_PG_BRANCH;
+		p->next = ED_PG_NONE;
 		p->nkeys = 0;
-		p->right = ED_PG_NONE;
 
 		// Assign the left pointer. (right is assigned below)
 		pos = BRANCH_PTR_SIZE;
@@ -477,10 +506,9 @@ insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdPgNode *left, EdPgNode *right, ui
 			EdPgNode *leftb = parent, *rightb = ed_txn_alloc(txn, leftb->parent, leftb->pindex + 1);
 
 			rightb->tree->base.type = ED_PG_BRANCH;
+			rightb->tree->next = ED_PG_NONE;
 			rightb->tree->nkeys = n - mid;
-			rightb->tree->right = leftb->tree->right;
 			leftb->tree->nkeys = mid - 1;
-			leftb->tree->right = rightb->tree->base.no;
 			leftb->dirty = 1;
 
 			memcpy(rightb->tree->data, leftb->tree->data+off, sizeof(leftb->tree->data) - off);
@@ -550,19 +578,17 @@ overflow_leaf(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf)
 	EdPgNode *node;
 	size_t esize = dbp->entry_size;
 
-	if (leaf->tree->right != ED_PG_NONE) {
-		if (ed_txn_map(txn, leaf->tree->right, leaf, 0, &node) == 0) {
-			if (node->tree->base.type == ED_PG_OVERFLOW && node->tree->nkeys < LEAF_ORDER(esize)) {
-				goto done;
-			}
-		}
+	if (leaf->tree->next != ED_PG_NONE &&
+			ed_txn_map(txn, leaf->tree->next, leaf, 0, &node) == 0 &&
+			node->tree->nkeys < LEAF_ORDER(esize)) {
+		goto done;
 	}
 
 	node = ed_txn_alloc(txn, leaf, 0);
 	node->tree->base.type = ED_PG_OVERFLOW;
+	node->tree->next = leaf->tree->next;
 	node->tree->nkeys = 0;
-	node->tree->right = leaf->tree->right;
-	leaf->tree->right = node->tree->base.no;
+	leaf->tree->next = node->tree->base.no;
 
 done:
 	dbp->tail = node;
@@ -588,10 +614,9 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf, int mid)
 	EdPgNode *left = leaf, *right = ed_txn_alloc(txn, left->parent, left->pindex + 1);
 
 	right->tree->base.type = ED_PG_LEAF;
+	right->tree->next = ED_PG_NONE;
 	right->tree->nkeys = n - mid;
-	right->tree->right = left->tree->right;
 	left->tree->nkeys = mid;
-	left->tree->right = right->tree->base.no;
 	left->dirty = 1;
 
 	memcpy(right->tree->data, left->tree->data+off, sizeof(left->tree->data) - off);
@@ -625,7 +650,7 @@ ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply a)
 		if (leaf == NULL) {
 			leaf = ed_txn_alloc(txn, NULL, 0);
 			leaf->tree->base.type = ED_PG_LEAF;
-			leaf->tree->right = ED_PG_NONE;
+			leaf->tree->next = ED_PG_NONE;
 			dbp->entry = leaf->tree->data;
 			dbp->entry_index = 0;
 			dbp->head = dbp->tail = leaf;
@@ -784,10 +809,9 @@ print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
 static void
 print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool *stack, int top)
 {
-	fprintf(out, "%s p%u, nkeys=%u/%zu, right=p%jd",
+	fprintf(out, "%s p%u, nkeys=%u/%zu",
 			leaf->base.type == ED_PG_LEAF ? "leaf" : "overflow",
-			leaf->base.no, leaf->nkeys, LEAF_ORDER(esize),
-			leaf->right == ED_PG_NONE ? INTMAX_C(-1) : (intmax_t)leaf->right);
+			leaf->base.no, leaf->nkeys, LEAF_ORDER(esize));
 
 	uint32_t n = leaf->nkeys;
 	if (n == 0) {
@@ -808,13 +832,12 @@ print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool 
 	}
 	print_box(out, n, n, stack, top);
 
-	if (leaf->right != ED_PG_NONE) {
-		EdBpt *next = ed_pg_map(fd, leaf->right, 1);
-		if (next->base.type == ED_PG_OVERFLOW) {
-			print_tree(out, stack, top-1);
-			fprintf(out, "= %llu, ", ed_fetch64(next->data));
-			print_leaf(fd, esize, next, out, print, stack, top);
-		}
+	if (leaf->next != ED_PG_NONE) {
+		printf("next: %u\n", leaf->next);
+		EdBpt *next = ed_pg_map(fd, leaf->next, 1);
+		print_tree(out, stack, top-1);
+		fprintf(out, "= %llu, ", ed_fetch64(next->data));
+		print_leaf(fd, esize, next, out, print, stack, top);
 		ed_pg_unmap(next, 1);
 	}
 }
@@ -822,9 +845,8 @@ print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool 
 static void
 print_branch(int fd, size_t esize, EdBpt *branch, FILE *out, EdBptPrint print, bool *stack, int top)
 {
-	fprintf(out, "branch p%u, nkeys=%u/%zu, right=p%jd\n",
-			branch->base.no, branch->nkeys, BRANCH_ORDER,
-			branch->right == ED_PG_NONE ? INTMAX_C(-1) : (intmax_t)branch->right);
+	fprintf(out, "branch p%u, nkeys=%u/%zu\n",
+			branch->base.no, branch->nkeys, BRANCH_ORDER);
 
 	uint32_t end = branch->nkeys;
 	uint8_t *p = branch->data + BRANCH_PTR_SIZE;
@@ -914,17 +936,11 @@ verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t ma
 		last = key;
 	}
 
-	EdPgno ptr = l->right;
+	EdPgno ptr = l->next;
 	while (ptr != ED_PG_NONE) {
 		EdBpt *next = ed_pg_map(fd, ptr, 1);
-		int rc = 0;
-		if (next->base.type == ED_PG_OVERFLOW) {
-			rc = verify_overflow(fd, esize, next, out, last);
-			ptr = next->right;
-		}
-		else {
-			ptr = ED_PG_NONE;
-		}
+		int rc = verify_overflow(fd, esize, next, out, last);
+		ptr = next->next;
 		ed_pg_unmap(next, 1);
 		if (rc < 0) { return -1; }
 	}

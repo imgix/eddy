@@ -57,6 +57,7 @@ typedef struct EdPgNode EdPgNode;
 
 typedef struct EdBpt EdBpt;
 
+typedef uint64_t EdTxnId;
 typedef struct EdTxn EdTxn;
 typedef struct EdTxnType EdTxnType;
 typedef struct EdTxnDb EdTxnDb;
@@ -282,7 +283,6 @@ typedef enum EdBptApply {
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
 
 ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
-ED_LOCAL     void ed_bpt_init(EdBpt *bt);
 ED_LOCAL      int ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent);
 ED_LOCAL      int ed_bpt_first(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_next(EdTxn *txn, unsigned db, void **ent);
@@ -791,10 +791,12 @@ struct EdObjectHdr {
 
 struct EdBpt {
 	EdPg base;
-	EdPgno right;
-	uint16_t vers;
+	EdTxnId xid;
+	EdPgno next;
+	uint8_t _pad[2];
 	uint16_t nkeys;
-	uint8_t data[PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 4];
+	// TODO: should this be 16-byte aligned?
+	uint8_t data[PAGESIZE - sizeof(EdPg) - sizeof(EdTxnId) - sizeof(EdPgno) - 4];
 };
 
 struct EdNodeBlock {
