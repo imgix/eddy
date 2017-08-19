@@ -20,6 +20,7 @@ ifeq ($(BUILD),release)
 else
   BUILD_DEV?= yes
   LTO?= no
+  SANITIZE?= address,undefined
 endif
 ifdef OPT
   CFLAGS?= -O$(OPT) -DNDEBUG
@@ -88,6 +89,11 @@ endif
 CFLAGS+= -Ilib -fvisibility=hidden -pthread -D_GNU_SOURCE -D_BSD_SOURCE -DPAGESIZE=$(PAGESIZE)
 ifeq ($(LTO),yes)
   LDFLAGS+= -flto
+endif
+
+ifneq ($(SANITIZE),)
+  CFLAGS+= -fsanitize=$(SANITIZE)
+  LDFLAGS+= -fsanitize=$(SANITIZE)
 endif
 
 # Define build-specific directories.
