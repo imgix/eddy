@@ -47,14 +47,6 @@ _Static_assert(offsetof(EdBpt, data) % 8 == 0,
 #define INS_SHIFT 1
 #define INS_NOSHIFT 2
 
-static int
-map_extra(EdTxn *txn, EdPgNode *parent, uint16_t idx, EdPgNode **out)
-{
-	assert(idx <= parent->tree->nkeys);
-	EdPgno no = ed_fetch32(parent->tree->data + idx*BRANCH_ENTRY_SIZE);
-	return ed_txn_map(txn, no, parent, idx, out);
-}
-
 static inline uint64_t
 branch_key(EdBpt *b, uint16_t idx)
 {
@@ -348,124 +340,6 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 	}
 }
 
-static int
-redistribute_leaf_left(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf)
-{
-	// If the leaf is the first child, don't redistribute.
-	if (leaf->pindex == 0) { return INS_NONE; }
-	// Don't move left if the new insert is at the beggining.
-	if (dbp->entry_index == 0) { return INS_NONE; }
-
-	EdPgNode *ln;
-	int rc = map_extra(txn, leaf->parent, leaf->pindex-1, &ln);
-	if (rc < 0) { return rc == -1 ? INS_NONE : rc; }
-
-	size_t esize = dbp->entry_size;
-	uint16_t ord = LEAF_ORDER(esize);
-	EdBpt *l = ln->tree;
-
-	// Bail if the left leaf is full.
-	if (l->nkeys == ord) { return INS_NONE; }
-
-	// Move half the available nodes into the left leaf.
-	uint32_t n = (ord - l->nkeys + 1) / 2;
-	// But don't move past the entry index.
-	uint32_t max = dbp->entry_index;
-	if (n > max) { n = max; }
-
-	// Check if the split point spans a repeating key.
-	size_t size = n * esize;
-	uint8_t *src = leaf->tree->data;
-	uint64_t key = ed_fetch64(src + size);
-	if (key == ed_fetch64(src + size - esize)) {
-		// TODO: find an available split point
-		return INS_NONE;
-	}
-
-	// Move the lower range of leaf into the end of left.
-	uint8_t *dst = l->data + esize*l->nkeys;
-	memcpy(dst, src, size);
-	memmove(src, src+size, (leaf->tree->nkeys - n) * esize);
-	branch_set_key(leaf->parent, leaf->pindex, key);
-
-	// Update leaf counts.
-	l->nkeys += n;
-	leaf->tree->nkeys -= n;
-
-	// Slide the entry index down.
-	dbp->entry_index -= n;
-	dbp->entry = leaf->tree->data + dbp->entry_index*esize;
-
-	ln->dirty = 1;
-	leaf->dirty = 1;
-
-	return INS_SHIFT;
-}
-
-static int
-redistribute_leaf_right(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf)
-{
-	// If the leaf is the last child, don't redistribute.
-	if (leaf->pindex == leaf->parent->tree->nkeys) { return INS_NONE; }
-
-	size_t esize = dbp->entry_size;
-	uint16_t ord = LEAF_ORDER(esize);
-
-	// Don't move right if the insert is at the end.
-	if (dbp->entry_index == ord) { return INS_NONE; }
-
-	EdPgNode *rn;
-	int rc = map_extra(txn, leaf->parent, leaf->pindex+1, &rn);
-	if (rc < 0) { return rc == -1 ? INS_NONE : rc; }
-
-	EdBpt *r = rn->tree;
-
-	// Bail if the right leaf is full.
-	if (r->nkeys == ord) { return INS_NONE; }
-
-	// Move half the available nodes into the right leaf.
-	uint32_t n = (ord - r->nkeys + 1) / 2;
-	// But don't move past the entry index.
-	uint32_t max = (uint32_t)ord - dbp->entry_index;
-	if (n > max) { n = max; }
-
-	// Check if the split point spans a repeating key.
-	uint8_t *src = leaf->tree->data + esize*(ord - n);
-	uint64_t key = ed_fetch64(src);
-	if (key == ed_fetch64(src - esize)) {
-		// TODO: find an available split point
-		return INS_NONE;
-	}
-
-	// Move upper range of leaf into the start of right.
-	uint8_t *dst = r->data;
-	size_t size = n * esize;
-	memmove(dst+size, dst, r->nkeys*esize);
-	memcpy(dst, src, size);
-	branch_set_key(leaf->parent, leaf->pindex+1, key);
-
-	// Update leaf counts.
-	r->nkeys += n;
-	leaf->tree->nkeys -= n;
-
-	rn->dirty = 1;
-	leaf->dirty = 1;
-
-	return INS_SHIFT;
-}
-
-static int
-redistribute_leaf(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf)
-{
-	if (leaf->parent == NULL) { return INS_NONE; }
-
-	int rc = redistribute_leaf_right(txn, dbp, leaf);
-	if (rc == 0) {
-		rc = redistribute_leaf_left(txn, dbp, leaf);
-	}
-	return rc;
-}
-
 static void
 insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdPgNode *left, EdPgNode *right, uint64_t rkey)
 {
@@ -659,14 +533,11 @@ ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply a)
 		// Otherwise use the leaf from the search.
 		// If the leaf is full, it needs to be redistributed or split.
 		else if (IS_LEAF_FULL(leaf->tree, esize)) {
-			rc = redistribute_leaf(txn, dbp, leaf);
-			if (rc == INS_NONE) {
-				int mid = split_point(dbp, leaf->tree);
-				rc = mid < 0 ?
-					overflow_leaf(txn, dbp, leaf) :
-					split_leaf(txn, dbp, leaf, mid);
-				leaf = dbp->tail;
-			}
+			int mid = split_point(dbp, leaf->tree);
+			rc = mid < 0 ?
+				overflow_leaf(txn, dbp, leaf) :
+				split_leaf(txn, dbp, leaf, mid);
+			leaf = dbp->tail;
 		}
 
 		// Insert the new entry before the current entry position.
