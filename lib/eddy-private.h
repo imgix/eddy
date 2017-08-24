@@ -694,16 +694,18 @@ ed_fetch64(const void *p)
 static inline unsigned __attribute__((unused))
 ed_power2(unsigned p)
 {
-	if (p > 0) { 
+	if (p > 0) {
 		p--;
 		p |= p >> 1;
 		p |= p >> 2;
 		p |= p >> 4;
 		p |= p >> 8;
+#if UINT_MAX > UINT16_MAX
 		p |= p >> 16;
-		if (sizeof(p) > 32) {
-			p |= p >> 32;
-		}
+#if UINT_MAX > UINT32_MAX
+		p |= p >> 32;
+#endif
+#endif
 		p++;
 	}
 	return p;
