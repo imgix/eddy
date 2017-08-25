@@ -161,12 +161,12 @@ ed_lck(EdLck *lck, int fd, EdLckType type, uint64_t flags);
  * @{
  */
 
-#define ED_PG_INDEX     UINT32_C(0x998ddcb0)
-#define ED_PG_FREE_HEAD UINT32_C(0xc3e873b2)
-#define ED_PG_FREE_CHLD UINT32_C(0xea104f71)
-#define ED_PG_BRANCH    UINT32_C(0x2c17687a)
-#define ED_PG_LEAF      UINT32_C(0x2dd39a85)
-#define ED_PG_OVERFLOW  UINT32_C(0x09c2fd2f)
+#define ED_PG_INDEX     UINT32_C(0x58444e49)
+#define ED_PG_FREE_HEAD UINT32_C(0x44485246)
+#define ED_PG_FREE_CHLD UINT32_C(0x44435246)
+#define ED_PG_BRANCH    UINT32_C(0x48435242)
+#define ED_PG_LEAF      UINT32_C(0x4641454c)
+#define ED_PG_OVERFLOW  UINT32_C(0x5245564f)
 
 #define ED_PG_NONE UINT32_MAX
 #define ED_BLK_NONE UINT64_MAX
