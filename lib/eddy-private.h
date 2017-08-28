@@ -291,15 +291,110 @@ struct EdPgAlloc {
 	bool from_new;
 };
 
-ED_LOCAL      int ed_pg_alloc(EdPgAlloc *, EdPg **, EdPgno n, bool exclusive);
-ED_LOCAL     void ed_pg_free(EdPgAlloc *, EdPg **, EdPgno n);
-ED_LOCAL     void ed_pgno_free(EdPgAlloc *alloc, EdPgno *pages, EdPgno n);
-ED_LOCAL      int ed_pg_alloc_new(EdPgAlloc *, const char *, size_t meta, uint64_t flags);
-ED_LOCAL     void ed_pg_alloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
-ED_LOCAL     void ed_pg_alloc_close(EdPgAlloc *);
-ED_LOCAL     void ed_pg_alloc_sync(EdPgAlloc *);
-ED_LOCAL   void * ed_pg_alloc_meta(EdPgAlloc *alloc);
-ED_LOCAL EdPgFree * ed_pg_alloc_free_list(EdPgAlloc *);
+/**
+ * @brief  Allocates a page from the underlying file
+ *
+ * This will first attempt a lock-free allocation from any tail pages. If there
+ * are not enough pages, the continued allocation will depend on the #exclusive
+ * access to the allocator.
+ *
+ * Without #exclusive access, the number of pages successfully acquired will be
+ * returned, but no furthur allocation will take place. That is, without
+ * #exclusive access, fewer than the number of pages requested may be returned.
+ *
+ * With #exclusive access, pages will be allocated from the free list,
+ * reclaiming previously freed pages. If there are not enough free pages
+ * available, the file will be expanded.
+ *
+ * @param  alloc  Page allocator
+ * @param  p  Array to store allocated pages into
+ * @param  n  Number of pages to allocate
+ * @param  exclusive  If this allocation call has exclusive access to the allocator
+ * @return  >0 the number of pages allocated from the tail or free list,
+ *          <0 error code
+ */
+ED_LOCAL int
+ed_pg_alloc(EdPgAlloc *alloc, EdPg **, EdPgno n, bool exclusive);
+
+/**
+ * @brief  Frees disused page objects
+ *
+ * This will not reclaim the disk space used, however, it will become
+ * available for later allocations.
+ *
+ * Exclusive access to allocator is assumed for this call.
+ *
+ * @param  alloc  Page allocator
+ * @param  p  Array of pages objects to deallocate
+ * @param  n  Number of pages to deallocate
+ */
+ED_LOCAL void
+ed_pg_free(EdPgAlloc *alloc, EdPg **p, EdPgno n);
+
+/**
+ * @brief  Frees disused page numbers
+ * @see ed_pg_free
+ * @param  alloc  Page allocator
+ * @param  p  Array of pages numbers to deallocate
+ * @param  n  Number of pages to deallocate
+ */
+ED_LOCAL void
+ed_pgno_free(EdPgAlloc *alloc, EdPgno *pages, EdPgno n);
+
+/**
+ * @brief  Constructs a new page allocator on disk
+ *
+ * This is primarily used for testing the page allocator. In typical usage, the
+ * page allocator is embedded in the index.
+ * 
+ * @param  alloc  Page allocator to initialize
+ * @param  path  Path on disk to store the allocator
+ * @param  meta  Meta data space to reserve with the page allocator
+ * @param  flags  Flags for operational options
+ * @return 0 on succes, <0 on error
+ */
+ED_LOCAL int
+ed_pg_alloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags);
+
+/**
+ * @brief  Initializes a page allocator from an existing mapped header
+ * @param  alloc  Page allocator to initialize
+ * @param  hdr  Allocator header embedded in another object
+ * @param  fd  File descriptor for the file on disk
+ * @param  flags  Flags for operational options
+ */
+ED_LOCAL void
+ed_pg_alloc_init(EdPgAlloc *alloc, EdPgAllocHdr *hdr, int fd, uint64_t flags);
+
+/**
+ * @brief  Closes the allocator and releases all resources
+ * @param  alloc  Page allocator
+ */
+ED_LOCAL void
+ed_pg_alloc_close(EdPgAlloc *alloc);
+
+/**
+ * @brief  Syncs the page allocator to disk
+ * @param  alloc  Page allocator
+ */
+ED_LOCAL void
+ed_pg_alloc_sync(EdPgAlloc *alloc);
+
+/**
+ * @brief  Gets the meta data space requested from #ed_pg_alloc_new
+ * @param  alloc  Page allocator
+ * @return  Pointer to meta data space
+ */
+ED_LOCAL void *
+ed_pg_alloc_meta(EdPgAlloc *alloc);
+
+/**
+ * @brief  Gets the meta data space requested from #ed_pg_alloc_new
+ * @param  alloc  Page allocator
+ * @return  Object with the list of free pages
+ */
+ED_LOCAL EdPgFree *
+ed_pg_alloc_free_list(EdPgAlloc *alloc);
 
 /** @} */
 

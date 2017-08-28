@@ -6,9 +6,15 @@ _Static_assert(sizeof(EdPgAllocHdr) == 16,
 _Static_assert(sizeof(EdPgFree) == PAGESIZE,
 		"EdPgFree size invalid");
 
-// Maps a number of pages and assigns them to the array.
-//   >0: the pages successfully mapped
-//   <0: error code
+/**
+ * @brief  Maps a number of pages and assigns them to the array
+ * @param  alloc  Page allocator
+ * @param  no  Starting page number
+ * @param  p  Array to store mapped pages into
+ * @param  n  Number of pages to map
+ * @return  >0 if all pages successfully mapped,
+ *          <0 error code
+ */
 static int
 map_live_pages(EdPgAlloc *alloc, EdPgno no, EdPg **p, EdPgno n)
 {
@@ -22,11 +28,15 @@ map_live_pages(EdPgAlloc *alloc, EdPgno no, EdPg **p, EdPgno n)
 	return (int)n;
 }
 
-// Allocation from the tail pages.
-// Returns:
-//   >0: number of pages allocated from the tail
-//    0: new tail page is not available
-//   <0: error code
+/**
+ * @brief  Lock-free allocation from the tail pages
+ * @param  alloc  Page allocator
+ * @param  p  Array to store allocated pages into
+ * @param  n  Number of pages to allocate
+ * @return  >0 the number of pages allocated from the tail,
+ *          0 if new tail page is not available,
+ *          <0 error code
+ */
 static int
 page_alloc_tail(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 {
@@ -64,10 +74,14 @@ page_alloc_tail(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 	} while (1);
 }
 
-// Locked page allocation from the free list or a new expanded tail.
-// Returns:
-//   >0: number of pages allocated from the tail or free list
-//   <0: error code
+/**
+ * @brief  Locked page allocation from the free list or a new expanded tail.
+ * @param  alloc  Page allocator
+ * @param  p  Array to store allocated pages into
+ * @param  n  Number of pages to allocate
+ * @return  >0 the number of pages allocated from the tail or free list,
+ *          <0 error code
+ */
 static int
 page_alloc_free_or_expand(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 {
@@ -143,10 +157,6 @@ page_alloc_free_or_expand(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 	}
 }
 
-// Allocates a page from the underlying file. This will first attempt a lock-free
-// allocation from any tail pages. If none are available, and a lock has been taken,
-// a page will be pulled from the free list. If no page is available, the
-// file will be expanded.
 int
 ed_pg_alloc(EdPgAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 {
@@ -197,8 +207,6 @@ pg_push_free(EdPgAlloc *alloc, EdPgFree *old, EdPgFree *new)
 	return new;
 }
 
-// Frees a disused page. This will not reclaim the disk space used for it,
-// however, it will become available for later allocations.
 void
 ed_pg_free(EdPgAlloc *alloc, EdPg **pages, EdPgno n)
 {
