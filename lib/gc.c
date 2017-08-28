@@ -6,6 +6,7 @@ _Static_assert(offsetof(EdPgGc, data) % 8 == 0,
 		"EdPgGc data not 8-byte aligned");
 
 #define GC_LIST_PAGE_SIZE (sizeof(((EdPgGcList *)0)->pages[0]))
+
 /**
  * @brief  Calculates the maximum page count of a new list for a given size
  * @param  size  Number of bytes available
@@ -49,27 +50,33 @@ gc_list_size(EdPgno npages)
  * @brief  Pushed a new empty list onto the object
  * @param  pgc  GC page or NULL
  * @param  xid  Transaction ID to possibly merge with the current list
- * @return  A list object to append pages to, or NULL
+ * @return  A list object to append pages to, or NULL when a new pages is needed
  */
 static EdPgGcList *
 gc_list_next(EdPgGc *pgc, EdTxnId xid)
 {
+	// If NULL, a new pages is always needed.
 	if (pgc == NULL) { return NULL; }
 
 	EdPgGcList *list = (EdPgGcList *)(pgc->data + pgc->tail);
+
+	// Older xid pages can be merged into a new xid.
 	if (xid <= list->xid) {
 		return pgc->remain < GC_LIST_PAGE_SIZE ? NULL : list;
 	}
-	if (pgc->remain <= sizeof(EdPgGcList)) {
+
+	// If the page is full, return NULL.
+	if (pgc->remain < sizeof(EdPgGcList)) {
 		return NULL;
 	}
 
+	// Load the next list in the current gc page.
 	pgc->tail = sizeof(pgc->data) - pgc->remain;
 	pgc->remain -= offsetof(EdPgGcList, pages);
-
 	list = (EdPgGcList *)(pgc->data + pgc->tail);
 	list->xid = xid;
 	list->npages = 0;
+	pgc->nlists++;
 	return list;
 }
 
@@ -87,6 +94,8 @@ gc_list_init(EdPgGc *pgc, EdTxnId xid)
 	pgc->head = 0;
 	pgc->tail = 0;
 	pgc->remain = sizeof(pgc->data);
+	pgc->nlists = 0;
+	pgc->npages = 0;
 	return gc_list_next(pgc, xid);
 }
 
@@ -147,7 +156,7 @@ ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 	size_t alloc_pages = ED_COUNT_SIZE(remain, ED_PG_GC_LIST_MAX);
 	EdPgGc *new[alloc_pages];
 	if (alloc_pages > 0) {
-		int rc = ed_pg_alloc(alloc, (EdPg **)&new, 1, true);
+		int rc = ed_pg_alloc(alloc, (EdPg **)new, alloc_pages, true);
 		if (rc < 0) { return rc; }
 	}
 
@@ -179,6 +188,8 @@ ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 		}
 		list->npages += rem;
 		tail->remain -= rem * sizeof(list->pages[0]);
+		tail->npages += rem;
+		pg += rem;
 		n -= rem;
 	} while (n > 0);
 
@@ -191,7 +202,7 @@ ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 int
 ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit)
 {
-	EdPgGc *head = ed_pg_load(alloc->fd, (EdPg **)&gc->tail, *gc->tailno);
+	EdPgGc *head = ed_pg_load(alloc->fd, (EdPg **)&gc->head, *gc->headno);
 	uint16_t pos = head ? head->head : 0;
 	int rc = 0;
 
@@ -200,26 +211,31 @@ ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit)
 		if (list->xid == 0 || list->xid >= xid) { break; }
 		ed_pgno_free(alloc, list->pages, list->npages);
 		rc += list->npages;
+		head->npages -= list->npages;
 
-		if (pos < head->tail) {
-			size_t next = pos + gc_list_size(list->npages);
-			assert(next <= (size_t)head->tail);
-			pos = (uint16_t)next;
+		// While more lists are available, bump to the next one.
+		if (--head->nlists > 0) {
+			pos += (uint16_t)gc_list_size(list->npages);
+			continue;
 		}
-		else if (head->remain > offsetof(EdPgGcList, pages)) {
+		// Stop if the tail is reached.
+		else if (*gc->headno == *gc->tailno) {
+			// If full, free the page and mark as empty
+			if (head->remain < sizeof(EdPgGcList)) {
+				ed_pg_free(alloc, (EdPg **)&head, 1);
+				gc_set(&gc->head, gc->headno, NULL);
+				gc_set(&gc->tail, gc->tailno, NULL);
+			}
 			break;
 		}
-		else {
-			EdPgGc *next = NULL;
-			if (head->next != ED_PG_NONE) {
-				next = ed_pg_map(alloc->fd, head->next, 1);
-				if (next == MAP_FAILED) { rc = ED_ERRNO; break; }
-				pos = next->head;
-			}
-			ed_pg_free(alloc, (EdPg **)&head, 1);
-			head = next;
-			gc_set(&gc->head, gc->headno, head);
-		}
+
+		// Map the next page in the list, and free the old head.
+		EdPgGc *next = ed_pg_map(alloc->fd, head->next, 1);
+		if (next == MAP_FAILED) { rc = ED_ERRNO; break; }
+		pos = next->head;
+		ed_pg_free(alloc, (EdPg **)&head, 1);
+		head = next;
+		gc_set(&gc->head, gc->headno, head);
 	}
 
 	if (head) { head->head = pos; }
