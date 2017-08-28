@@ -179,6 +179,24 @@ ed_pg_alloc(EdPgAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 	return (int)n;
 }
 
+static EdPgFree *
+pg_push_free(EdPgAlloc *alloc, EdPgFree *old, EdPgFree *new)
+{
+	// Initialize the new free list with the previous as its first member.
+	new->base.type = ED_PG_FREE_CHLD;
+	new->count = 1;
+	new->pages[0] = old->base.no;
+
+	// Remove the old list and place the new one.
+	ed_pg_unmap(old, 1);
+	alloc->hdr->free_list = new->base.no;
+	alloc->free = new;
+	alloc->dirty = 1;
+	alloc->free_dirty = 2;
+
+	return new;
+}
+
 // Frees a disused page. This will not reclaim the disk space used for it,
 // however, it will become available for later allocations.
 void
@@ -218,23 +236,65 @@ ed_pg_free(EdPgAlloc *alloc, EdPg **pages, EdPgno n)
 			pg[i] = pno;
 			fs->count++;
 			alloc->free_dirty = 1;
+			ed_pg_unmap(p, 1);
 		}
-		// Otherwise, promote the freeing page to a new list and set the previous
-		// list as the first member.
+		// Otherwise, promote the freeing page to a new list.
 		else {
-			// TODO: optimize split pages?
-			p = (EdPg *)fs;
-			fs = (EdPgFree *)*pages;
-			fs->base.type = ED_PG_FREE_CHLD;
-			fs->count = 1;
-			fs->pages[0] = p->no;
-			alloc->hdr->free_list = fs->base.no;
-			alloc->free = fs;
-			alloc->dirty = 1;
-			alloc->free_dirty = 2;
+			fs = pg_push_free(alloc, fs, (EdPgFree *)*pages);
 		}
-		ed_pg_unmap(p, 1);
 	}
+}
+
+void
+ed_pgno_free(EdPgAlloc *alloc, EdPgno *pages, EdPgno n)
+{
+	for (; n > 0 && *pages == ED_PG_NONE; pages++, n--) {}
+	if (n == 0) { return; }
+
+	int err = 0;
+
+	EdPgFree *fs = ed_pg_alloc_free_list(alloc);
+	if (fs == MAP_FAILED) {
+		err = errno;
+		goto done;
+	}
+
+	// TODO: if any pages are sequential insert them together?
+	for (; n > 0; pages++, n--) {
+		EdPgno pno = *pages;
+		if (pno == ED_PG_NONE) { continue; }
+		// If there is space remaining, add the page to the list.
+		if (fs->count < ED_PG_FREE_COUNT) {
+			// This is an attempt to keep free pages in order. This slows down frees,
+			// but it can minimize the number of mmap calls during multi-page allocation
+			// from the free list.
+			EdPgno *pg = fs->pages, cnt = fs->count, i;
+			for (i = fs->base.type == ED_PG_FREE_CHLD; i < cnt && pg[i] > pno; i++) {}
+			memmove(pg+i+1, pg+i, sizeof(*pg) * (cnt-i));
+			pg[i] = pno;
+			fs->count++;
+			alloc->free_dirty = 1;
+		}
+		// Otherwise, promote the freeing page to a new list.
+		else {
+			EdPgFree *nfs = ed_pg_map(alloc->fd, pno, 1);
+			if (nfs == MAP_FAILED) {
+				err = errno;
+				goto done;
+			}
+			fs = pg_push_free(alloc, fs, nfs);
+		}
+	}
+
+done:
+	for (EdPgno i = n; i > 0; pages++, i--) {
+		if (*pages == ED_PG_NONE) { n--; }
+	}
+	if (err) {
+		fprintf(stderr, "*** %u page(s) at %u lost while freeing: %s\n",
+				n, pages[0], strerror(err));
+	}
+	return;
 }
 
 int

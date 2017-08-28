@@ -215,6 +215,7 @@ struct EdPgAlloc {
 
 ED_LOCAL      int ed_pg_alloc(EdPgAlloc *, EdPg **, EdPgno n, bool exclusive);
 ED_LOCAL     void ed_pg_free(EdPgAlloc *, EdPg **, EdPgno n);
+ED_LOCAL     void ed_pgno_free(EdPgAlloc *alloc, EdPgno *pages, EdPgno n);
 ED_LOCAL      int ed_pg_alloc_new(EdPgAlloc *, const char *, size_t meta, uint64_t flags);
 ED_LOCAL     void ed_pg_alloc_init(EdPgAlloc *, EdPgAllocHdr *, int fd, uint64_t flags);
 ED_LOCAL     void ed_pg_alloc_close(EdPgAlloc *);
