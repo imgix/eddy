@@ -53,7 +53,11 @@ typedef struct EdPgAlloc EdPgAlloc;
 typedef struct EdPgAllocHdr EdPgAllocHdr;
 typedef struct EdPgFree EdPgFree;
 typedef struct EdPgTail EdPgTail;
+typedef struct EdPgGc EdPgGc;
+typedef struct EdPgGcList EdPgGcList;
 typedef struct EdPgNode EdPgNode;
+
+typedef struct EdGc EdGc;
 
 typedef struct EdBpt EdBpt;
 
@@ -167,6 +171,7 @@ ed_lck(EdLck *lck, int fd, EdLckType type, uint64_t flags);
 #define ED_PG_BRANCH    UINT32_C(0x48435242)
 #define ED_PG_LEAF      UINT32_C(0x4641454c)
 #define ED_PG_OVERFLOW  UINT32_C(0x5245564f)
+#define ED_PG_GC        UINT32_C(0x4c4c4347)
 
 #define ED_PG_NONE UINT32_MAX
 #define ED_BLK_NONE UINT64_MAX
@@ -189,6 +194,79 @@ ED_LOCAL      int ed_pg_sync(void *p, EdPgno count, uint64_t flags, uint8_t lvl)
 ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pg_unload(EdPg **pgp);
 ED_LOCAL     void ed_pg_mark(EdPg *pg, EdPgno *no, uint8_t *dirty);
+
+/** @} */
+
+
+
+/**
+ * @defgroup  gc  Page Garbage Collector
+ *
+ * @{
+ */
+
+/**
+ * @brief  Type to hold all in-memory and on-disk garbage collector state
+ */
+struct EdGc {
+	EdPgGc *head;
+	EdPgGc *tail;
+	EdPgno *headno;
+	EdPgno *tailno;
+};
+
+/**
+ * @brief  Initializes a garbage collector
+ * @param  gc  Pointer to initialize
+ * @param  headno  Location to store the head page number
+ * @param  tailno  Location to store the tail page number
+ */
+ED_LOCAL void
+ed_gc_init(EdGc *gc, EdPgno *headno, EdPgno *tailno);
+
+/**
+ * @brief  Finalizes a garbage collector
+ *
+ * This will unmap an internal pages.
+ *
+ * @param  gc  Pointer to initialized garbage collector
+ */
+ED_LOCAL void
+ed_gc_final(EdGc *gc);
+
+/**
+ * @brief  Pushes an array of page numbers into the garbage collector
+ *
+ * This call transfers all pages to the garbage collector atomically. That is,
+ * all pages are recorded, or none are. Multiple calls do not have a durability
+ * guarantees even within a single lock acquisition. Ownership of all pages
+ * is transfered to the garbage collector, and any external pointers should be
+ * considered invalid after a successful call.
+ *
+ * @param  gc  Garbage collector pointer
+ * @param  alloc  Page allocator
+ * @param  xid  The transaction ID that is discarding these pages
+ * @param  pg  Array of page objects
+ * @param  n  Number of entries in the page number array
+ * @returns  0 on success, <0 on error
+ */
+ED_LOCAL int
+ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
+
+/**
+ * @brief  Runs the garbage collector
+ *
+ * This will transfer garbage pages back the free pool if their associated
+ * transaction ids are less than #xid.
+ *
+ * @param  gc  Garbage collector pointer
+ * @param  alloc  Page allocator
+ * @param  xid  The lowest active transaction ID
+ * @param  limit  The maximum number of transaction IDs to free
+ * @returns  0 on success, <0 on error
+ */
+ED_LOCAL int
+ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit);
 
 /** @} */
 
@@ -760,6 +838,32 @@ struct EdPgTail {
 	EdPgno start;
 	EdPgno off;
 };
+
+/**
+ * @brief  Flexible array of pages removed from a given transaction
+ */
+struct EdPgGcList {
+	EdTxnId  xid;      /**< Transaction id that freed these pages */
+	EdPgno   npages;   /**< Number of pages in the array, or UINT32_MAX for the next list */
+	EdPgno   pages[1]; /**< Flexible array of the pages to free */
+};
+
+/**
+ * @brief  Linked list of pages pending reclamation
+ */
+struct EdPgGc {
+	EdPg         base;   /**< Page number and type */
+	EdPgno       next;   /**< Linked list of furthur gc pages */
+	uint16_t     head;   /**< Data offset for the first active list object */
+	uint16_t     tail;   /**< Data offset for the last list object */
+	uint16_t     remain; /**< Data space after the last list object */
+	uint8_t     _pad[6];
+#define ED_PG_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 12)
+	uint8_t      data[ED_PG_GC_DATA];
+};
+
+/** Maximum number of pages for a list in a new gc page */
+#define ED_PG_GC_LIST_MAX ((ED_PG_GC_DATA - sizeof(EdPgGcList)) / sizeof(EdPgno) + 1)
 
 struct EdPgAllocHdr {
 	uint16_t size_page;
