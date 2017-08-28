@@ -6,7 +6,8 @@
 
 #include "eddy-backtrace.h"
 
-void PrintStack(EdBacktrace *bt)
+static void
+PrintStack(EdBacktrace *bt)
 {
 	int idx = bt->Find("ed_pg_untrack");
 	if (idx < 0) { idx = bt->Find("ed_pg_track"); }
@@ -80,6 +81,17 @@ ed_pg_track(EdPgno no, uint8_t *pg, EdPgno count)
 void 
 ed_pg_untrack(uint8_t *pg, EdPgno count)
 {
+	if (pg == NULL) {
+		fprintf(stderr, "*** attempting to unmap NULL\n");
+		EdBacktrace bt;
+		if (bt.Load() > 0) {
+			PrintStack(&bt);
+			fprintf(stderr, "\n");
+		}
+		track_errors++;
+		return;
+	}
+
 	if (pthread_rwlock_wrlock(&track_lock) < 0) {
 		fprintf(stderr, "*** failed to lock: %s\n", strerror(errno));
 		abort();
