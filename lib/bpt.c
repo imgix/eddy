@@ -1,27 +1,5 @@
 #include "eddy-private.h"
 
-// TODO: move node list handling into separate functions
-
-/*
- * For branch nodes, the layout of the data segment looks like:
- *
- * 0      4       12     16       24
- * +------+--------+------+--------+-----+----------+------+
- * | P[0] | Key[0] | P[1] | Key[1] | ... | Key[N-1] | P[N] |
- * +------+--------+------+--------+-----+----------+------+
- *
- * The page pointer values (P) are 32-bit numbers as a page offset for the
- * child page. The keys are 64-bit numbers. Each key on P[0] is less than
- * Key[0]. Each key on P[1] is greater or equal to Key[0], and so on. These
- * values are guaranteed to have 4-byte alignment and do not need special
- * handling to read. The Key values are 64-bit and may not be 8-byte aligned.
- * These values need to be acquired using the `ed_fetch64` to accomodate
- * unaligned reads.
- *
- * Leaf nodes use the data segment as an array of entries. Each entry *must*
- * start with a 64-bit key.
- */
-
 _Static_assert(sizeof(EdBpt) == PAGESIZE,
 		"EdBpt size invalid");
 _Static_assert(offsetof(EdBpt, data) % 8 == 0,

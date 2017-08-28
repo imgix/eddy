@@ -178,14 +178,25 @@ ed_lck(EdLck *lck, int fd, EdLckType type, uint64_t flags);
 
 #define ED_PG_FREE_COUNT ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
 
+/**
+ * @brief  In-memory node to wrap a b+tree node
+ *
+ * This captures the parent node when mapping each subsequent page, allowing
+ * simpler reverse-traversal withough the complexity of storing the relationship.
+ * Additionally, the node tracks the advisory dirty state of the page. When
+ * commited, this will sync the page unless #ED_FNOSYNC is used. If the page is
+ * not marked for commiting, the page will instead be returned as a free page
+ * to the page allocator.
+ */
 struct EdPgNode {
 	union {
-		EdPg *page;       // mapped page
-		EdBpt *tree;    // mapped page as a tree
+		EdPg *page;       /**< Mapped page */
+		EdBpt *tree;      /**< Mapped page as a tree */
 	};
-	EdPgNode *parent;     // parent node
-	uint16_t pindex;      // index of page in the parent
-	uint8_t dirty;        // dirty state of the page
+	EdPgNode *parent;     /**< Parent node */
+	uint16_t pindex;      /**< Index of page in the parent */
+	uint8_t dirty;        /**< Dirty state of the page */
+	bool commit;          /**< Commit or free page */
 };
 
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
@@ -994,14 +1005,43 @@ struct EdObjectHdr {
 	uint32_t datalen;
 };
 
+/**
+ * @brief  Page type for b+tree branches and leaves
+ *
+ * For leaf nodes, the #nkeys field is the number of entries in the leaf.
+ * Branches use this field for the number of keys. Howevever, there is one
+ * more child page pointer than the number of keys.
+ *
+ * The #data size is the remaining space of a full page after subtracting the
+ * size of the header fields. Currently, #data is guaranteed to be 8-byte
+ * aligned.
+ *
+ * For branch nodes, the layout of the data segment looks like:
+ *
+ * 0      4       12     16       24
+ * +------+--------+------+--------+-----+----------+------+
+ * | P[0] | Key[0] | P[1] | Key[1] | ... | Key[N-1] | P[N] |
+ * +------+--------+------+--------+-----+----------+------+
+ *
+ * The page pointer values (P) are 32-bit numbers as a page offset for the
+ * child page. The keys are 64-bit numbers. Each key on P[0] is less than
+ * Key[0]. Each key on P[1] is greater or equal to Key[0], and so on. These
+ * values are guaranteed to have 4-byte alignment and do not need special
+ * handling to read. The Key values are 64-bit and may not be 8-byte aligned.
+ * These values need to be acquired using the `ed_fetch64` to accomodate
+ * unaligned reads.
+ *
+ * Leaf nodes use the data segment as an array of entries. Each entry *must*
+ * start with a 64-bit key.
+ */
 struct EdBpt {
-	EdPg base;
-	EdTxnId xid;
-	EdPgno next;
-	uint8_t _pad[2];
-	uint16_t nkeys;
-	// TODO: should this be 16-byte aligned?
-	uint8_t data[PAGESIZE - sizeof(EdPg) - sizeof(EdTxnId) - sizeof(EdPgno) - 4];
+	EdPg     base;              /**< Page number and type */
+	EdTxnId  xid;               /**< Transaction ID that allocated this page */
+	EdPgno   next;              /**< Overflow leaf pointer */
+	uint16_t nkeys;             /**< Number of keys in the node */
+	uint8_t  _pad[2];
+#define ED_BPT_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdTxnId) - sizeof(EdPgno) - 4)
+	uint8_t  data[ED_BPT_DATA]; /**< Tree-specific data for nodes (8-byte aligned) */
 };
 
 struct EdNodeBlock {
