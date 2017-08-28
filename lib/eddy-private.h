@@ -615,14 +615,17 @@ ed_expired_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at);
  * @{
  */
 
+#define ED_COUNT_SIZE(n, size) (((n) + ((size)-1)) / (size))
+#define ED_ALIGN_SIZE(n, size) (ED_COUNT_SIZE(n, size) * (size))
+
+#define ed_count_max(n) ED_COUNT_SIZE(n, ED_MAX_ALIGN)
+#define ed_align_max(n) ED_ALIGN_SIZE(n, ED_MAX_ALIGN)
+
+#define ed_count_pg(n) ED_COUNT_SIZE(n, PAGESIZE)
+#define ed_align_pg(n) ED_ALIGN_SIZE(n, PAGESIZE)
+
 #define ed_fsave(f) ((uint32_t)((f) & UINT64_C(0x00000000FFFFFFFF)))
 #define ed_fopen(f) ((f) & UINT64_C(0xFFFFFFFF00000000))
-
-#define ed_count_max(n) (((n) + (ED_MAX_ALIGN-1)) / ED_MAX_ALIGN)
-#define ed_align_max(n) (ed_count_max(n) * ED_MAX_ALIGN)
-
-#define ed_count_pg(n) (((n) + (PAGESIZE-1)) / PAGESIZE)
-#define ed_align_pg(n) (ed_count_pg(n) * PAGESIZE)
 
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
 
