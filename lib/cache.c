@@ -14,7 +14,7 @@ ed_cache_open(EdCache **cachep, const EdConfig *cfg)
 
 	cache->ref = 1;
 	cache->bytes_used = 0;
-	cache->pages_used = 0;
+	cache->blocks_used = 0;
 	*cachep = cache;
 	return 0;
 }
@@ -57,7 +57,7 @@ ed_cache_stat(EdCache *cache, FILE *out, int flags)
 		"  bytes:\n"
 		"    used: %zu\n"
 		"    wasted: %zu\n"
-		"  pages:\n"
+		"  blocks:\n"
 		"    used: %zu\n"
 		"    size: %zu\n"
 		"    count: %zu\n"
@@ -67,9 +67,9 @@ ed_cache_stat(EdCache *cache, FILE *out, int flags)
 		(size_t)0,
 		(size_t)cache->bytes_used,
 		(size_t)0,
-		(size_t)cache->pages_used,
-		(size_t)PAGESIZE,
-		(size_t)cache->idx.hdr->slab_page_count,
+		(size_t)cache->blocks_used,
+		(size_t)cache->idx.hdr->slab_block_size,
+		(size_t)cache->idx.hdr->slab_block_count,
 		(size_t)cache->idx.hdr->pos
 	);
 	return 0;

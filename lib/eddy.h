@@ -47,6 +47,7 @@ struct EdConfig {
 	const char *index_path;
 	const char *slab_path;
 	long long slab_size;
+	unsigned slab_block_size;
 	uint64_t flags;
 };
 
@@ -205,19 +206,19 @@ ed_discard(EdObject *obj);
 #define ED_EINDEX_FLAGS          ed_eindex(6)  /** Error code if the index flags don't match. */
 #define ED_EINDEX_MAX_ALIGN      ed_eindex(7)  /** Error code if the index max alignment changed. */
 #define ED_EINDEX_PAGE_SIZE      ed_eindex(8)  /** Error code if the index page size changed. */
-#define ED_EINDEX_PAGE_COUNT     ed_eindex(9)  /** Error code if the index page count changed. */
-#define ED_EINDEX_ALLOC_COUNT    ed_eindex(10) /** Error code if the index alloc count changed. */
-#define ED_EINDEX_PAGE_REF       ed_eindex(11) /** Error code if a page is double referenced. */
-#define ED_EINDEX_PAGE_LOST      ed_eindex(12) /** Error code if a page has been lost. */
-#define ED_EINDEX_DEPTH          ed_eindex(13) /** Error code if a btree depth exceeds maximum. */
-#define ED_EINDEX_KEY_MATCH      ed_eindex(14) /** Error code if an entry key doesn't match the tree key. */
-#define ED_EINDEX_RANDOM         ed_eindex(15) /** Error code if /dev/urandom seed failed. */
-#define ED_EINDEX_RDONLY         ed_eindex(16) /** Error code if the search cursor is read-only. */
+#define ED_EINDEX_ALLOC_COUNT    ed_eindex(9)  /** Error code if the index alloc count changed. */
+#define ED_EINDEX_PAGE_REF       ed_eindex(10) /** Error code if a page is double referenced. */
+#define ED_EINDEX_PAGE_LOST      ed_eindex(11) /** Error code if a page has been lost. */
+#define ED_EINDEX_DEPTH          ed_eindex(12) /** Error code if a btree depth exceeds maximum. */
+#define ED_EINDEX_KEY_MATCH      ed_eindex(13) /** Error code if an entry key doesn't match the tree key. */
+#define ED_EINDEX_RANDOM         ed_eindex(14) /** Error code if /dev/urandom seed failed. */
+#define ED_EINDEX_RDONLY         ed_eindex(15) /** Error code if the search cursor is read-only. */
 
 #define ED_ESLAB_MODE            ed_eslab(0)   /** Error code when the slab file mode is invalid. */
 #define ED_ESLAB_SIZE            ed_eslab(1)   /** Error code when the slab size requested is invalid. */
 #define ED_ESLAB_BLOCK_SIZE      ed_eslab(2)   /** Error code when the slab sector size is not supported. */
-#define ED_ESLAB_INODE           ed_eslab(3)   /** Error code when the slab inode changed. */
+#define ED_ESLAB_BLOCK_COUNT     ed_eslab(3)   /** Error code when the slab block count changed. */
+#define ED_ESLAB_INODE           ed_eslab(4)   /** Error code when the slab inode changed. */
 
 #define ED_EKEY_LENGTH           ed_ekey(0)    /** Error code when the key is too long. */
 

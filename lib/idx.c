@@ -82,7 +82,7 @@ hdr_verify(const EdIdxHdr *hdr, const struct stat *s)
 static int
 hdr_verify_slab(const EdIdxHdr *hdr, int64_t size, ino_t ino)
 {
-	if (hdr->slab_page_count != (EdPgno)(size/PAGESIZE)) { return ED_EINDEX_PAGE_COUNT; }
+	if (hdr->slab_block_count != (EdBlkno)(size/hdr->slab_block_size)) { return ED_ESLAB_BLOCK_COUNT; }
 	if (hdr->slab_ino != (uint64_t)ino) { return ED_ESLAB_INODE; }
 	return 0;
 }
@@ -210,8 +210,9 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 				break;
 			}
 
+			hdrnew.slab_block_size = cfg->slab_block_size ? cfg->slab_block_size : PAGESIZE;
+			hdrnew.slab_block_count = (EdBlkno)(slab_size/PAGESIZE);
 			hdrnew.slab_ino = (uint64_t)stat.st_ino;
-			hdrnew.slab_page_count = (EdPgno)(slab_size/PAGESIZE);
 
 			size_t size = PG_NINIT * PAGESIZE;
 			rc = allocate_file(flags, fd, size + (ED_ALLOC_COUNT * PAGESIZE), "index");

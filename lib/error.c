@@ -15,7 +15,6 @@ static const char *const eindex[] = {
 	[ed_ecode(ED_EINDEX_FLAGS)]          = "index flags mismatched",
 	[ed_ecode(ED_EINDEX_MAX_ALIGN)]      = "index max alignment differs",
 	[ed_ecode(ED_EINDEX_PAGE_SIZE)]      = "index page size differs",
-	[ed_ecode(ED_EINDEX_PAGE_COUNT)]     = "index slab page count differs",
 	[ed_ecode(ED_EINDEX_ALLOC_COUNT)]    = "index allocation count differs",
 	[ed_ecode(ED_EINDEX_PAGE_REF)]       = "index page has multiple references",
 	[ed_ecode(ED_EINDEX_PAGE_LOST)]      = "index page has been lost",
@@ -33,6 +32,7 @@ static const char *const eslab[] = {
 	[ed_ecode(ED_ESLAB_MODE)]            = "slab file mode invalid",
 	[ed_ecode(ED_ESLAB_SIZE)]            = "slab file size too large",
 	[ed_ecode(ED_ESLAB_BLOCK_SIZE)]      = "slab file block/sector size is not supported",
+	[ed_ecode(ED_ESLAB_BLOCK_COUNT)]     = "slab file block/sector count has changed",
 	[ed_ecode(ED_ESLAB_INODE)]           = "slab inode reference invalid",
 };
 
