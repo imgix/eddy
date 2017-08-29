@@ -717,6 +717,7 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset);
 struct EdIdx {
 	EdLck lck;
 	EdPgAlloc alloc;
+	EdGc gc;
 	uint64_t flags;
 	uint64_t seed;
 	EdTimeUnix epoch;
