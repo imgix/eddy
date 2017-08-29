@@ -1,19 +1,13 @@
 #include "eddy-private.h"
 
 #define ed_lck_thread(flags) (!((flags) & ED_FNOTLCK))
-#define ed_lck_file(flags) (!((flags) & ED_FNOFLCK))
 #define ed_lck_wait(type, flags) ((type) == ED_LCK_UN || !((flags) & ED_FNOBLOCK))
 
 void
 ed_lck_init(EdLck *lck, off_t start, off_t len)
 {
-	struct flock f = {
-		.l_type = (int)ED_LCK_UN,
-		.l_whence = SEEK_SET,
-		.l_start = start,
-		.l_len = len,
-	};
-	lck->f = f;
+	lck->start = start;
+	lck->len = len;
 	pthread_rwlock_init(&lck->rw, NULL);
 }
 
@@ -41,13 +35,7 @@ ed_lck(EdLck *lck, int fd, EdLckType type, uint64_t flags)
 		if (rc != 0) { return ed_esys(rc); }
 	}
 
-	if (ed_lck_file(flags)) {
-		struct flock f = lck->f;
-		f.l_type = (int)type;
-		int rc, op = ed_lck_wait(type, flags) ? F_SETLKW : F_SETLK;
-		while ((rc = fcntl(fd, op, &f)) < 0 && (rc = ED_ERRNO) == ed_esys(EINTR)) {}
-		if (rc >= 0) { lck->f = f; }
-	}
+	rc = ed_flck(fd, type, lck->start, lck->len, flags);
 
 	if (ed_lck_thread(flags) && (rc != 0 || type == ED_LCK_UN)) {
 		pthread_rwlock_unlock(&lck->rw);
@@ -55,3 +43,16 @@ ed_lck(EdLck *lck, int fd, EdLckType type, uint64_t flags)
 	return rc;
 }
 
+int
+ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags)
+{
+	struct flock f = {
+		.l_type = (short)type,
+		.l_whence = SEEK_SET,
+		.l_start = start,
+		.l_len = len,
+	};
+	int rc = 0, op = ed_lck_wait(type, flags) ? F_SETLKW : F_SETLK;
+	while (fcntl(fd, op, &f) < 0 && (rc = ED_ERRNO) == ed_esys(EINTR)) {}
+	return rc;
+}

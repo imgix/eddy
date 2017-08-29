@@ -91,7 +91,8 @@ typedef enum EdLckType {
 } EdLckType;
 
 struct EdLck {
-	struct flock f;
+	off_t start;
+	off_t len;
 	pthread_rwlock_t rw;
 };
 
@@ -137,13 +138,10 @@ ed_lck_final(EdLck *lck);
  * Supported flags are:
  *   - #ED_FNOTLCK
  *       - Disable thread locking.
- *   - #ED_FNOFLCK
- *       - Disable file locking.
  *   - #ED_FNOBLOCK
  *       - Return EAGAIN if locking would block.
  *
- * When unlocking, the #ED_FNOTLCK and #ED_FNOFLCK flags must be equivalent
- * to those used when locking.
+ * When unlocking, the #ED_FNOTLCK flag must be equivalent in use when locking.
  *
  * @param  lck  Pointer to a lock value
  * @param  fd  Open file descriptor to lock
@@ -152,6 +150,35 @@ ed_lck_final(EdLck *lck);
  */
 ED_LOCAL int
 ed_lck(EdLck *lck, int fd, EdLckType type, uint64_t flags);
+
+/**
+ * @brief  Low-level file lock
+ *
+ * This is used to both aquires a lock (shared or exlusive) and release it.
+ * It is undefined behavior to acquire a lock multiple times. The lock must
+ * be released before #ed_lck_final().
+ * 
+ * Supported values for #type are:
+ *   - #ED_LCK_SH
+ *       - Acquires a read-only shared lock.
+ *   - #ED_LCK_EX
+ *       - Acquires a read-write exclusive lock.
+ *   - #ED_LCK_UN
+ *       - Unlocks either the shared or exclusive lock.
+ * 
+ * Supported flags are:
+ *   - #ED_FNOBLOCK
+ *       - Return EAGAIN if locking would block.
+ *
+ * @param  lck  Pointer to a lock value
+ * @param  fd  Open file descriptor to lock
+ * @param  type  The lock action to take
+ * @param  start  Starting offset for the locked region of the file
+ * @param  len  Number of bytes for locked region of the file
+ * @param  flags  Modify locking behavior
+ */
+ED_LOCAL int
+ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 
 /** @} */
 
@@ -592,8 +619,6 @@ ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned
  *       - The operation will not write any changes.
  *   - #ED_FNOTLCK
  *       - Disable thread locking.
- *   - #ED_FNOFLCK
- *       - Disable file locking.
  *   - #ED_FNOBLOCK
  *       - Return EAGAIN if the required lock would block.
  *

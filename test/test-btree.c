@@ -8,7 +8,7 @@
 #define MULTI 5000
 
 // These flags aren't terribly safe to use, but they do speed up the tests.
-#define FOPEN (ED_FNOTLCK|ED_FNOFLCK)
+#define FOPEN (ED_FNOTLCK)
 #define FCLOSE (FOPEN|ED_FNOSYNC)
 #define FRESET (FCLOSE|ED_FRESET)
 
