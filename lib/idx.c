@@ -55,12 +55,9 @@ static const EdIdxHdr INDEX_DEFAULT = {
 	.version = 2,
 	.key_tree = ED_PG_NONE,
 	.block_tree = ED_PG_NONE,
-	.alloc = {
-		.size_page = PAGESIZE,
-		.size_block = PAGESIZE,
-	},
 	.size_align = ED_MAX_ALIGN,
 	.alloc_count = ED_ALLOC_COUNT,
+	.alloc = { .size_page = PAGESIZE, },
 };
 
 static int

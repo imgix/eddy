@@ -347,7 +347,6 @@ ed_pg_alloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags)
 		free_list->base.type = ED_PG_FREE_HEAD;
 		free_list->count = 0;
 		hdr->size_page = PAGESIZE;
-		hdr->size_block = PAGESIZE;
 		hdr->free_list = hdrpages;
 		hdr->tail = (EdPgTail){ hdrpages+1, 0 };
 	}

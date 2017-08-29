@@ -999,8 +999,7 @@ struct EdPgGc {
 #define ED_PG_GC_LIST_MAX ((ED_PG_GC_DATA - sizeof(EdPgGcList)) / sizeof(EdPgno) + 1)
 
 struct EdPgAllocHdr {
-	uint16_t size_page;
-	uint16_t size_block;
+	uint32_t size_page;
 	EdPgno free_list;
 	_Atomic EdPgTail tail;
 };
