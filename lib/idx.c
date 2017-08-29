@@ -179,7 +179,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
 
-	rc = ed_flck(fd, ED_LCK_EX, 0, 1, cfg->flags);
+	rc = ed_flck(fd, ED_LCK_EX, offsetof(EdIdxHdr, base), sizeof(hdr->base), cfg->flags);
 	if (rc == 0) {
 		do {
 			const char *slab_path = hdrnew.slab_path;
@@ -220,12 +220,12 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 			free_list->count = 0;
 			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
 		} while (0);
-		ed_flck(fd, ED_LCK_UN, 0, 1, cfg->flags);
+		ed_flck(fd, ED_LCK_UN, offsetof(EdIdxHdr, base), sizeof(hdr->base), cfg->flags);
 	}
 	if (rc < 0) { goto error; }
 
 	uint64_t f = ed_idx_flags(hdr->flags | ed_fopen(flags));
-	ed_lck_init(&idx->lck, 0, 1);
+	ed_lck_init(&idx->lck, offsetof(EdIdxHdr, alloc), sizeof(hdr->alloc));
 	ed_pg_alloc_init(&idx->alloc, &hdr->alloc, fd, f);
 	idx->alloc.free = free_list;
 	idx->flags = f;
