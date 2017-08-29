@@ -936,7 +936,7 @@ struct EdCache {
 	atomic_int ref;
 	int fd;
 	size_t bytes_used;
-	size_t pages_used;
+	size_t blocks_used;
 };
 
 struct EdObject {
