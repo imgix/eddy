@@ -45,6 +45,7 @@ typedef struct EdObjectAttr EdObjectAttr;
 struct EdConfig {
 	const char *index_path;
 	const char *slab_path;
+	unsigned max_procs;
 	long long slab_size;
 	unsigned slab_block_size;
 	uint64_t flags;
@@ -212,6 +213,7 @@ ed_discard(EdObject *obj);
 #define ED_EINDEX_KEY_MATCH      ed_eindex(13) /** Error code if an entry key doesn't match the tree key. */
 #define ED_EINDEX_RANDOM         ed_eindex(14) /** Error code if /dev/urandom seed failed. */
 #define ED_EINDEX_RDONLY         ed_eindex(15) /** Error code if the search cursor is read-only. */
+#define ED_EINDEX_BUSY           ed_eindex(16) /** Error code if connection cannot be acquired. */
 
 #define ED_ESLAB_MODE            ed_eslab(0)   /** Error code when the slab file mode is invalid. */
 #define ED_ESLAB_SIZE            ed_eslab(1)   /** Error code when the slab size requested is invalid. */

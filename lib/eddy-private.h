@@ -67,6 +67,8 @@ typedef struct EdTxnType EdTxnType;
 typedef struct EdTxnDb EdTxnDb;
 typedef struct EdTxnNode EdTxnNode;
 
+typedef struct EdProc EdProc;
+
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
 
@@ -722,6 +724,7 @@ struct EdIdx {
 	EdBpt *blocks;
 	EdBpt *keys;
 	EdTxn *txn;
+	EdProc *proc;
 };
 
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
@@ -1004,25 +1007,39 @@ struct EdPgAllocHdr {
 	_Atomic EdPgTail tail;
 };
 
+struct EdProc {
+	int pid;
+	int _pad;
+	EdTxnId xid;
+};
+
+/**
+ * @brief  Page type for the index file
+ */
 struct EdIdxHdr {
-	EdPg base;
-	char magic[4];
-	char endian;
-	uint8_t mark;
-	uint16_t version;
-	uint32_t flags;
-	uint32_t pos;
-	EdPgno key_tree;
-	EdPgno block_tree;
-	uint64_t seed;
-	EdTimeUnix epoch;
-	EdPgAllocHdr alloc;
-	uint8_t size_align;
-	uint8_t alloc_count;
-	uint8_t _pad[2];
-	EdPgno slab_page_count;
-	uint64_t slab_ino;
-	char slab_path[1024];
+	EdPg         base;             /**< Page number and type */
+	char         magic[4];         /**< Magic identifier string, "edix" */
+	char         endian;           /**< Endianness of the index, 'l' or 'B' */
+	uint8_t      mark;             /**< Byte mark, 0xfc */
+	uint16_t     version;          /**< Version number */
+	uint64_t     seed;             /**< Randomized seed */
+	EdTimeUnix   epoch;            /**< Epoch adjustment in seconds */
+	uint32_t     flags;            /**< Permanent flags used when creating */
+	uint8_t      size_align;       /**< Size of max alignment */
+	uint8_t      alloc_count;      /**< Verification for the page growth count */
+	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
+	EdPgAllocHdr alloc;            /**< Page allocator */
+	EdTxnId      xid;              /**< Global transaction ID */
+	EdBlkno      pos;              /**< Current slab write block */
+	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
+	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
+	EdPgno       key_tree;         /**< Page pointer for the entry key b+tree */
+	EdPgno       block_tree;       /**< Page pointer for the slab block b+tree */
+	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
+	uint64_t     slab_ino;         /**< Inode number of the slab */
+	char         slab_path[1022];  /**< Path to the slab */
+	uint16_t     nprocs;           /**< Number of process connection slots */
+	EdProc       procs[1];         /**< Flexible array of active process connections */
 };
 
 struct EdObjectHdr {
