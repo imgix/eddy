@@ -988,7 +988,9 @@ struct EdPgGc {
 	uint16_t     head;   /**< Data offset for the first active list object */
 	uint16_t     tail;   /**< Data offset for the last list object */
 	uint16_t     remain; /**< Data space after the last list object */
-	uint8_t     _pad[6];
+	uint16_t     nlists; /**< Number of list objects in this page */
+	uint16_t     npages; /**< Number of pages across all list objects in page */
+	uint8_t      _pad[2];
 #define ED_PG_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 12)
 	uint8_t      data[ED_PG_GC_DATA];
 };
