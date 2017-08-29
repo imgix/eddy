@@ -181,10 +181,8 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
-	EdLck lck;
-	ed_lck_init(&lck, 0, PAGESIZE);
 
-	rc = ed_lck(&lck, fd, ED_LCK_EX, cfg->flags|ED_FNOTLCK);
+	rc = ed_flck(fd, ED_LCK_EX, 0, 1, cfg->flags);
 	if (rc == 0) {
 		do {
 			const char *slab_path = hdrnew.slab_path;
@@ -225,13 +223,12 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 			free_list->count = 0;
 			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
 		} while (0);
-		ed_lck(&lck, fd, ED_LCK_UN, cfg->flags|ED_FNOTLCK);
-		ed_lck_final(&lck);
+		ed_flck(fd, ED_LCK_UN, 0, 1, cfg->flags);
 	}
 	if (rc < 0) { goto error; }
 
 	uint64_t f = ed_idx_flags(hdr->flags | ed_fopen(flags));
-	ed_lck_init(&idx->lck, 0, PAGESIZE);
+	ed_lck_init(&idx->lck, 0, 1);
 	ed_pg_alloc_init(&idx->alloc, &hdr->alloc, fd, f);
 	idx->alloc.free = free_list;
 	idx->flags = f;
