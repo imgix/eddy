@@ -13,7 +13,7 @@
 #define FRESET (FCLOSE|ED_FRESET)
 
 static EdPgAlloc alloc;
-static const char *path = "/tmp/eddy_test_btree";
+static const char *path = "/tmp/eddy_test_bpt";
 
 typedef struct {
 	EdTxnId xid;
