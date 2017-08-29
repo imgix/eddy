@@ -294,7 +294,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 		{ &hdr->block_tree, sizeof(EdNodeBlock) },
 	};
 
-	rc = ed_txn_new(&idx->txn, &idx->alloc, &idx->lck, type, ed_len(type));
+	rc = ed_txn_new(&idx->txn, &idx->hdr->xid, &idx->alloc, &idx->lck, type, ed_len(type));
 	if (rc < 0) {
 		ed_lck_final(&idx->lck);
 		ed_pg_alloc_close(&idx->alloc);

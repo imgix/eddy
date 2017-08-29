@@ -574,24 +574,26 @@ struct EdTxnDb {
  * used for multiple transactions agains the same database set.
  */
 struct EdTxn {
+	EdTxnId *xidp;        /**< Reference global to transaction id */
 	EdLck *lck;           /**< Reference to shared lock */
 	EdPgAlloc *alloc;     /**< Page allocator */
 	EdPg **pg;            /**< Array to hold allocated pages */
 	unsigned npg;         /**< Number of pages allocated */
 	unsigned npgused;     /**< Number of pages used */
 	EdTxnNode *nodes;     /**< Linked list of node arrays */
+	EdTxnId xid;          /**< Transaction ID or 0 for read-only */
 	uint64_t cflags;      /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
 	bool isrdonly;        /**< Was #ed_txn_open() called with #ED_FRDONLY */
 	bool isopen;          /**< Has #ed_txn_open() been called */
 	unsigned ndb;         /**< Number of search objects */
-	EdTxnDb db[1];        /**< Search object flexible array member */
+	EdTxnDb db[1];        /**< Flexible array of #EdTxnDb values */
 };
 
 struct EdTxnNode {
 	EdTxnNode *next;      /**< Next chunk of nodes */
 	unsigned nnodes;      /**< Length of node array */
 	unsigned nnodesused;  /**< Number of nodes used */
-	EdPgNode nodes[1];    /**< Flexible array member of node wrapped pages */
+	EdPgNode nodes[1];    /**< Flexible array of node wrapped pages */
 };
 
 /**
@@ -602,6 +604,7 @@ struct EdTxnNode {
  * these functions.
  *
  * @param  txnp  Indirect pointer to a assign the allocation to
+ * @param  xid  Transaction ID pointer
  * @param  alloc  A page allocator instance
  * @param  lck  An initialized lock object
  * @param  type  An Array of #EdTxnType structs
@@ -609,7 +612,7 @@ struct EdTxnNode {
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_new(EdTxn **txnp, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned ntype);
+ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned ntype);
 
 /**
  * @brief  Starts an allocated transaction

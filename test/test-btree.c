@@ -16,6 +16,7 @@ static EdPgAlloc alloc;
 static const char *path = "/tmp/eddy_test_btree";
 
 typedef struct {
+	EdTxnId xid;
 	EdPgno db1, db2;
 } Tree;
 
@@ -94,7 +95,7 @@ test_basic(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned i = 1; i <= SMALL; i++) {
 		Entry ent = { .key = i };
@@ -121,11 +122,12 @@ test_basic(void)
 	t = ed_pg_alloc_meta(&alloc);
 	type[0].no = &t->db1;
 
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 1, (void **)&found), 1);
 	mu_assert_uint_eq(found->key, 1);
 	mu_assert_str_eq(found->name, "a1");
+	mu_assert_uint_eq(t->xid, SMALL);
 	ed_txn_close(&txn, FCLOSE);
 }
 
@@ -145,7 +147,7 @@ test_repeat(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	{
 		Entry ent = { .key = 0, .name = "a1" };
@@ -224,7 +226,7 @@ test_large(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -268,7 +270,7 @@ test_large_sequential(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		Entry ent = { .key = i };
@@ -311,7 +313,7 @@ test_large_sequential_reverse(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		Entry ent = { .key = i };
@@ -354,7 +356,7 @@ test_split_leaf_middle_left(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	size_t n = ed_bpt_capacity(sizeof(Entry), 1);
 	size_t mid = (n / 2) - 1;
@@ -409,7 +411,7 @@ test_split_leaf_middle_right(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	size_t n = ed_bpt_capacity(sizeof(Entry), 1);
 	size_t mid = n / 2;
@@ -464,7 +466,7 @@ test_split_middle_branch(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	size_t mid = LARGE / 2;
 	for (size_t i = 0; i <= LARGE; i++) {
@@ -518,7 +520,7 @@ test_remove_small(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -595,7 +597,7 @@ test_remove_large(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -676,7 +678,7 @@ test_multi(void)
 		{ &t->db2, sizeof(Entry) },
 	};
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned seed = 0, i = 0; i < MULTI; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -735,7 +737,7 @@ test_iter(void)
 
 	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
