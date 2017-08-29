@@ -63,7 +63,7 @@ typedef struct EdBpt EdBpt;
 
 typedef uint64_t EdTxnId;
 typedef struct EdTxn EdTxn;
-typedef struct EdTxnType EdTxnType;
+typedef struct EdTxnRef EdTxnRef;
 typedef struct EdTxnDb EdTxnDb;
 typedef struct EdTxnNode EdTxnNode;
 
@@ -525,7 +525,7 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
  * @{
  */
 
-#define ED_TXN_MAX_TYPE 16
+#define ED_TXN_MAX_REF 16
 
 #define ED_TXN_CLOSED 0
 #define ED_TXN_OPEN 1
@@ -536,7 +536,7 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
  * This describes each database involved in the transaction. An array of these
  * is passed to #ed_txn_new().
  */
-struct EdTxnType {
+struct EdTxnRef {
 	EdPgno *no;           /**< Pointer to the page number for the root of the b+tree */
 	size_t entry_size;    /**< Size in bytes of the entry value in the b+tree */
 };
@@ -607,12 +607,12 @@ struct EdTxnNode {
  * @param  xid  Transaction ID pointer
  * @param  alloc  A page allocator instance
  * @param  lck  An initialized lock object
- * @param  type  An Array of #EdTxnType structs
- * @param  ntype  The number of #EdTxnType structs
+ * @param  ref  An Array of #EdTxnRef structs
+ * @param  nref  The number of #EdTxnRef structs
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned ntype);
+ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref);
 
 /**
  * @brief  Starts an allocated transaction

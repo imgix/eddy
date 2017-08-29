@@ -289,12 +289,12 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	idx->txn = NULL;
 	idx->proc = hdr->procs + pix;
 
-	EdTxnType type[] = {
+	EdTxnRef ref[] = {
 		{ &hdr->key_tree, sizeof(EdNodeKey) },
 		{ &hdr->block_tree, sizeof(EdNodeBlock) },
 	};
 
-	rc = ed_txn_new(&idx->txn, &idx->hdr->xid, &idx->alloc, &idx->lck, type, ed_len(type));
+	rc = ed_txn_new(&idx->txn, &idx->hdr->xid, &idx->alloc, &idx->lck, ref, ed_len(ref));
 	if (rc < 0) {
 		ed_lck_final(&idx->lck);
 		ed_pg_alloc_close(&idx->alloc);

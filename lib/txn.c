@@ -57,20 +57,20 @@ node_wrap(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 }
 
 int
-ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnType *type, unsigned ntype)
+ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref)
 {
-	if (ntype == 0 || ntype > ED_TXN_MAX_TYPE) {
+	if (nref == 0 || nref > ED_TXN_MAX_REF) {
 		return ed_esys(EINVAL);
 	}
 
-	unsigned nnodes = ntype * 8;
+	unsigned nnodes = nref * 8;
 	int rc = 0;
 	EdTxn *txn;
-	size_t sztx = sizeof(*txn) + (ntype-1)*sizeof(txn->db[0]);
+	size_t sztx = sizeof(*txn) + (nref-1)*sizeof(txn->db[0]);
 	size_t sznodes = node_size(nnodes);
 
 	size_t szscratch = 0;
-	for (unsigned i = 0; i < ntype; i++) { szscratch += ed_align_max(type[i].entry_size); }
+	for (unsigned i = 0; i < nref; i++) { szscratch += ed_align_max(ref[i].entry_size); }
 
 	size_t offnodes = ed_align_max(sztx);
 	size_t offscratch = ed_align_max(offnodes + sznodes);
@@ -87,8 +87,8 @@ ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnType *
 	txn->nodes->nnodes = nnodes;
 
 	uint8_t *scratch = (uint8_t *)txn + offscratch;
-	for (unsigned i = 0; i < ntype; i++) {
-		EdPgno *no = type[i].no;
+	for (unsigned i = 0; i < nref; i++) {
+		EdPgno *no = ref[i].no;
 		if (no == NULL) { rc = ed_esys(EINVAL); break; }
 		if (*no != ED_PG_NONE) {
 			rc = ed_txn_map(txn, *no, NULL, 0, &txn->db[i].head);
@@ -99,9 +99,9 @@ ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnType *
 		}
 		txn->db[i].root = no;
 		txn->db[i].scratch = scratch;
-		txn->db[i].entry_size = type[i].entry_size;
+		txn->db[i].entry_size = ref[i].entry_size;
 		txn->ndb++;
-		scratch += ed_align_max(type[i].entry_size);
+		scratch += ed_align_max(ref[i].entry_size);
 	}
 
 	if (rc < 0) { goto error; }
@@ -177,7 +177,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		ed_lck(txn->lck, txn->alloc->fd, ED_LCK_UN, flags);
 	}
 
-	EdPg *heads[ED_TXN_MAX_TYPE];
+	EdPg *heads[ED_TXN_MAX_REF];
 	if (flags & ED_FRESET) {
 		for (unsigned i = 0; i < txn->ndb; i++) {
 			EdTxnDb *dbp = &txn->db[i];

@@ -93,9 +93,9 @@ test_basic(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned i = 1; i <= SMALL; i++) {
 		Entry ent = { .key = i };
@@ -120,9 +120,9 @@ test_basic(void)
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
 	t = ed_pg_alloc_meta(&alloc);
-	type[0].no = &t->db1;
+	ref[0].no = &t->db1;
 
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 1, (void **)&found), 1);
 	mu_assert_uint_eq(found->key, 1);
@@ -145,9 +145,9 @@ test_repeat(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	{
 		Entry ent = { .key = 0, .name = "a1" };
@@ -224,9 +224,9 @@ test_large(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -268,9 +268,9 @@ test_large_sequential(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		Entry ent = { .key = i };
@@ -311,9 +311,9 @@ test_large_sequential_reverse(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		Entry ent = { .key = i };
@@ -354,9 +354,9 @@ test_split_leaf_middle_left(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	size_t n = ed_bpt_capacity(sizeof(Entry), 1);
 	size_t mid = (n / 2) - 1;
@@ -409,9 +409,9 @@ test_split_leaf_middle_right(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	size_t n = ed_bpt_capacity(sizeof(Entry), 1);
 	size_t mid = n / 2;
@@ -464,9 +464,9 @@ test_split_middle_branch(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	size_t mid = LARGE / 2;
 	for (size_t i = 0; i <= LARGE; i++) {
@@ -518,9 +518,9 @@ test_remove_small(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -595,9 +595,9 @@ test_remove_large(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -673,12 +673,12 @@ test_multi(void)
 	t->db1 = ED_PG_NONE;
 	t->db2 = ED_PG_NONE;
 
-	EdTxnType type[] = {
+	EdTxnRef ref[] = {
 		{ &t->db1, sizeof(Entry) },
 		{ &t->db2, sizeof(Entry) },
 	};
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned seed = 0, i = 0; i < MULTI; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -735,9 +735,9 @@ test_iter(void)
 	Tree *t = ed_pg_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
-	EdTxnType type[] = { { &t->db1, sizeof(Entry) } };
+	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
 	EdTxn *txn;
-	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, type, ed_len(type)), 0);
+	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -772,7 +772,7 @@ test_iter(void)
 int
 main(void)
 {
-	mu_init("btree");
+	mu_init("b+tree");
 	mu_run(test_capacity);
 	mu_run(test_basic);
 	mu_run(test_repeat);
