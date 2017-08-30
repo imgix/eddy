@@ -45,8 +45,6 @@ LIBSRC:= lib/cache.c \
 	lib/hash.c \
 	lib/lck.c \
 	lib/pg.c \
-	lib/pgalloc.c \
-	lib/gc.c \
 	lib/txn.c \
 	lib/bpt.c \
 	lib/idx.c \

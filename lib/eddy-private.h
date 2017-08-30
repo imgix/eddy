@@ -189,7 +189,7 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 /**
  * @defgroup  pg  Page Module
  *
- * Page utility functions.
+ * Page utility functions, file-backed page allocator, and garbage collector.
  *
  * @{
  */
@@ -222,24 +222,6 @@ struct EdPgNode {
 	uint16_t pindex;      /**< Index of page in the parent */
 };
 
-ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
-ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
-ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
-ED_LOCAL     void ed_pg_unload(EdPg **pgp);
-
-/** @} */
-
-
-
-/**
- * @defgroup  pgalloc  Page Allocator Module
- *
- * This implement the file-backed page allocator used by the index. This is
- * pulled out into its own module primarily to aid in testability.
- *
- * @{
- */
-
 struct EdPgAlloc {
 	EdPgAllocHdr *hdr;
 	EdPgFree *free;
@@ -250,6 +232,11 @@ struct EdPgAlloc {
 	int fd;
 	bool from_new;
 };
+
+ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
+ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
+ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
+ED_LOCAL     void ed_pg_unload(EdPg **pgp);
 
 /**
  * @brief  Allocates a page from the underlying file
