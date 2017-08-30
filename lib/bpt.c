@@ -34,7 +34,7 @@ branch_key(EdBpt *b, uint16_t idx)
 }
 
 static inline void
-branch_set_key(EdPgNode *b, uint16_t idx, uint64_t val)
+branch_set_key(EdNode *b, uint16_t idx, uint64_t val)
 {
 	assert(idx <= b->tree->nkeys);
 	if (idx == 0) { return; }
@@ -42,7 +42,7 @@ branch_set_key(EdPgNode *b, uint16_t idx, uint64_t val)
 }
 
 static inline EdPgno
-branch_ptr(EdPgNode *b, uint16_t idx)
+branch_ptr(EdNode *b, uint16_t idx)
 {
 	assert(idx <= b->tree->nkeys);
 	return ed_fetch32(b->tree->data + idx*BRANCH_ENTRY_SIZE);
@@ -102,7 +102,7 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 	uint32_t i = 0, n = 0;
 	uint8_t *data = NULL;
 	size_t esize = dbp->entry_size;
-	EdPgNode *node = dbp->head;
+	EdNode *node = dbp->head;
 	if (node == NULL) {
 		dbp->nsplits = 1;
 		goto done;
@@ -118,7 +118,7 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 		EdPgno *ptr = search_branch(node->tree, key);
 		uint16_t bidx = branch_index(node->tree, ptr);
 		EdPgno no = ed_fetch32(node->tree->data + bidx*BRANCH_ENTRY_SIZE);
-		EdPgNode *next;
+		EdNode *next;
 		rc = ed_txn_map(txn, no, node, bidx, &next);
 		if (rc < 0) { goto done; }
 		node = next;
@@ -154,7 +154,7 @@ done:
 }
 
 static int
-move_first(EdTxn *txn, EdTxnDb *dbp, EdPgNode *from)
+move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 {
 	dbp->haskey = false;
 	dbp->caninsert = false;
@@ -164,7 +164,7 @@ move_first(EdTxn *txn, EdTxnDb *dbp, EdPgNode *from)
 
 	while (IS_BRANCH(from->tree)) {
 		EdPgno no = ed_fetch32(from->tree->data);
-		EdPgNode *next;
+		EdNode *next;
 		rc = ed_txn_map(txn, no, from, 0, &next);
 		if (rc < 0) { goto done; }
 		from = next;
@@ -185,7 +185,7 @@ done:
  * @return 0 on succces, <0 on error
  */
 static int
-move_right(EdTxn *txn, EdTxnDb *dbp, EdPgNode *from)
+move_right(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 {
 	// Traverse up to leaf node from any overflow nodes.
 	for (; from->page->type == ED_PG_OVERFLOW; from = from->parent) {}
@@ -232,7 +232,7 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
 	int rc = 0;
-	EdPgNode *node = dbp->tail;
+	EdNode *node = dbp->tail;
 	EdBpt *leaf = node->tree;
 	uint8_t *p = dbp->entry;
 	uint32_t i = dbp->entry_index;
@@ -318,9 +318,9 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 }
 
 static void
-insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdPgNode *left, EdPgNode *right, uint64_t rkey)
+insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdNode *left, EdNode *right, uint64_t rkey)
 {
-	EdPgNode *parent = left->parent;
+	EdNode *parent = left->parent;
 	EdBpt *p;
 	EdPgno r = right->tree->base.no;
 	size_t pos;
@@ -354,7 +354,7 @@ insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdPgNode *left, EdPgNode *right, ui
 			size_t off = mid * BRANCH_ENTRY_SIZE;
 			uint64_t rbkey = branch_key(p, mid);
 
-			EdPgNode *leftb = parent, *rightb = ed_txn_alloc(txn, leftb->parent, leftb->pindex + 1);
+			EdNode *leftb = parent, *rightb = ed_txn_alloc(txn, leftb->parent, leftb->pindex + 1);
 
 			rightb->tree->base.type = ED_PG_BRANCH;
 			rightb->tree->next = ED_PG_NONE;
@@ -421,11 +421,11 @@ split_point(EdTxnDb *dbp, EdBpt *l)
 }
 
 static int
-overflow_leaf(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf)
+overflow_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf)
 {
 	assert(leaf->tree->nkeys == LEAF_ORDER(dbp->entry_size));
 
-	EdPgNode *node;
+	EdNode *node;
 	size_t esize = dbp->entry_size;
 
 	if (leaf->tree->next != ED_PG_NONE &&
@@ -448,7 +448,7 @@ done:
 }
 
 static int
-split_leaf(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf, int mid)
+split_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, int mid)
 {
 	size_t esize = dbp->entry_size;
 	uint32_t n = leaf->tree->nkeys;
@@ -461,7 +461,7 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf, int mid)
 	assert(ed_fetch64(leaf->tree->data + off - esize) < rkey);
 	assert(rkey <= ed_fetch64(leaf->tree->data + off));
 
-	EdPgNode *left = leaf, *right = ed_txn_alloc(txn, left->parent, left->pindex + 1);
+	EdNode *left = leaf, *right = ed_txn_alloc(txn, left->parent, left->pindex + 1);
 
 	right->tree->base.type = ED_PG_LEAF;
 	right->tree->next = ED_PG_NONE;
@@ -485,7 +485,7 @@ void
 ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply a)
 {
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
-	EdPgNode *leaf = dbp->tail;
+	EdNode *leaf = dbp->tail;
 	size_t esize = dbp->entry_size;
 	int rc = INS_SHIFT;
 

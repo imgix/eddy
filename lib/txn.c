@@ -42,12 +42,12 @@ node_alloc(EdTxnNode **head, unsigned nnodes)
  * Nodes are a memory representation used to simplify tracking parent
  * relationships as well as the dirty state of the page's contents.
  */
-static EdPgNode *
-node_wrap(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx)
+static EdNode *
+node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 {
 	assert(txn->nodes->nnodesused < txn->nodes->nnodes);
 
-	EdPgNode *n = &txn->nodes->nodes[txn->nodes->nnodesused++];
+	EdNode *n = &txn->nodes->nodes[txn->nodes->nnodesused++];
 	n->page = pg;
 	n->parent = par;
 	n->pindex = pidx;
@@ -56,7 +56,7 @@ node_wrap(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx)
 }
 
 int
-ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref)
+ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref)
 {
 	if (nref == 0 || nref > ED_TXN_MAX_REF) {
 		return ed_esys(EINVAL);
@@ -149,7 +149,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 			rc = ED_ERRNO;
 			goto done;
 		}
-		rc = ed_pg_alloc(txn->alloc, txn->pg, npg, true);
+		rc = ed_alloc(txn->alloc, txn->pg, npg, true);
 		if (rc < 0) { goto done; }
 		txn->npg = npg;
 		rc = 0;
@@ -172,7 +172,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (txn == NULL) { return; }
 	flags = ed_txn_fclose(flags, txn->cflags);
 
-	ed_pg_free(txn->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
+	ed_free(txn->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
 	free(txn->pg);
 
 	if (txn->isopen && !txn->isrdonly) {
@@ -239,7 +239,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 }
 
 int
-ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
+ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 {
 	for (EdTxnNode *node = txn->nodes; node != NULL; node = node->next) {
 		for (int i = (int)node->nnodesused-1; i >= 0; i--) {
@@ -261,8 +261,8 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
 	return 0;
 }
 
-EdPgNode *
-ed_txn_alloc(EdTxn *txn, EdPgNode *par, uint16_t pidx)
+EdNode *
+ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx)
 {
 	if (txn->npg == txn->npgused || txn->nodes->nnodesused == txn->nodes->nnodes) {
 		fprintf(stderr, "*** too few pages allocated for transaction (%u)\n", txn->npg);

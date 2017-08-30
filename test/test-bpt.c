@@ -12,7 +12,7 @@
 #define FCLOSE (FOPEN|ED_FNOSYNC)
 #define FRESET (FCLOSE|ED_FRESET)
 
-static EdPgAlloc alloc;
+static EdAlloc alloc;
 static const char *path = "/tmp/eddy_test_bpt";
 
 typedef struct {
@@ -62,7 +62,7 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 static void
 cleanup(void)
 {
-	ed_pg_alloc_close(&alloc);
+	ed_alloc_close(&alloc);
 	unlink(path);
 #if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pg_check(), 0);
@@ -88,9 +88,9 @@ test_basic(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -114,11 +114,11 @@ test_basic(void)
 	mu_assert_str_eq(found->name, "a1");
 	ed_txn_close(&txn, FCLOSE);
 
-	ed_pg_alloc_close(&alloc);
+	ed_alloc_close(&alloc);
 
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	t = ed_pg_alloc_meta(&alloc);
+	t = ed_alloc_meta(&alloc);
 	ref[0].no = &t->db1;
 
 	mu_assert_int_eq(ed_txn_new(&txn, &t->xid, &alloc, &lock, ref, ed_len(ref)), 0);
@@ -139,9 +139,9 @@ test_repeat(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -218,9 +218,9 @@ test_large(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -262,9 +262,9 @@ test_large_sequential(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -305,9 +305,9 @@ test_large_sequential_reverse(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -348,9 +348,9 @@ test_split_leaf_middle_left(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -403,9 +403,9 @@ test_split_leaf_middle_right(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -458,9 +458,9 @@ test_split_middle_branch(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -512,9 +512,9 @@ test_remove_small(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -589,9 +589,9 @@ test_remove_large(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };
@@ -666,9 +666,9 @@ test_multi(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 	t->db2 = ED_PG_NONE;
 
@@ -729,9 +729,9 @@ test_iter(void)
 	ed_lck_init(&lock, 0, PAGESIZE);
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_pg_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&alloc);
 	t->db1 = ED_PG_NONE;
 
 	EdTxnRef ref[] = { { &t->db1, sizeof(Entry) } };

@@ -204,7 +204,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	hdrnew.flags = ed_fsave(flags);
 	hdrnew.slab_block_size = cfg->slab_block_size ? cfg->slab_block_size : PAGESIZE;
 	hdrnew.alloc.free_list = PG_ROOT_FREE;
-	hdrnew.alloc.tail = (EdPgTail){ PG_NINIT(nprocs), 0 };
+	hdrnew.alloc.tail = (EdAllocTail){ PG_NINIT(nprocs), 0 };
 	if (cfg->slab_path == NULL) {
 		int len = snprintf(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1, "%s-slab", cfg->index_path);
 		if (len < 0) { return ED_ERRNO; }
@@ -279,7 +279,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 
 	uint64_t f = ed_idx_flags(hdr->flags | ed_fopen(flags));
 	ed_lck_init(&idx->lck, offsetof(EdIdxHdr, alloc), sizeof(hdr->alloc));
-	ed_pg_alloc_init(&idx->alloc, &hdr->alloc, fd, f);
+	ed_alloc_init(&idx->alloc, &hdr->alloc, fd, f);
 	idx->alloc.free = free_list;
 	idx->flags = f;
 	idx->seed = hdr->seed;
@@ -298,7 +298,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	rc = ed_txn_new(&idx->txn, &idx->hdr->xid, &idx->alloc, &idx->lck, ref, ed_len(ref));
 	if (rc < 0) {
 		ed_lck_final(&idx->lck);
-		ed_pg_alloc_close(&idx->alloc);
+		ed_alloc_close(&idx->alloc);
 		goto error;
 	}
 
@@ -316,7 +316,7 @@ void
 ed_idx_close(EdIdx *idx)
 {
 	if (idx == NULL) { return; }
-	ed_pg_alloc_close(&idx->alloc);
+	ed_alloc_close(&idx->alloc);
 	ed_txn_close(&idx->txn, idx->flags);
 	proc_release(idx->hdr, idx->proc - idx->hdr->procs, idx->alloc.fd);
 	ed_lck_final(&idx->lck);
@@ -428,7 +428,7 @@ stat_free(EdIdx *idx, uint8_t *vec, EdPgFree *fs, FILE *out)
 static int
 stat_tail(EdIdx *idx, uint8_t *vec, FILE *out)
 {
-	EdPgTail tail = atomic_load(&idx->hdr->alloc.tail);
+	EdAllocTail tail = atomic_load(&idx->hdr->alloc.tail);
 	EdPgno buf[ED_ALLOC_COUNT], n = ED_ALLOC_COUNT - tail.off;
 	for (EdPgno i = 0; i < n; i++) {
 		buf[i] = tail.start + tail.off + i;
@@ -476,7 +476,7 @@ ed_idx_stat(EdIdx *idx, FILE *out, int flags)
 		if (rc < 0) { goto done; }
 
 		BITSET(vec, idx->alloc.hdr->free_list);
-		rc = stat_free(idx, vec, ed_pg_alloc_free_list(&idx->alloc), out);
+		rc = stat_free(idx, vec, ed_alloc_free_list(&idx->alloc), out);
 
 		ed_idx_lock(idx, ED_LCK_UN);
 		if (rc < 0) { goto done; }

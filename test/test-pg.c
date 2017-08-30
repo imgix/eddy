@@ -1,13 +1,13 @@
 #include "../lib/eddy-private.h"
 #include "mu.h"
 
-static EdPgAlloc alloc;
+static EdAlloc alloc;
 static const char *path = "/tmp/eddy_test_page";
 
 static void
 cleanup(void)
 {
-	ed_pg_alloc_close(&alloc);
+	ed_alloc_close(&alloc);
 	unlink(path);
 #if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pg_check(), 0);
@@ -20,28 +20,28 @@ test_basic(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	EdPg *pages[2];
 	EdPgFree *free;
-	EdPgTail tail;
+	EdAllocTail tail;
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 
 	tail = alloc.hdr->tail;
 	mu_assert_int_eq(tail.off, 2);
 
-	ed_pg_free(&alloc, pages, ed_len(pages));
+	ed_free(&alloc, pages, ed_len(pages));
 
-	free = ed_pg_alloc_free_list(&alloc);
+	free = ed_alloc_free_list(&alloc);
 	mu_assert_int_eq(free->count, 2);
 
-	ed_pg_alloc_close(&alloc);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	ed_alloc_close(&alloc);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	mu_assert_int_eq(tail.off, 2);
 
-	free = ed_pg_alloc_free_list(&alloc);
+	free = ed_alloc_free_list(&alloc);
 	mu_assert_int_eq(free->count, 2);
 }
 
@@ -51,17 +51,17 @@ test_gc(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	EdPg *pages[8];
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 1, pages, ed_len(pages)), 0);
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 2, pages, ed_len(pages)), 0);
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 3, pages, ed_len(pages)), 0);
 
 	mu_assert_int_eq(ed_gc_run(&alloc, 3, 2), ed_len(pages) * 2);
@@ -75,17 +75,17 @@ test_gc_merge(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	EdPg *pages[8];
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 1, pages, ed_len(pages)), 0);
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 1, pages, ed_len(pages)), 0);
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 2, pages, ed_len(pages)), 0);
 
 	mu_assert_int_eq(ed_gc_run(&alloc, 3, 1), ed_len(pages) * 2);
@@ -99,37 +99,37 @@ test_gc_reopen(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	EdPg *pages[8];
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 1, pages, ed_len(pages)), 0);
 
-	ed_pg_alloc_close(&alloc);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	ed_alloc_close(&alloc);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put( &alloc, 2, pages, ed_len(pages)), 0);
 
-	ed_pg_alloc_close(&alloc);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	ed_alloc_close(&alloc);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 	mu_assert_int_eq(ed_gc_put(&alloc, 3, pages, ed_len(pages)), 0);
 
-	ed_pg_alloc_close(&alloc);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	ed_alloc_close(&alloc);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	mu_assert_int_eq(ed_gc_run(&alloc, 3, 2), ed_len(pages) * 2);
 
-	ed_pg_alloc_close(&alloc);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	ed_alloc_close(&alloc);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	mu_assert_int_eq(ed_gc_run(&alloc, 3, 1), 0);
 
-	ed_pg_alloc_close(&alloc);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	ed_alloc_close(&alloc);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	mu_assert_int_eq(ed_gc_run(&alloc, 4, 1), ed_len(pages));
 }
@@ -140,12 +140,12 @@ test_gc_large(void)
 	mu_teardown = cleanup;
 
 	unlink(path);
-	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
 
 	EdTxnId xid = 0;
 
 	EdPg *pages[4096];
-	mu_assert_int_eq(ed_pg_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
 
 	for (size_t i = 0; i < ed_len(pages)/2; i += 16) {
 		mu_assert_int_eq(ed_gc_put(&alloc, ++xid, pages+i, 16), 0);

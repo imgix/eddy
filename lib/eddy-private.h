@@ -48,15 +48,17 @@ typedef struct EdLck EdLck;
 
 typedef uint32_t EdPgno;
 typedef uint64_t EdBlkno;
+
 typedef struct EdPg EdPg;
-typedef struct EdPgAlloc EdPgAlloc;
-typedef struct EdPgAllocHdr EdPgAllocHdr;
 typedef struct EdPgFree EdPgFree;
-typedef struct EdPgTail EdPgTail;
 typedef struct EdPgGc EdPgGc;
 typedef struct EdPgGcList EdPgGcList;
-typedef struct EdPgNode EdPgNode;
 
+typedef struct EdAlloc EdAlloc;
+typedef struct EdAllocHdr EdAllocHdr;
+typedef struct EdAllocTail EdAllocTail;
+
+typedef struct EdNode EdNode;
 typedef struct EdBpt EdBpt;
 
 typedef uint64_t EdTxnId;
@@ -205,23 +207,8 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 
 #define ED_PG_FREE_COUNT ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
 
-/**
- * @brief  In-memory node to wrap a b+tree node
- *
- * This captures the parent node when mapping each subsequent page, allowing
- * simpler reverse-traversal withough the complexity of storing the relationship.
- */
-struct EdPgNode {
-	union {
-		EdPg *page;       /**< Mapped page */
-		EdBpt *tree;      /**< Mapped page as a tree */
-	};
-	EdPgNode *parent;     /**< Parent node */
-	uint16_t pindex;      /**< Index of page in the parent */
-};
-
-struct EdPgAlloc {
-	EdPgAllocHdr *hdr;
+struct EdAlloc {
+	EdAllocHdr *hdr;
 	EdPgFree *free;
 	EdPgGc *gc_head;
 	EdPgGc *gc_tail;
@@ -259,7 +246,7 @@ ED_LOCAL     void ed_pg_unload(EdPg **pgp);
  *          <0 error code
  */
 ED_LOCAL int
-ed_pg_alloc(EdPgAlloc *alloc, EdPg **, EdPgno n, bool exclusive);
+ed_alloc(EdAlloc *alloc, EdPg **, EdPgno n, bool exclusive);
 
 /**
  * @brief  Frees disused page objects
@@ -274,17 +261,17 @@ ed_pg_alloc(EdPgAlloc *alloc, EdPg **, EdPgno n, bool exclusive);
  * @param  n  Number of pages to deallocate
  */
 ED_LOCAL void
-ed_pg_free(EdPgAlloc *alloc, EdPg **p, EdPgno n);
+ed_free(EdAlloc *alloc, EdPg **p, EdPgno n);
 
 /**
  * @brief  Frees disused page numbers
- * @see ed_pg_free
+ * @see ed_free
  * @param  alloc  Page allocator
  * @param  p  Array of pages numbers to deallocate
  * @param  n  Number of pages to deallocate
  */
 ED_LOCAL void
-ed_pgno_free(EdPgAlloc *alloc, EdPgno *pages, EdPgno n);
+ed_free_pgno(EdAlloc *alloc, EdPgno *pages, EdPgno n);
 
 /**
  * @brief  Constructs a new page allocator on disk
@@ -299,7 +286,7 @@ ed_pgno_free(EdPgAlloc *alloc, EdPgno *pages, EdPgno n);
  * @return 0 on succes, <0 on error
  */
 ED_LOCAL int
-ed_pg_alloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags);
+ed_alloc_new(EdAlloc *alloc, const char *path, size_t meta, uint64_t flags);
 
 /**
  * @brief  Initializes a page allocator from an existing mapped header
@@ -309,30 +296,30 @@ ed_pg_alloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags)
  * @param  flags  Flags for operational options
  */
 ED_LOCAL void
-ed_pg_alloc_init(EdPgAlloc *alloc, EdPgAllocHdr *hdr, int fd, uint64_t flags);
+ed_alloc_init(EdAlloc *alloc, EdAllocHdr *hdr, int fd, uint64_t flags);
 
 /**
  * @brief  Closes the allocator and releases all resources
  * @param  alloc  Page allocator
  */
 ED_LOCAL void
-ed_pg_alloc_close(EdPgAlloc *alloc);
+ed_alloc_close(EdAlloc *alloc);
 
 /**
- * @brief  Gets the meta data space requested from #ed_pg_alloc_new
+ * @brief  Gets the meta data space requested from #ed_alloc_new
  * @param  alloc  Page allocator
  * @return  Pointer to meta data space
  */
 ED_LOCAL void *
-ed_pg_alloc_meta(EdPgAlloc *alloc);
+ed_alloc_meta(EdAlloc *alloc);
 
 /**
- * @brief  Gets the meta data space requested from #ed_pg_alloc_new
+ * @brief  Gets the meta data space requested from #ed_alloc_new
  * @param  alloc  Page allocator
  * @return  Object with the list of free pages
  */
 ED_LOCAL EdPgFree *
-ed_pg_alloc_free_list(EdPgAlloc *alloc);
+ed_alloc_free_list(EdAlloc *alloc);
 
 /**
  * @brief  Pushes an array of page numbers into the garbage collector
@@ -350,7 +337,7 @@ ed_pg_alloc_free_list(EdPgAlloc *alloc);
  * @returns  0 on success, <0 on error
  */
 ED_LOCAL int
-ed_gc_put(EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
+ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
 
 /**
  * @brief  Runs the garbage collector
@@ -364,7 +351,7 @@ ed_gc_put(EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
  * @returns  0 on success, <0 on error
  */
 ED_LOCAL int
-ed_gc_run(EdPgAlloc *alloc, EdTxnId xid, int limit);
+ed_gc_run(EdAlloc *alloc, EdTxnId xid, int limit);
 
 /** @} */
 
@@ -416,6 +403,21 @@ ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
  *
  * @{
  */
+
+/**
+ * @brief  In-memory node to wrap a b+tree node
+ *
+ * This captures the parent node when mapping each subsequent page, allowing
+ * simpler reverse-traversal withough the complexity of storing the relationship.
+ */
+struct EdNode {
+	union {
+		EdPg *page;       /**< Mapped page */
+		EdBpt *tree;      /**< Mapped page as a tree */
+	};
+	EdNode *parent;     /**< Parent node */
+	uint16_t pindex;      /**< Index of page in the parent */
+};
 
 typedef enum EdBptApply {
 	ED_BPT_NONE,
@@ -478,8 +480,8 @@ struct EdTxnRef {
  * Additionally, it acts as a cursor for iterating through records in the tree.
  */
 struct EdTxnDb {
-	EdPgNode *head;       /**< First node searched */
-	EdPgNode *tail;       /**< Current tail node */
+	EdNode *head;       /**< First node searched */
+	EdNode *tail;       /**< Current tail node */
 	EdPgno *root;         /**< Pointer to page number of root node */
 	uint64_t key;         /**< Key searched for */
 	void *start;          /**< Pointer to the first entry */
@@ -506,7 +508,7 @@ struct EdTxnDb {
 struct EdTxn {
 	EdTxnId *xidp;        /**< Reference global to transaction id */
 	EdLck *lck;           /**< Reference to shared lock */
-	EdPgAlloc *alloc;     /**< Page allocator */
+	EdAlloc *alloc;     /**< Page allocator */
 	EdPg **pg;            /**< Array to hold allocated pages */
 	unsigned npg;         /**< Number of pages allocated */
 	unsigned npgused;     /**< Number of pages used */
@@ -523,7 +525,7 @@ struct EdTxnNode {
 	EdTxnNode *next;      /**< Next chunk of nodes */
 	unsigned nnodes;      /**< Length of node array */
 	unsigned nnodesused;  /**< Number of nodes used */
-	EdPgNode nodes[1];    /**< Flexible array of node wrapped pages */
+	EdNode nodes[1];    /**< Flexible array of node wrapped pages */
 };
 
 /**
@@ -542,7 +544,7 @@ struct EdTxnNode {
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdPgAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref);
+ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref);
 
 /**
  * @brief  Starts an allocated transaction
@@ -612,7 +614,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags);
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out);
+ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out);
 
 /**
  * @brief  Retrieves the next allocated page wrapped into a node
@@ -625,8 +627,8 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out);
  * @param  pidx  Index of the page in the parent
  * @return  Node object
  */
-ED_LOCAL EdPgNode *
-ed_txn_alloc(EdTxn *txn, EdPgNode *par, uint16_t pidx);
+ED_LOCAL EdNode *
+ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx);
 
 /**
  * @brief  Gets the #EdTxnDb object for the numbered database
@@ -649,7 +651,7 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset);
 
 struct EdIdx {
 	EdLck lck;
-	EdPgAlloc alloc;
+	EdAlloc alloc;
 	uint64_t flags;
 	uint64_t seed;
 	EdTimeUnix epoch;
@@ -901,20 +903,6 @@ struct EdPgFree {
 	EdPgno pages[ED_PG_FREE_COUNT];
 };
 
-struct EdPgTail {
-	EdPgno start;
-	EdPgno off;
-};
-
-/**
- * @brief  Flexible array of pages removed from a given transaction
- */
-struct EdPgGcList {
-	EdTxnId  xid;      /**< Transaction id that freed these pages */
-	EdPgno   npages;   /**< Number of pages in the array, or UINT32_MAX for the next list */
-	EdPgno   pages[1]; /**< Flexible array of the pages to free */
-};
-
 /**
  * @brief  Linked list of pages pending reclamation
  */
@@ -931,13 +919,27 @@ struct EdPgGc {
 	uint8_t      data[ED_PG_GC_DATA];
 };
 
+/**
+ * @brief  Flexible array of pages removed from a given transaction
+ */
+struct EdPgGcList {
+	EdTxnId  xid;      /**< Transaction id that freed these pages */
+	EdPgno   npages;   /**< Number of pages in the array, or UINT32_MAX for the next list */
+	EdPgno   pages[1]; /**< Flexible array of the pages to free */
+};
+
 /** Maximum number of pages for a list in a new gc page */
 #define ED_PG_GC_LIST_MAX ((ED_PG_GC_DATA - sizeof(EdPgGcList)) / sizeof(EdPgno) + 1)
 
-struct EdPgAllocHdr {
+struct EdAllocTail {
+	EdPgno start;
+	EdPgno off;
+};
+
+struct EdAllocHdr {
 	uint32_t size_page;
 	EdPgno free_list;
-	_Atomic EdPgTail tail;
+	_Atomic EdAllocTail tail;
 	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
 	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
 };
@@ -963,7 +965,7 @@ struct EdIdxHdr {
 	uint8_t      size_align;       /**< Size of max alignment */
 	uint8_t      alloc_count;      /**< Verification for the page growth count */
 	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
-	EdPgAllocHdr alloc;            /**< Page allocator */
+	EdAllocHdr alloc;            /**< Page allocator */
 	EdTxnId      xid;              /**< Global transaction ID */
 	EdBlkno      pos;              /**< Current slab write block */
 	EdPgno       key_tree;         /**< Page pointer for the entry key b+tree */
