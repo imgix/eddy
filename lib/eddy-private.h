@@ -57,8 +57,6 @@ typedef struct EdPgGc EdPgGc;
 typedef struct EdPgGcList EdPgGcList;
 typedef struct EdPgNode EdPgNode;
 
-typedef struct EdGc EdGc;
-
 typedef struct EdBpt EdBpt;
 
 typedef uint64_t EdTxnId;
