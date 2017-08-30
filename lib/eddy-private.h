@@ -233,7 +233,6 @@ ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
 ED_LOCAL      int ed_pg_sync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
 ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pg_unload(EdPg **pgp);
-ED_LOCAL     void ed_pg_mark(EdPg *pg, EdPgno *no, uint8_t *dirty);
 
 /** @} */
 

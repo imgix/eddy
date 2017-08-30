@@ -63,18 +63,3 @@ ed_pg_unload(EdPg **pgp)
 	}
 }
 
-void
-ed_pg_mark(EdPg *pg, EdPgno *no, uint8_t *dirty)
-{
-	if (pg == NULL) {
-		if (*no != ED_PG_NONE) {
-			*no = ED_PG_NONE;
-			*dirty = 1;
-		}
-	}
-	else if (*no != pg->no) {
-		*no = pg->no;
-		*dirty = 1;
-	}
-}
-
