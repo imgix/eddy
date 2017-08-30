@@ -51,7 +51,6 @@ page_alloc_tail(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 
 		EdPgTail tail = { old.start, old.off + n };
 		if (atomic_compare_exchange_weak(&hdr->tail, &old, tail)) {
-			alloc->dirty = 1;
 			EdPgno no = old.start + old.off;
 			int rc = map_live_pages(alloc, no, p, n);
 			if (rc < 0) {
@@ -62,7 +61,6 @@ page_alloc_tail(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 					for (; n > 0 && fs->count < ED_PG_FREE_COUNT; n--, no++) {
 						fs->pages[fs->count++] = no;
 					}
-					alloc->free_dirty = 1;
 				}
 				if (n > 0) {
 					fprintf(stderr, "*** %u page(s) at %u lost from mmap error: %s\n",
@@ -109,7 +107,6 @@ page_alloc_free_or_expand(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 		// only mark the pages as used if the map succeeds
 		if (rc > 0) { tail.off = (EdPgno)rc; }
 		atomic_store(&hdr->tail, tail);
-		alloc->dirty = 2;
 		return rc;
 	}
 
@@ -125,13 +122,11 @@ page_alloc_free_or_expand(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 			p[0] = (EdPg *)fs;
 			alloc->free = fs = (EdPgFree *)tmp;
 			hdr->free_list = tmp->no;
-			alloc->dirty = 2;
 		}
 		else {
 			// Otherwise, tick down the count to zero and let the next allocation
 			// handle creating more space.
 			fs->count = 0;
-			alloc->free_dirty = 1;
 			p[0] = tmp;
 		}
 		return 1;
@@ -149,7 +144,6 @@ page_alloc_free_or_expand(EdPgAlloc *alloc, EdPg **p, EdPgno n)
 		int rc = map_live_pages(alloc, pg[-1], p, pg - pgm);
 		if (rc > 0) {
 			fs->count -= (EdPgno)rc;
-			alloc->free_dirty = 1;
 		}
 		return rc;
 	}
@@ -201,8 +195,6 @@ pg_push_free(EdPgAlloc *alloc, EdPgFree *old, EdPgFree *new)
 	ed_pg_unmap(old, 1);
 	alloc->hdr->free_list = new->base.no;
 	alloc->free = new;
-	alloc->dirty = 1;
-	alloc->free_dirty = 2;
 
 	return new;
 }
@@ -243,7 +235,6 @@ ed_pg_free(EdPgAlloc *alloc, EdPg **pages, EdPgno n)
 			memmove(pg+i+1, pg+i, sizeof(*pg) * (cnt-i));
 			pg[i] = pno;
 			fs->count++;
-			alloc->free_dirty = 1;
 			ed_pg_unmap(p, 1);
 		}
 		// Otherwise, promote the freeing page to a new list.
@@ -281,7 +272,6 @@ ed_pgno_free(EdPgAlloc *alloc, EdPgno *pages, EdPgno n)
 			memmove(pg+i+1, pg+i, sizeof(*pg) * (cnt-i));
 			pg[i] = pno;
 			fs->count++;
-			alloc->free_dirty = 1;
 		}
 		// Otherwise, promote the freeing page to a new list.
 		else {
@@ -353,10 +343,7 @@ ed_pg_alloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags)
 
 	ed_pg_alloc_init(alloc, hdr, fd, flags);
 	alloc->free = free_list;
-	alloc->dirty = 1;
-	alloc->free_dirty = 1;
 	alloc->from_new = true;
-	ed_pg_alloc_sync(alloc);
 
 done:
 	if (rc < 0) {
@@ -380,8 +367,6 @@ ed_pg_alloc_init(EdPgAlloc *alloc, EdPgAllocHdr *hdr, int fd, uint64_t flags)
 	alloc->free = NULL;
 	alloc->flags = flags;
 	alloc->fd = fd;
-	alloc->dirty = 0;
-	alloc->free_dirty = 0;
 	alloc->from_new = false;
 }
 
@@ -389,7 +374,6 @@ void
 ed_pg_alloc_close(EdPgAlloc *alloc)
 {
 	if (alloc->hdr && alloc->hdr != MAP_FAILED) {
-		ed_pg_alloc_sync(alloc);
 		if (alloc->from_new) {
 			ed_pg_unmap(alloc->pg, 1);
 		}
@@ -401,18 +385,6 @@ ed_pg_alloc_close(EdPgAlloc *alloc)
 	}
 	if (alloc->fd > -1) {
 		close(alloc->fd);
-	}
-}
-
-// Syncs the index and/or free list as needed.
-void
-ed_pg_alloc_sync(EdPgAlloc *alloc)
-{
-	if (ed_pg_sync(alloc->pg, 1, alloc->flags, alloc->dirty) == 0) {
-		alloc->dirty = 0;
-	}
-	if (ed_pg_sync(alloc->free, 1, alloc->flags, alloc->free_dirty) == 0) {
-		alloc->free_dirty = 0;
 	}
 }
 

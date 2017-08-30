@@ -114,7 +114,6 @@ test_basic(void)
 	mu_assert_str_eq(found->name, "a1");
 	ed_txn_close(&txn, FCLOSE);
 
-	alloc.dirty = 1;
 	ed_pg_alloc_close(&alloc);
 
 	mu_assert_int_eq(ed_pg_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);

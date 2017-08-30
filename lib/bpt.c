@@ -39,7 +39,6 @@ branch_set_key(EdPgNode *b, uint16_t idx, uint64_t val)
 	assert(idx <= b->tree->nkeys);
 	if (idx == 0) { return; }
 	memcpy(b->tree->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE, &val, sizeof(val));
-	b->dirty = 1;
 }
 
 static inline EdPgno
@@ -361,7 +360,6 @@ insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdPgNode *left, EdPgNode *right, ui
 			rightb->tree->next = ED_PG_NONE;
 			rightb->tree->nkeys = n - mid;
 			leftb->tree->nkeys = mid - 1;
-			leftb->dirty = 1;
 
 			memcpy(rightb->tree->data, leftb->tree->data+off, sizeof(leftb->tree->data) - off);
 
@@ -469,7 +467,6 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdPgNode *leaf, int mid)
 	right->tree->next = ED_PG_NONE;
 	right->tree->nkeys = n - mid;
 	left->tree->nkeys = mid;
-	left->dirty = 1;
 
 	memcpy(right->tree->data, left->tree->data+off, sizeof(left->tree->data) - off);
 
@@ -548,11 +545,9 @@ ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply a)
 		if (leaf->tree->nkeys == 1) {
 			// FIXME: this is terrible
 			leaf->tree->nkeys = 0;
-			leaf->dirty = 1;
 		}
 		else {
 			leaf->tree->nkeys--;
-			leaf->dirty = 1;
 			if (leaf->parent && dbp->entry_index == 0) {
 				branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(dbp->entry));
 			}

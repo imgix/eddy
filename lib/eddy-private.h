@@ -212,10 +212,6 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
  *
  * This captures the parent node when mapping each subsequent page, allowing
  * simpler reverse-traversal withough the complexity of storing the relationship.
- * Additionally, the node tracks the advisory dirty state of the page. When
- * commited, this will sync the page unless #ED_FNOSYNC is used. If the page is
- * not marked for commiting, the page will instead be returned as a free page
- * to the page allocator.
  */
 struct EdPgNode {
 	union {
@@ -224,13 +220,10 @@ struct EdPgNode {
 	};
 	EdPgNode *parent;     /**< Parent node */
 	uint16_t pindex;      /**< Index of page in the parent */
-	uint8_t dirty;        /**< Dirty state of the page */
-	bool commit;          /**< Commit or free page */
 };
 
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
-ED_LOCAL      int ed_pg_sync(void *p, EdPgno count, uint64_t flags, uint8_t lvl);
 ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pg_unload(EdPg **pgp);
 
@@ -326,7 +319,6 @@ struct EdPgAlloc {
 	EdPgFree *free;
 	uint64_t flags;
 	int fd;
-	uint8_t dirty, free_dirty;
 	bool from_new;
 };
 
@@ -411,13 +403,6 @@ ed_pg_alloc_init(EdPgAlloc *alloc, EdPgAllocHdr *hdr, int fd, uint64_t flags);
  */
 ED_LOCAL void
 ed_pg_alloc_close(EdPgAlloc *alloc);
-
-/**
- * @brief  Syncs the page allocator to disk
- * @param  alloc  Page allocator
- */
-ED_LOCAL void
-ed_pg_alloc_sync(EdPgAlloc *alloc);
 
 /**
  * @brief  Gets the meta data space requested from #ed_pg_alloc_new

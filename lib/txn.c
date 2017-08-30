@@ -43,7 +43,7 @@ node_alloc(EdTxnNode **head, unsigned nnodes)
  * relationships as well as the dirty state of the page's contents.
  */
 static EdPgNode *
-node_wrap(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
+node_wrap(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx)
 {
 	assert(txn->nodes->nnodesused < txn->nodes->nnodes);
 
@@ -51,7 +51,6 @@ node_wrap(EdTxn *txn, EdPg *pg, EdPgNode *par, uint16_t pidx, uint8_t dirty)
 	n->page = pg;
 	n->parent = par;
 	n->pindex = pidx;
-	n->dirty = dirty;
 	n->tree->xid = txn->xid;
 	return n;
 }
@@ -173,7 +172,13 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (txn == NULL) { return; }
 	flags = ed_txn_fclose(flags, txn->cflags);
 
+	ed_pg_free(txn->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
+	free(txn->pg);
+
 	if (txn->isopen && !txn->isrdonly) {
+		if (!(flags & ED_FNOSYNC)) {
+			fsync(txn->alloc->fd);
+		}
 		ed_lck(txn->lck, txn->alloc->fd, ED_LCK_UN, flags);
 	}
 
@@ -194,7 +199,6 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	EdTxnNode *node = txn->nodes;
 	do {
 		for (int i = (int)node->nnodesused-1; i >= 0; i--) {
-			ed_pg_sync(node->nodes[i].page, 1, flags, node->nodes[i].dirty);
 			if (node->nodes[i].page) {
 				ed_pg_unmap(node->nodes[i].page, 1);
 			}
@@ -208,11 +212,6 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		node = next;
 	} while(1);
 
-	ed_pg_free(txn->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
-	free(txn->pg);
-
-	ed_pg_alloc_sync(txn->alloc);
-
 	if (flags & ED_FRESET) {
 		txn->pg = NULL;
 		txn->npg = 0;
@@ -222,7 +221,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		for (unsigned i = 0; i < txn->ndb; i++) {
 			EdTxnDb *dbp = &txn->db[i];
 			dbp->tail = dbp->head = heads[i] ?
-				node_wrap(txn, heads[i], NULL, 0, 0) : NULL;
+				node_wrap(txn, heads[i], NULL, 0) : NULL;
 			dbp->key = 0;
 			dbp->start = NULL;
 			dbp->entry = NULL;
@@ -258,7 +257,7 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdPgNode *par, uint16_t pidx, EdPgNode **out)
 
 	EdPg *pg = ed_pg_map(txn->alloc->fd, no, 1);
 	if (pg == MAP_FAILED) { return ED_ERRNO; }
-	*out = node_wrap(txn, pg, par, pidx, 0);
+	*out = node_wrap(txn, pg, par, pidx);
 	return 0;
 }
 
@@ -272,7 +271,7 @@ ed_txn_alloc(EdTxn *txn, EdPgNode *par, uint16_t pidx)
 #endif
 		abort();
 	}
-	return node_wrap(txn, txn->pg[txn->npgused++], par, pidx, 1);
+	return node_wrap(txn, txn->pg[txn->npgused++], par, pidx);
 }
 
 EdTxnDb *
