@@ -118,34 +118,12 @@ gc_set(EdPgGc **pg, EdPgno *no, EdPgGc *new)
 	}
 }
 
-void
-ed_gc_init(EdGc *gc, EdPgno *headno, EdPgno *tailno)
-{
-	gc->head = NULL;
-	gc->tail = NULL;
-	gc->headno = headno;
-	gc->tailno = tailno;
-}
-
-void
-ed_gc_final(EdGc *gc)
-{
-	if (gc->tail != NULL && gc->tail != gc->head) {
-		ed_pg_unmap(gc->tail, 1);
-	}
-	if (gc->head != NULL) {
-		ed_pg_unmap(gc->head, 1);
-	}
-	gc->head = NULL;
-	gc->tail = NULL;
-}
-
 int
-ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
+ed_gc_put(EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 {
 	if (n < 1) { return 0; }
 
-	EdPgGc *tail = ed_pg_load(alloc->fd, (EdPg **)&gc->tail, *gc->tailno);
+	EdPgGc *tail = ed_pg_load(alloc->fd, (EdPg **)&alloc->gc_tail, alloc->hdr->gc_tail);
 
 	// Determine how many pages can be discarded into the current gc page.
 	EdPgno avail = gc_list_npages_for(tail, xid);
@@ -171,9 +149,13 @@ ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 			list = gc_list_init(next, xid);
 
 			// Update linked list poiners, cleaning up when necessary.
-			if (gc->head == NULL)          { gc_set(&gc->head, gc->headno, next); }
-			else if (gc->head != gc->tail) { ed_pg_unmap(gc->tail, 1); }
-			gc_set(&gc->tail, gc->tailno, next);
+			if (alloc->gc_head == NULL) {
+				gc_set(&alloc->gc_head, &alloc->hdr->gc_head, next);
+			}
+			else if (alloc->gc_head != alloc->gc_tail) {
+				ed_pg_unmap(alloc->gc_tail, 1);
+			}
+			gc_set(&alloc->gc_tail, &alloc->hdr->gc_tail, next);
 
 			tail = next;
 		}
@@ -200,9 +182,9 @@ ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 }
 
 int
-ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit)
+ed_gc_run(EdPgAlloc *alloc, EdTxnId xid, int limit)
 {
-	EdPgGc *head = ed_pg_load(alloc->fd, (EdPg **)&gc->head, *gc->headno);
+	EdPgGc *head = ed_pg_load(alloc->fd, (EdPg **)&alloc->gc_head, alloc->hdr->gc_head);
 	uint16_t pos = head ? head->head : 0;
 	int rc = 0;
 
@@ -219,12 +201,12 @@ ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit)
 			continue;
 		}
 		// Stop if the tail is reached.
-		else if (*gc->headno == *gc->tailno) {
+		else if (alloc->hdr->gc_head == alloc->hdr->gc_tail) {
 			// If full, free the page and mark as empty
 			if (head->remain < sizeof(EdPgGcList)) {
 				ed_pg_free(alloc, (EdPg **)&head, 1);
-				gc_set(&gc->head, gc->headno, NULL);
-				gc_set(&gc->tail, gc->tailno, NULL);
+				gc_set(&alloc->gc_head, &alloc->hdr->gc_head, NULL);
+				gc_set(&alloc->gc_tail, &alloc->hdr->gc_tail, NULL);
 			}
 			break;
 		}
@@ -235,7 +217,7 @@ ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit)
 		pos = next->head;
 		ed_pg_free(alloc, (EdPg **)&head, 1);
 		head = next;
-		gc_set(&gc->head, gc->headno, head);
+		gc_set(&alloc->gc_head, &alloc->hdr->gc_head, head);
 	}
 
 	if (head) { head->head = pos; }

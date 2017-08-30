@@ -232,79 +232,6 @@ ED_LOCAL     void ed_pg_unload(EdPg **pgp);
 
 
 /**
- * @defgroup  gc  Page Garbage Collector
- *
- * @{
- */
-
-/**
- * @brief  Type to hold all in-memory and on-disk garbage collector state
- */
-struct EdGc {
-	EdPgGc *head;
-	EdPgGc *tail;
-	EdPgno *headno;
-	EdPgno *tailno;
-};
-
-/**
- * @brief  Initializes a garbage collector
- * @param  gc  Pointer to initialize
- * @param  headno  Location to store the head page number
- * @param  tailno  Location to store the tail page number
- */
-ED_LOCAL void
-ed_gc_init(EdGc *gc, EdPgno *headno, EdPgno *tailno);
-
-/**
- * @brief  Finalizes a garbage collector
- *
- * This will unmap an internal pages.
- *
- * @param  gc  Pointer to initialized garbage collector
- */
-ED_LOCAL void
-ed_gc_final(EdGc *gc);
-
-/**
- * @brief  Pushes an array of page numbers into the garbage collector
- *
- * This call transfers all pages to the garbage collector atomically. That is,
- * all pages are recorded, or none are. Multiple calls do not have a durability
- * guarantees even within a single lock acquisition. Ownership of all pages
- * is transfered to the garbage collector, and any external pointers should be
- * considered invalid after a successful call.
- *
- * @param  gc  Garbage collector pointer
- * @param  alloc  Page allocator
- * @param  xid  The transaction ID that is discarding these pages
- * @param  pg  Array of page objects
- * @param  n  Number of entries in the page number array
- * @returns  0 on success, <0 on error
- */
-ED_LOCAL int
-ed_gc_put(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
-
-/**
- * @brief  Runs the garbage collector
- *
- * This will transfer garbage pages back the free pool if their associated
- * transaction ids are less than #xid.
- *
- * @param  gc  Garbage collector pointer
- * @param  alloc  Page allocator
- * @param  xid  The lowest active transaction ID
- * @param  limit  The maximum number of transaction IDs to free
- * @returns  0 on success, <0 on error
- */
-ED_LOCAL int
-ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit);
-
-/** @} */
-
-
-
-/**
  * @defgroup  pgalloc  Page Allocator Module
  *
  * This implement the file-backed page allocator used by the index. This is
@@ -315,8 +242,10 @@ ed_gc_run(EdGc *gc, EdPgAlloc *alloc, EdTxnId xid, int limit);
 
 struct EdPgAlloc {
 	EdPgAllocHdr *hdr;
-	void *pg;
 	EdPgFree *free;
+	EdPgGc *gc_head;
+	EdPgGc *gc_tail;
+	void *pg;
 	uint64_t flags;
 	int fd;
 	bool from_new;
@@ -419,6 +348,38 @@ ed_pg_alloc_meta(EdPgAlloc *alloc);
  */
 ED_LOCAL EdPgFree *
 ed_pg_alloc_free_list(EdPgAlloc *alloc);
+
+/**
+ * @brief  Pushes an array of page numbers into the garbage collector
+ *
+ * This call transfers all pages to the garbage collector atomically. That is,
+ * all pages are recorded, or none are. Multiple calls do not have a durability
+ * guarantees even within a single lock acquisition. Ownership of all pages
+ * is transfered to the garbage collector, and any external pointers should be
+ * considered invalid after a successful call.
+ *
+ * @param  alloc  Page allocator
+ * @param  xid  The transaction ID that is discarding these pages
+ * @param  pg  Array of page objects
+ * @param  n  Number of entries in the page number array
+ * @returns  0 on success, <0 on error
+ */
+ED_LOCAL int
+ed_gc_put(EdPgAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
+
+/**
+ * @brief  Runs the garbage collector
+ *
+ * This will transfer garbage pages back the free pool if their associated
+ * transaction ids are less than #xid.
+ *
+ * @param  alloc  Page allocator
+ * @param  xid  The lowest active transaction ID
+ * @param  limit  The maximum number of transaction IDs to free
+ * @returns  0 on success, <0 on error
+ */
+ED_LOCAL int
+ed_gc_run(EdPgAlloc *alloc, EdTxnId xid, int limit);
 
 /** @} */
 
@@ -704,7 +665,6 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset);
 struct EdIdx {
 	EdLck lck;
 	EdPgAlloc alloc;
-	EdGc gc;
 	uint64_t flags;
 	uint64_t seed;
 	EdTimeUnix epoch;
@@ -993,6 +953,8 @@ struct EdPgAllocHdr {
 	uint32_t size_page;
 	EdPgno free_list;
 	_Atomic EdPgTail tail;
+	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
+	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
 };
 
 struct EdProc {
@@ -1019,8 +981,6 @@ struct EdIdxHdr {
 	EdPgAllocHdr alloc;            /**< Page allocator */
 	EdTxnId      xid;              /**< Global transaction ID */
 	EdBlkno      pos;              /**< Current slab write block */
-	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
-	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
 	EdPgno       key_tree;         /**< Page pointer for the entry key b+tree */
 	EdPgno       block_tree;       /**< Page pointer for the slab block b+tree */
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */

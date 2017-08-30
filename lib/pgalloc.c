@@ -1,8 +1,5 @@
 #include "eddy-private.h"
 
-_Static_assert(sizeof(EdPgAllocHdr) == 16,
-		"EdPgAllocHdr size invalid");
-
 _Static_assert(sizeof(EdPgFree) == PAGESIZE,
 		"EdPgFree size invalid");
 
@@ -339,11 +336,15 @@ ed_pg_alloc_new(EdPgAlloc *alloc, const char *path, size_t meta, uint64_t flags)
 		hdr->size_page = PAGESIZE;
 		hdr->free_list = hdrpages;
 		hdr->tail = (EdPgTail){ hdrpages+1, 0 };
+		hdr->gc_head = ED_PG_NONE;
+		hdr->gc_tail = ED_PG_NONE;
 	}
 
 	ed_pg_alloc_init(alloc, hdr, fd, flags);
 	alloc->free = free_list;
 	alloc->from_new = true;
+	alloc->gc_head = NULL;
+	alloc->gc_tail = NULL;
 
 done:
 	if (rc < 0) {
@@ -383,6 +384,14 @@ ed_pg_alloc_close(EdPgAlloc *alloc)
 		alloc->hdr = NULL;
 		alloc->pg = NULL;
 	}
+	if (alloc->gc_tail != NULL && alloc->gc_tail != alloc->gc_head) {
+		ed_pg_unmap(alloc->gc_tail, 1);
+	}
+	if (alloc->gc_head != NULL) {
+		ed_pg_unmap(alloc->gc_head, 1);
+	}
+	alloc->gc_head = NULL;
+	alloc->gc_tail = NULL;
 	if (alloc->fd > -1) {
 		close(alloc->fd);
 	}

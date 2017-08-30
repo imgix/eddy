@@ -37,9 +37,11 @@ static const EdIdxHdr INDEX_DEFAULT = {
 	.size_align = ED_MAX_ALIGN,
 	.alloc_count = ED_ALLOC_COUNT,
 	.slab_block_size = PAGESIZE,
-	.alloc = { .size_page = PAGESIZE, },
-	.gc_head = ED_PG_NONE,
-	.gc_tail = ED_PG_NONE,
+	.alloc = {
+		.size_page = PAGESIZE,
+		.gc_head = ED_PG_NONE,
+		.gc_tail = ED_PG_NONE,
+	},
 	.key_tree = ED_PG_NONE,
 	.block_tree = ED_PG_NONE,
 	.nprocs = 64,
@@ -278,7 +280,6 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	uint64_t f = ed_idx_flags(hdr->flags | ed_fopen(flags));
 	ed_lck_init(&idx->lck, offsetof(EdIdxHdr, alloc), sizeof(hdr->alloc));
 	ed_pg_alloc_init(&idx->alloc, &hdr->alloc, fd, f);
-	ed_gc_init(&idx->gc, &hdr->gc_head, &hdr->gc_tail);
 	idx->alloc.free = free_list;
 	idx->flags = f;
 	idx->seed = hdr->seed;
@@ -315,7 +316,6 @@ void
 ed_idx_close(EdIdx *idx)
 {
 	if (idx == NULL) { return; }
-	ed_gc_final(&idx->gc);
 	ed_pg_alloc_close(&idx->alloc);
 	ed_txn_close(&idx->txn, idx->flags);
 	proc_release(idx->hdr, idx->proc - idx->hdr->procs, idx->alloc.fd);
