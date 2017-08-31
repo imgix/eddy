@@ -15,9 +15,9 @@ _Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
 #define BITNSLOTS(nb) ((nb + 8 - 1) / 8)
 
 #define PG_ROOT_FREE 1
-#define PG_NHDR(nproc) ed_count_pg(offsetof(EdIdxHdr, procs) + sizeof(EdProc)*nproc)
+#define PG_NHDR(nconns) ed_count_pg(offsetof(EdIdxHdr, conns) + sizeof(EdConn)*nconns)
 #define PG_NEXTRA 1
-#define PG_NINIT(nproc) (PG_NHDR(nproc) + PG_NEXTRA)
+#define PG_NINIT(nconns) (PG_NHDR(nconns) + PG_NEXTRA)
 
 #define ed_idx_flags(f) ((f) & ~ED_FRESET)
 
@@ -44,7 +44,7 @@ static const EdIdxHdr INDEX_DEFAULT = {
 	},
 	.key_tree = ED_PG_NONE,
 	.block_tree = ED_PG_NONE,
-	.nprocs = 64,
+	.nconns = 64,
 };
 
 static int
@@ -133,7 +133,7 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
 	open(path, (O_CLOEXEC|O_RDWR | (((f) & (ifset)) ? O_CREAT : 0)), 0600)
 
 /**
- * @brief  Locks the next available process slot
+ * @brief  Locks the next available process connection slot
  *
  * Using the mmapped region in the header, this will search for the first unlocked
  * process connection slot. Initially this is only attempted on slots the have
@@ -144,24 +144,24 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
  * @param  hdr  Memmory mapped index header
  * @param  fd  An open file descriptor to the file containing #hdr
  * @param  xmin  Attempt lock recovery if holding a transaction id less than this id
- * @return >=0 the process index, <0 on error
+ * @return >=0 the connection index, <0 on error
  */
 static int
-proc_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
+conn_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
 {
-	int nprocs = (int)hdr->nprocs;
+	int nconns = (int)hdr->nconns;
 	int rc = ed_esys(EAGAIN);
 	bool all = false;
 	for (int x = 0; x < 2; x++, all = true) {
-		EdProc *p = hdr->procs;
-		for (int i = 0; i < nprocs; i++, p++) {
-			if (!all && p->pid > 0 && (p->xid >= xmin || p->xid == 0)) { continue; }
+		EdConn *c = hdr->conns;
+		for (int i = 0; i < nconns; i++, c++) {
+			if (!all && c->pid > 0 && (c->xid >= xmin || c->xid == 0)) { continue; }
 			rc = ed_flck(fd, ED_LCK_EX,
-					offsetof(EdIdxHdr, procs) + i*sizeof(*hdr->procs), sizeof(*hdr->procs),
+					offsetof(EdIdxHdr, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
 					ED_FNOBLOCK);
 			if (rc == 0) {
-				p->pid = getpid();
-				p->xid = 0;
+				c->pid = getpid();
+				c->xid = 0;
 				return i;
 			}
 			if (rc != ed_esys(EAGAIN)) {
@@ -176,15 +176,15 @@ proc_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
 /**
  * @brief  Unmarks and unlocks the process connection
  * @param  hdr  Memmory mapped index header
- * @param  idx  The index into the process array
+ * @param  idx  The index into the connection array
  * @param  fd  An open file descriptor to the file containing #hdr
  */
 static void
-proc_release(EdIdxHdr *hdr, uint16_t i, int fd)
+conn_release(EdIdxHdr *hdr, uint16_t i, int fd)
 {
-	memset(&hdr->procs[i], 0, sizeof(*hdr->procs));
+	memset(&hdr->conns[i], 0, sizeof(*hdr->conns));
 	ed_flck(fd, ED_LCK_UN,
-			offsetof(EdIdxHdr, procs) + i*sizeof(*hdr->procs), sizeof(*hdr->procs),
+			offsetof(EdIdxHdr, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
 			ED_FNOBLOCK);
 }
 
@@ -195,16 +195,16 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	struct stat stat;
 	int fd = -1, sfd = -1, rc = 0;
 	uint64_t flags = cfg->flags;
-	unsigned nprocs = cfg->max_procs;
-	if (nprocs == 0) { nprocs = hdrnew.nprocs; }
-	else if (nprocs > 256) { nprocs = 512; }
+	unsigned nconns = cfg->max_conns;
+	if (nconns == 0) { nconns = hdrnew.nconns; }
+	else if (nconns > 256) { nconns = 512; }
 
 	if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
 	hdrnew.epoch = ed_now_unix();
 	hdrnew.flags = ed_fsave(flags);
 	hdrnew.slab_block_size = cfg->slab_block_size ? cfg->slab_block_size : PAGESIZE;
 	hdrnew.alloc.free_list = PG_ROOT_FREE;
-	hdrnew.alloc.tail = (EdAllocTail){ PG_NINIT(nprocs), 0 };
+	hdrnew.alloc.tail = (EdAllocTail){ PG_NINIT(nconns), 0 };
 	if (cfg->slab_path == NULL) {
 		int len = snprintf(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1, "%s-slab", cfg->index_path);
 		if (len < 0) { return ED_ERRNO; }
@@ -217,12 +217,12 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 		if (len >= sizeof(hdrnew.slab_path)) { return ED_ECONFIG_SLAB_NAME; }
 		memcpy(hdrnew.slab_path, cfg->slab_path, len);
 	}
-	hdrnew.nprocs = nprocs;
+	hdrnew.nconns = nconns;
 
 	fd = OPEN(cfg->index_path, flags, ED_FCREATE|ED_FREPLACE);
 	if (fd < 0) { rc = ED_ERRNO; goto error; }
 
-	hdr = ed_pg_map(fd, 0, PG_NINIT(nprocs));
+	hdr = ed_pg_map(fd, 0, PG_NINIT(nconns));
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
@@ -256,7 +256,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 			hdrnew.slab_block_count = (EdBlkno)(slab_size/hdrnew.slab_block_size);
 			hdrnew.slab_ino = (uint64_t)stat.st_ino;
 
-			size_t size = PG_NINIT(nprocs) * PAGESIZE;
+			size_t size = PG_NINIT(nconns) * PAGESIZE;
 			rc = allocate_file(flags, fd, size + (ED_ALLOC_COUNT * PAGESIZE), "index");
 			if (rc < 0) { break; }
 
@@ -271,9 +271,9 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	}
 	if (rc < 0) { goto error; }
 
-	int pix = proc_acquire(hdr, fd, 15);
-	if (pix < 0) {
-		rc = pix;
+	int cix = conn_acquire(hdr, fd, 15);
+	if (cix < 0) {
+		rc = cix;
 		goto error;
 	}
 
@@ -282,7 +282,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	ed_alloc_init(&idx->xtype.alloc, &hdr->alloc, fd, f);
 	idx->xtype.alloc.free = free_list;
 	idx->xtype.gxid = &hdr->xid;
-	idx->xtype.conn = hdr->procs + pix;
+	idx->xtype.conn = hdr->conns + cix;
 	idx->flags = f;
 	idx->seed = hdr->seed;
 	idx->epoch = hdr->epoch;
@@ -307,7 +307,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	return 0;
 
 error:
-	if (hdr != MAP_FAILED) { ed_pg_unmap(hdr, PG_NINIT(nprocs)); }
+	if (hdr != MAP_FAILED) { ed_pg_unmap(hdr, PG_NINIT(nconns)); }
 	if (sfd >= 0) { close(sfd); }
 	if (fd >= 0) { close(fd); }
 	return rc;
@@ -319,9 +319,9 @@ ed_idx_close(EdIdx *idx)
 	if (idx == NULL) { return; }
 	ed_alloc_close(&idx->xtype.alloc);
 	ed_txn_close(&idx->txn, idx->flags);
-	proc_release(idx->hdr, idx->xtype.conn - idx->hdr->procs, idx->xtype.alloc.fd);
+	conn_release(idx->hdr, idx->xtype.conn - idx->hdr->conns, idx->xtype.alloc.fd);
 	ed_lck_final(&idx->xtype.lck);
-	ed_pg_unmap(idx->hdr, PG_NHDR(idx->hdr->nprocs));
+	ed_pg_unmap(idx->hdr, PG_NHDR(idx->hdr->nconns));
 	idx->hdr = NULL;
 }
 
@@ -458,15 +458,15 @@ ed_idx_stat(EdIdx *idx, FILE *out, int flags)
 		"    dynamic: %zu\n",
 		(size_t)s.st_size,
 		(size_t)pgno,
-		(size_t)PG_NHDR(idx->hdr->nprocs),
-		(size_t)(pgno - PG_NHDR(idx->hdr->nprocs))
+		(size_t)PG_NHDR(idx->hdr->nconns),
+		(size_t)(pgno - PG_NHDR(idx->hdr->nconns))
 	);
 
 	if (flags & ED_FSTAT_EXTEND) {
 		uint8_t vec[(pgno/8)+1];
 		memset(vec, 0, (pgno/8)+1);
 
-		for (EdPgno i = 0; i < PG_NHDR(idx->hdr->nprocs); i++) {
+		for (EdPgno i = 0; i < PG_NHDR(idx->hdr->nconns); i++) {
 			BITSET(vec, i);
 		}
 

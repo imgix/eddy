@@ -45,7 +45,7 @@ typedef struct EdObjectAttr EdObjectAttr;
 struct EdConfig {
 	const char *index_path;
 	const char *slab_path;
-	unsigned max_procs;
+	unsigned max_conns;
 	long long slab_size;
 	unsigned slab_block_size;
 	uint64_t flags;

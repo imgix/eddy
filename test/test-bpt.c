@@ -18,7 +18,7 @@ static const char *path = "/tmp/eddy_test_bpt";
 typedef struct {
 	EdTxnId xid;
 	EdPgno db1, db2;
-	EdProc conn;
+	EdConn conn;
 } Tree;
 
 typedef struct {

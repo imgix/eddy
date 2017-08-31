@@ -68,7 +68,7 @@ typedef struct EdTxnRef EdTxnRef;
 typedef struct EdTxnDb EdTxnDb;
 typedef struct EdTxnNode EdTxnNode;
 
-typedef struct EdProc EdProc;
+typedef struct EdConn EdConn;
 
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
@@ -505,7 +505,7 @@ struct EdTxnDb {
 struct EdTxnType {
 	EdAlloc alloc;        /**< Page allocator */
 	EdLck lck;            /**< Write lock */
-	EdProc *conn;         /**< Process connection handle */
+	EdConn *conn;         /**< Process connection handle */
 	EdTxnId *gxid;        /**< Reference global to transaction id */
 };
 
@@ -949,7 +949,7 @@ struct EdAllocHdr {
 	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
 };
 
-struct EdProc {
+struct EdConn {
 	int pid;
 	int _pad;
 	EdTxnId xid;
@@ -978,8 +978,8 @@ struct EdIdxHdr {
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
 	uint64_t     slab_ino;         /**< Inode number of the slab */
 	char         slab_path[1022];  /**< Path to the slab */
-	uint16_t     nprocs;           /**< Number of process connection slots */
-	EdProc       procs[1];         /**< Flexible array of active process connections */
+	uint16_t     nconns;           /**< Number of process connection slots */
+	EdConn       conns[1];         /**< Flexible array of active process connections */
 };
 
 struct EdObjectHdr {
