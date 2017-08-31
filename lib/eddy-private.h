@@ -1020,6 +1020,15 @@ struct EdIdxHdr {
 	EdConn       conns[1];         /**< Flexible array of active process connections */
 };
 
+#define ED_IDX_LCK_OPEN base
+#define ED_IDX_LCK_WRITE alloc
+
+#define ED_IDX_LCK_OPEN_OFF offsetof(EdIdxHdr, ED_IDX_LCK_OPEN)
+#define ED_IDX_LCK_OPEN_LEN sizeof(((EdIdxHdr *)0)->ED_IDX_LCK_OPEN)
+
+#define ED_IDX_LCK_WRITE_OFF offsetof(EdIdxHdr, ED_IDX_LCK_WRITE)
+#define ED_IDX_LCK_WRITE_LEN sizeof(((EdIdxHdr *)0)->ED_IDX_LCK_WRITE)
+
 /**
  * @brief  On-disk value for an entry in the slab
  */
