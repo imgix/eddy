@@ -519,6 +519,7 @@ struct EdTxnType {
 	EdConn *     conns;            /**< Reference to connection array */
 	int          nconns;           /**< Total number of connections in the array */
 	int          conn;             /**< Index into the array for the current connection */
+	EdTimeUnix   epoch;            /**< Time offset from UNIX time */
 };
 
 /**
@@ -676,14 +677,13 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset);
  */
 
 struct EdIdx {
-	EdTxnType xtype;
-	uint64_t flags;
-	uint64_t seed;
-	EdTimeUnix epoch;
-	EdIdxHdr *hdr;
-	EdBpt *blocks;
-	EdBpt *keys;
-	EdTxn *txn;
+	EdTxnType    xtype;            /**< Transaction type fields */
+	uint64_t     flags;            /**< Open flags merged with the saved flags */
+	uint64_t     seed;             /**< Seed pulled from the index header */
+	EdIdxHdr *   hdr;              /**< Index header reference */
+	EdBpt *      blocks;           /**< Mapped b+tree for the slab blocks */
+	EdBpt *      keys;             /**< Mapped b+tree for the entry keys */
+	EdTxn *      txn;              /**< Cached transaction object */
 };
 
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);

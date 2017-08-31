@@ -286,9 +286,9 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	idx->xtype.conns = hdr->conns;
 	idx->xtype.nconns = hdr->nconns;
 	idx->xtype.conn = cix;
+	idx->xtype.epoch = hdr->epoch;
 	idx->flags = f;
 	idx->seed = hdr->seed;
-	idx->epoch = hdr->epoch;
 	idx->hdr = hdr;
 	idx->keys = NULL;
 	idx->blocks = NULL;
@@ -352,14 +352,14 @@ ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 	EdNodeKey *nkey;
 	rc = ed_bpt_find(idx->txn, 0, h, (void **)&nkey);
 	for (; rc == 1; rc = ed_bpt_next(idx->txn, 0, (void **)&nkey)) {
-		if (!ed_expired_at(idx->epoch, nkey->exp, now)) {
+		if (!ed_expired_at(idx->xtype.epoch, nkey->exp, now)) {
 			EdObjectHdr *hdr = ed_pg_map(obj->cache->fd, nkey->no, nkey->count);
 			if (hdr == MAP_FAILED) {
 				rc = ED_ERRNO;
 				break;
 			}
 			if (hdr->keylen == klen && memcmp((uint8_t *)hdr+sizeof(*hdr), k, klen) == 0) {
-				obj->expiry = ed_expiry_at(idx->epoch, nkey->exp, now);
+				obj->expiry = ed_expiry_at(idx->xtype.epoch, nkey->exp, now);
 				idx_set_obj(obj, hdr);
 				break;
 			}
