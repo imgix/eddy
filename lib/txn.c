@@ -56,7 +56,7 @@ node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 }
 
 int
-ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref)
+ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref)
 {
 	if (nref == 0 || nref > ED_TXN_MAX_REF) {
 		return ed_esys(EINVAL);
@@ -79,9 +79,7 @@ ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdAlloc *alloc, EdLck *lck, EdTxnRef *ref
 		goto error;
 	}
 
-	txn->xidp = xid;
-	txn->lck = lck;
-	txn->alloc = alloc;
+	txn->xtype = xtype;
 	txn->nodes = (EdTxnNode *)((uint8_t *)txn + offnodes);
 	txn->nodes->nnodes = nnodes;
 
@@ -118,9 +116,9 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 	if (txn == NULL || txn->isopen) { return ed_esys(EINVAL); }
 	bool rdonly = flags & ED_FRDONLY;
 	if (!rdonly) {
-		int rc = ed_lck(txn->lck, txn->alloc->fd, ED_LCK_EX, flags);
+		int rc = ed_lck(&txn->xtype->lck, txn->xtype->alloc.fd, ED_LCK_EX, flags);
 		if (rc < 0) { return rc; }
-		txn->xid = *txn->xidp + 1;
+		txn->xid = *txn->xtype->gxid + 1;
 	}
 	txn->cflags = flags & ED_TXN_FCRIT;
 	txn->isrdonly = rdonly;
@@ -149,7 +147,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 			rc = ED_ERRNO;
 			goto done;
 		}
-		rc = ed_alloc(txn->alloc, txn->pg, npg, true);
+		rc = ed_alloc(&txn->xtype->alloc, txn->pg, npg, true);
 		if (rc < 0) { goto done; }
 		txn->npg = npg;
 		rc = 0;
@@ -158,7 +156,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	for (unsigned i = 0; i < txn->ndb; i++) {
 		ed_bpt_apply(txn, i, txn->db[i].scratch, txn->db[i].apply);
 	}
-	*txn->xidp = txn->xid;
+	*txn->xtype->gxid = txn->xid;
 
 done:
 	ed_txn_close(txnp, flags);
@@ -172,14 +170,14 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (txn == NULL) { return; }
 	flags = ed_txn_fclose(flags, txn->cflags);
 
-	ed_free(txn->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
+	ed_free(&txn->xtype->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
 	free(txn->pg);
 
 	if (txn->isopen && !txn->isrdonly) {
 		if (!(flags & ED_FNOSYNC)) {
-			fsync(txn->alloc->fd);
+			fsync(txn->xtype->alloc.fd);
 		}
-		ed_lck(txn->lck, txn->alloc->fd, ED_LCK_UN, flags);
+		ed_lck(&txn->xtype->lck, txn->xtype->alloc.fd, ED_LCK_UN, flags);
 	}
 
 	EdPg *heads[ED_TXN_MAX_REF];
@@ -255,7 +253,7 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 		if (rc < 0) { return rc; }
 	}
 
-	EdPg *pg = ed_pg_map(txn->alloc->fd, no, 1);
+	EdPg *pg = ed_pg_map(txn->xtype->alloc.fd, no, 1);
 	if (pg == MAP_FAILED) { return ED_ERRNO; }
 	*out = node_wrap(txn, pg, par, pidx);
 	return 0;

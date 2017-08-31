@@ -278,9 +278,11 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	}
 
 	uint64_t f = ed_idx_flags(hdr->flags | ed_fopen(flags));
-	ed_lck_init(&idx->lck, offsetof(EdIdxHdr, alloc), sizeof(hdr->alloc));
-	ed_alloc_init(&idx->alloc, &hdr->alloc, fd, f);
-	idx->alloc.free = free_list;
+	ed_lck_init(&idx->xtype.lck, offsetof(EdIdxHdr, alloc), sizeof(hdr->alloc));
+	ed_alloc_init(&idx->xtype.alloc, &hdr->alloc, fd, f);
+	idx->xtype.alloc.free = free_list;
+	idx->xtype.gxid = &hdr->xid;
+	idx->xtype.conn = hdr->procs + pix;
 	idx->flags = f;
 	idx->seed = hdr->seed;
 	idx->epoch = hdr->epoch;
@@ -288,17 +290,16 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	idx->keys = NULL;
 	idx->blocks = NULL;
 	idx->txn = NULL;
-	idx->proc = hdr->procs + pix;
 
 	EdTxnRef ref[] = {
 		{ &hdr->key_tree, sizeof(EdNodeKey) },
 		{ &hdr->block_tree, sizeof(EdNodeBlock) },
 	};
 
-	rc = ed_txn_new(&idx->txn, &idx->hdr->xid, &idx->alloc, &idx->lck, ref, ed_len(ref));
+	rc = ed_txn_new(&idx->txn, &idx->xtype, ref, ed_len(ref));
 	if (rc < 0) {
-		ed_lck_final(&idx->lck);
-		ed_alloc_close(&idx->alloc);
+		ed_lck_final(&idx->xtype.lck);
+		ed_alloc_close(&idx->xtype.alloc);
 		goto error;
 	}
 
@@ -316,10 +317,10 @@ void
 ed_idx_close(EdIdx *idx)
 {
 	if (idx == NULL) { return; }
-	ed_alloc_close(&idx->alloc);
+	ed_alloc_close(&idx->xtype.alloc);
 	ed_txn_close(&idx->txn, idx->flags);
-	proc_release(idx->hdr, idx->proc - idx->hdr->procs, idx->alloc.fd);
-	ed_lck_final(&idx->lck);
+	proc_release(idx->hdr, idx->xtype.conn - idx->hdr->procs, idx->xtype.alloc.fd);
+	ed_lck_final(&idx->xtype.lck);
 	ed_pg_unmap(idx->hdr, PG_NHDR(idx->hdr->nprocs));
 	idx->hdr = NULL;
 }
@@ -369,7 +370,7 @@ ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 int
 ed_idx_lock(EdIdx *idx, EdLckType type)
 {
-	return ed_lck(&idx->lck, idx->alloc.fd, type, idx->flags);
+	return ed_lck(&idx->xtype.lck, idx->xtype.alloc.fd, type, idx->flags);
 }
 
 // Tests and sets a page number in the bit vector.
@@ -415,7 +416,7 @@ stat_free(EdIdx *idx, uint8_t *vec, EdPgFree *fs, FILE *out)
 	EdPgno c = fs->count;
 	int rc = stat_pages(vec, fs->base.no, fs->pages, c, out);
 	if (rc == 0 && c > 0) {
-		EdPgFree *p = ed_pg_map(idx->alloc.fd, fs->pages[0], 1);
+		EdPgFree *p = ed_pg_map(idx->xtype.alloc.fd, fs->pages[0], 1);
 		if (p == MAP_FAILED) { return ED_ERRNO; }
 		if (p->base.type == ED_PG_FREE_CHLD || p->base.type == ED_PG_FREE_HEAD) {
 			rc = stat_free(idx, vec, (EdPgFree *)p, out);
@@ -440,7 +441,7 @@ int
 ed_idx_stat(EdIdx *idx, FILE *out, int flags)
 {
 	struct stat s;
-	if (fstat(idx->alloc.fd, &s) < 0) { return ED_ERRNO; }
+	if (fstat(idx->xtype.alloc.fd, &s) < 0) { return ED_ERRNO; }
 
 	int rc = 0;
 	EdPgno pgno = s.st_size / PAGESIZE;
@@ -475,8 +476,8 @@ ed_idx_stat(EdIdx *idx, FILE *out, int flags)
 		rc = ed_idx_lock(idx, ED_LCK_SH);
 		if (rc < 0) { goto done; }
 
-		BITSET(vec, idx->alloc.hdr->free_list);
-		rc = stat_free(idx, vec, ed_alloc_free_list(&idx->alloc), out);
+		BITSET(vec, idx->xtype.alloc.hdr->free_list);
+		rc = stat_free(idx, vec, ed_alloc_free_list(&idx->xtype.alloc), out);
 
 		ed_idx_lock(idx, ED_LCK_UN);
 		if (rc < 0) { goto done; }

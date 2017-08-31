@@ -63,6 +63,7 @@ typedef struct EdBpt EdBpt;
 
 typedef uint64_t EdTxnId;
 typedef struct EdTxn EdTxn;
+typedef struct EdTxnType EdTxnType;
 typedef struct EdTxnRef EdTxnRef;
 typedef struct EdTxnDb EdTxnDb;
 typedef struct EdTxnNode EdTxnNode;
@@ -499,6 +500,16 @@ struct EdTxnDb {
 };
 
 /**
+ * @brief  Base type for transactional objects
+ */
+struct EdTxnType {
+	EdAlloc alloc;        /**< Page allocator */
+	EdLck lck;            /**< Write lock */
+	EdProc *conn;         /**< Process connection handle */
+	EdTxnId *gxid;        /**< Reference global to transaction id */
+};
+
+/**
  * @brief  Transaction object
  *
  * This holds all information for an active or reset transaction. Once
@@ -506,9 +517,7 @@ struct EdTxnDb {
  * used for multiple transactions agains the same database set.
  */
 struct EdTxn {
-	EdTxnId *xidp;        /**< Reference global to transaction id */
-	EdLck *lck;           /**< Reference to shared lock */
-	EdAlloc *alloc;     /**< Page allocator */
+	EdTxnType *xtype;     /**< Transaction type inforation */
 	EdPg **pg;            /**< Array to hold allocated pages */
 	unsigned npg;         /**< Number of pages allocated */
 	unsigned npgused;     /**< Number of pages used */
@@ -536,15 +545,13 @@ struct EdTxnNode {
  * these functions.
  *
  * @param  txnp  Indirect pointer to a assign the allocation to
- * @param  xid  Transaction ID pointer
- * @param  alloc  A page allocator instance
- * @param  lck  An initialized lock object
+ * @param  xtype  Initialized transaction type pointer
  * @param  ref  An Array of #EdTxnRef structs
  * @param  nref  The number of #EdTxnRef structs
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_new(EdTxn **txnp, EdTxnId *xid, EdAlloc *alloc, EdLck *lck, EdTxnRef *ref, unsigned nref);
+ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref);
 
 /**
  * @brief  Starts an allocated transaction
@@ -650,8 +657,7 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset);
  */
 
 struct EdIdx {
-	EdLck lck;
-	EdAlloc alloc;
+	EdTxnType xtype;
 	uint64_t flags;
 	uint64_t seed;
 	EdTimeUnix epoch;
@@ -659,7 +665,6 @@ struct EdIdx {
 	EdBpt *blocks;
 	EdBpt *keys;
 	EdTxn *txn;
-	EdProc *proc;
 };
 
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);

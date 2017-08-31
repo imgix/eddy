@@ -12,8 +12,7 @@
 #define FCLOSE (FOPEN|ED_FNOSYNC)
 #define FRESET (FCLOSE|ED_FRESET)
 
-static EdLck lock;
-static EdAlloc alloc;
+static EdTxnType xtype;
 static const char *path = "/tmp/eddy_test_bpt";
 
 typedef struct {
@@ -52,9 +51,9 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 	if (ed_pg_load(fd, (EdPg **)&bt, no) == MAP_FAILED) {
 		return ED_ERRNO;
 	}
-	int rc = ed_bpt_verify(bt, alloc.fd, sizeof(Entry), stderr);
+	int rc = ed_bpt_verify(bt, xtype.alloc.fd, sizeof(Entry), stderr);
 	if (rc == 0 && tryprint) {
-		print_tree(bt, alloc.fd);
+		print_tree(bt, xtype.alloc.fd);
 	}
 	ed_pg_unload((EdPg **)&bt);
 	return rc;
@@ -72,15 +71,18 @@ cleanup(void)
 static void
 start(EdTxn **txn, Tree **tree, int n)
 {
-	ed_lck_init(&lock, 0, PAGESIZE);
+	ed_lck_init(&xtype.lck, 0, PAGESIZE);
 
-	mu_assert_int_eq(ed_alloc_new(&alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
+	mu_assert_int_eq(ed_alloc_new(&xtype.alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
 
-	Tree *t = ed_alloc_meta(&alloc);
+	Tree *t = ed_alloc_meta(&xtype.alloc);
 	if (t->xid == 0) {
 		t->db1 = ED_PG_NONE;
 		t->db2 = ED_PG_NONE;
 	}
+
+	xtype.conn = NULL;
+	xtype.gxid = &t->xid;
 
 	EdTxnRef ref[] = {
 		{ &t->db1, sizeof(Entry) },
@@ -88,7 +90,7 @@ start(EdTxn **txn, Tree **tree, int n)
 	};
 
 	EdTxn *x;
-	mu_assert_int_eq(ed_txn_new(&x, &t->xid, &alloc, &lock, ref, n), 0);
+	mu_assert_int_eq(ed_txn_new(&x, &xtype, ref, n), 0);
 
 	*tree = t;
 	*txn = x;
@@ -98,8 +100,8 @@ static void
 finish(EdTxn **txn)
 {
 	ed_txn_close(txn, FCLOSE);
-	ed_alloc_close(&alloc);
-	ed_lck_final(&lock);
+	ed_alloc_close(&xtype.alloc);
+	ed_lck_final(&xtype.lck);
 }
 
 static void
@@ -132,7 +134,7 @@ test_basic(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 1, (void **)&found), 1);
@@ -188,7 +190,7 @@ test_repeat(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 0, NULL), 1);
@@ -244,7 +246,7 @@ test_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -281,7 +283,7 @@ test_large_sequential(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -317,7 +319,7 @@ test_large_sequential_reverse(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		Entry *ent;
@@ -365,7 +367,7 @@ test_split_leaf_middle_left(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (size_t i = 0; i <= n; i++) {
 		Entry *ent;
@@ -413,7 +415,7 @@ test_split_leaf_middle_right(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (size_t i = 0; i <= n; i++) {
 		Entry *ent;
@@ -460,7 +462,7 @@ test_split_middle_branch(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (size_t i = 0; i <= LARGE; i++) {
 		Entry *ent;
@@ -496,7 +498,7 @@ test_remove_small(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		Entry *ent;
@@ -511,7 +513,7 @@ test_remove_small(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, false), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, false), 0);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		int key = rand_r(&seed);
@@ -529,7 +531,7 @@ test_remove_small(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
 		Entry *ent;
@@ -566,7 +568,7 @@ test_remove_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, false), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, false), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -581,7 +583,7 @@ test_remove_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int key = rand_r(&seed);
@@ -599,7 +601,7 @@ test_remove_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -642,8 +644,8 @@ test_multi(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db2, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db2, true), 0);
 
 	for (unsigned seed = 0, i = 0; i < MULTI; i++) {
 		Entry *ent;
@@ -688,7 +690,7 @@ test_iter(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
 
 	Entry *ent;
 
