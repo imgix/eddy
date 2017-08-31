@@ -94,10 +94,13 @@ typedef enum EdLckType {
 	ED_LCK_UN = F_UNLCK,
 } EdLckType;
 
+/**
+ * @brief  Thread and file lock information
+ */
 struct EdLck {
-	off_t start;
-	off_t len;
-	pthread_rwlock_t rw;
+	off_t        start;            /**< Byte offset for the range of the lock */
+	off_t        len;              /**< Byte length for the range of the lock */
+	pthread_rwlock_t rw;           /**< Lock for thread-level concurrency */
 };
 
 /**
@@ -207,17 +210,20 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 #define ED_PG_NONE UINT32_MAX
 #define ED_BLK_NONE UINT64_MAX
 
-#define ED_PG_FREE_COUNT ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
+#define ED_PG_NFREE ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
 
+/**
+ * @brief  Page allocator in-memory object
+ */
 struct EdAlloc {
-	EdAllocHdr *hdr;
-	EdPgFree *free;
-	EdPgGc *gc_head;
-	EdPgGc *gc_tail;
-	void *pg;
-	uint64_t flags;
-	int fd;
-	bool from_new;
+	EdAllocHdr * hdr;              /**< Reference to the on-disk allocation value */
+	EdPgFree *   free;             /**< Currently mapped free array page */
+	EdPgGc *     gc_head;          /**< Currently mapped head of the garbage collected pages */
+	EdPgGc *     gc_tail;          /**< Currently mapped tail of the garbage collected pages */
+	void *       pg;               /**< Mapped page pointer containing #hdr */
+	uint64_t     flags;            /**< Flags for customizeing the allocator behavior */
+	int          fd;               /**< Open file discriptor for the file to allocate from */
+	bool         from_new;         /**< Status if created from #ed_alloc_new */
 };
 
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
@@ -388,6 +394,9 @@ ED_LOCAL      int ed_pg_check(void);
  * @{
  */
 
+/**
+ * @brief  Opaque type for capturing backtrace information
+ */
 typedef struct EdBacktrace EdBacktrace;
 
 ED_LOCAL      int ed_backtrace_new(EdBacktrace **);
@@ -414,11 +423,11 @@ ED_LOCAL      int ed_backtrace_index(EdBacktrace *, const char *name);
  */
 struct EdNode {
 	union {
-		EdPg *page;       /**< Mapped page */
-		EdBpt *tree;      /**< Mapped page as a tree */
+		EdPg *      page;             /**< Mapped page */
+		EdBpt *     tree;             /**< Mapped page as a tree */
 	};
-	EdNode *parent;     /**< Parent node */
-	uint16_t pindex;      /**< Index of page in the parent */
+	EdNode *        parent;           /**< Parent node */
+	uint16_t        pindex;           /**< Index of page in the parent */
 };
 
 typedef enum EdBptApply {
@@ -471,8 +480,8 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
  * is passed to #ed_txn_new().
  */
 struct EdTxnRef {
-	EdPgno *no;           /**< Pointer to the page number for the root of the b+tree */
-	size_t entry_size;    /**< Size in bytes of the entry value in the b+tree */
+	EdPgno *     no;               /**< Pointer to the page number for the root of the b+tree */
+	size_t       entry_size;       /**< Size in bytes of the entry value in the b+tree */
 };
 
 /**
@@ -482,34 +491,34 @@ struct EdTxnRef {
  * Additionally, it acts as a cursor for iterating through records in the tree.
  */
 struct EdTxnDb {
-	EdNode *head;       /**< First node searched */
-	EdNode *tail;       /**< Current tail node */
-	EdPgno *root;         /**< Pointer to page number of root node */
-	uint64_t key;         /**< Key searched for */
-	void *start;          /**< Pointer to the first entry */
-	void *entry;          /**< Pointer to the entry in the leaf */
-	size_t entry_size;    /**< Size in bytes of the entry */
-	uint32_t entry_index; /**< Index of the entry in the leaf */
-	int nsplits;          /**< Number of nodes requiring splits for an insert */
-	int match;            /**< Return code of the search */
-	int nmatches;         /**< Number of matched keys so far */
-	int nloops;           /**< Number of full iterations */
-	bool haskey;          /**< Mark if the cursor started with a find key */
-	bool caninsert;       /**< Mark if the cursor either started as, or has become, read-only */
-	void *scratch;        /**< New entry content */
-	EdBptApply apply;     /**< Replace, insert, or delete entry */
+	EdNode *     head;             /**< First node searched */
+	EdNode *     tail;             /**< Current tail node */
+	EdPgno *     root;             /**< Pointer to page number of root node */
+	uint64_t     key;              /**< Key searched for */
+	void *       start;            /**< Pointer to the first entry */
+	void *       entry;            /**< Pointer to the entry in the leaf */
+	size_t       entry_size;       /**< Size in bytes of the entry */
+	uint32_t     entry_index;      /**< Index of the entry in the leaf */
+	int          nsplits;          /**< Number of nodes requiring splits for an insert */
+	int          match;            /**< Return code of the search */
+	int          nmatches;         /**< Number of matched keys so far */
+	int          nloops;           /**< Number of full iterations */
+	bool         haskey;           /**< Mark if the cursor started with a find key */
+	bool         caninsert;        /**< Mark if the cursor either started as, or has become, read-only */
+	void *       scratch;          /**< New entry content */
+	EdBptApply   apply;            /**< Replace, insert, or delete entry */
 };
 
 /**
  * @brief  Base type for transactional objects
  */
 struct EdTxnType {
-	EdAlloc   alloc;       /**< Page allocator */
-	EdLck     lck;         /**< Write lock */
-	EdTxnId  *gxid;        /**< Reference global to transaction id */
-	EdConn   *conns;       /**< Reference to connection array */
-	int       nconns;      /**< Total number of connections in the array */
-	int       conn;        /**< Index into the array for the current connection */
+	EdAlloc      alloc;            /**< Page allocator */
+	EdLck        lck;              /**< Write lock */
+	EdTxnId *    gxid;             /**< Reference global to transaction id */
+	EdConn *     conns;            /**< Reference to connection array */
+	int          nconns;           /**< Total number of connections in the array */
+	int          conn;             /**< Index into the array for the current connection */
 };
 
 /**
@@ -520,24 +529,31 @@ struct EdTxnType {
  * used for multiple transactions agains the same database set.
  */
 struct EdTxn {
-	EdTxnType *xtype;     /**< Transaction type inforation */
-	EdPg **pg;            /**< Array to hold allocated pages */
-	unsigned npg;         /**< Number of pages allocated */
-	unsigned npgused;     /**< Number of pages used */
-	EdTxnNode *nodes;     /**< Linked list of node arrays */
-	EdTxnId xid;          /**< Transaction ID or 0 for read-only */
-	uint64_t cflags;      /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
-	bool isrdonly;        /**< Was #ed_txn_open() called with #ED_FRDONLY */
-	bool isopen;          /**< Has #ed_txn_open() been called */
-	unsigned ndb;         /**< Number of search objects */
-	EdTxnDb db[1];        /**< Flexible array of #EdTxnDb values */
+	EdTxnType *  xtype;            /**< Transaction type inforation */
+	EdPg **      pg;               /**< Array to hold allocated pages */
+	unsigned     npg;              /**< Number of pages allocated */
+	unsigned     npgused;          /**< Number of pages used */
+	EdTxnNode *  nodes;            /**< Linked list of node arrays */
+	EdTxnId      xid;              /**< Transaction ID or 0 for read-only */
+	uint64_t     cflags;           /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
+	bool         isrdonly;         /**< Was #ed_txn_open() called with #ED_FRDONLY */
+	bool         isopen;           /**< Has #ed_txn_open() been called */
+	unsigned     ndb;              /**< Number of search objects */
+	EdTxnDb      db[1];            /**< Flexible array of #EdTxnDb values */
 };
 
+/**
+ * @brief  Contiguous allocation of node wrappers
+ *
+ * Each allocation is created with a specific number of nodes. When exhausted,
+ * a new, larger allocation is created and pushed as the head of a linked-list.
+ * In contrast with realloc-style growth, this keeps prior node pointers valid.
+ */
 struct EdTxnNode {
-	EdTxnNode *next;      /**< Next chunk of nodes */
-	unsigned nnodes;      /**< Length of node array */
-	unsigned nnodesused;  /**< Number of nodes used */
-	EdNode nodes[1];    /**< Flexible array of node wrapped pages */
+	EdTxnNode *  next;             /**< Next chunk of nodes */
+	unsigned     nnodes;           /**< Length of node array */
+	unsigned     nnodesused;       /**< Number of nodes used */
+	EdNode       nodes[1];         /**< Flexible array of node wrapped pages */
 };
 
 /**
@@ -878,84 +894,103 @@ ed_power2(unsigned p)
 #define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeKey))
 
 struct EdCache {
-	EdIdx idx;
-	atomic_int ref;
-	int fd;
-	size_t bytes_used;
-	size_t blocks_used;
+	EdIdx        idx;
+	atomic_int   ref;
+	int          fd;
+	size_t       bytes_used;
+	size_t       blocks_used;
 };
 
 struct EdObject {
-	EdCache *cache;
-	time_t expiry;
-	const void *data;
-	const void *key;
-	const void *meta;
-	uint16_t keylen;
-	uint16_t metalen;
-	uint32_t datalen;
+	EdCache *    cache;
+	time_t       expiry;
+	const void * data;
+	const void * key;
+	const void * meta;
+	uint16_t     keylen;
+	uint16_t     metalen;
+	uint32_t     datalen;
 	EdObjectHdr *hdr;
 };
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic error "-Wpadded"
 
+/**
+ * @brief  Base type for all page object
+ */
 struct EdPg {
-	EdPgno no;
-	uint32_t type;
+	EdPgno       no;               /**< Page offset from the start of the containing file */
+	uint32_t     type;             /**< Type marker for the page */
 };
 
+/**
+ * @brief  Page type for an array of free pages
+ *
+ * If the type of the page is #ED_PG_FREE_CHLD, then the first page in #pages
+ * is the next #EdPgFree object.
+ */
 struct EdPgFree {
-	EdPg base;
-	EdPgno count;
-	EdPgno pages[ED_PG_FREE_COUNT];
+	EdPg         base;             /**< Page number and type */
+	EdPgno       count;            /**< Number of entries in #pages */
+	EdPgno       pages[ED_PG_NFREE]; /**< Array of free page numbers */
 };
 
 /**
  * @brief  Linked list of pages pending reclamation
  */
 struct EdPgGc {
-	EdPg         base;   /**< Page number and type */
-	EdPgno       next;   /**< Linked list of furthur gc pages */
-	uint16_t     head;   /**< Data offset for the first active list object */
-	uint16_t     tail;   /**< Data offset for the last list object */
-	uint16_t     remain; /**< Data space after the last list object */
-	uint16_t     nlists; /**< Number of list objects in this page */
-	uint16_t     npages; /**< Number of pages across all list objects in page */
+	EdPg         base;             /**< Page number and type */
+	EdPgno       next;             /**< Linked list of furthur gc pages */
+	uint16_t     head;             /**< Data offset for the first active list object */
+	uint16_t     tail;             /**< Data offset for the last list object */
+	uint16_t     remain;           /**< Data space after the last list object */
+	uint16_t     nlists;           /**< Number of list objects in this page */
+	uint16_t     npages;           /**< Number of pages across all list objects in page */
 	uint8_t      _pad[2];
-#define ED_PG_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 12)
-	uint8_t      data[ED_PG_GC_DATA];
+#define ED_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 12)
+	uint8_t      data[ED_GC_DATA]; /**< Array for #EdPgGcList values */
 };
 
 /**
  * @brief  Flexible array of pages removed from a given transaction
  */
 struct EdPgGcList {
-	EdTxnId  xid;      /**< Transaction id that freed these pages */
-	EdPgno   npages;   /**< Number of pages in the array, or UINT32_MAX for the next list */
-	EdPgno   pages[1]; /**< Flexible array of the pages to free */
+	EdTxnId      xid;              /**< Transaction id that freed these pages */
+	EdPgno       npages;           /**< Number of pages in the array, or UINT32_MAX for the next list */
+	EdPgno       pages[1];         /**< Flexible array of the pages to free */
 };
 
 /** Maximum number of pages for a list in a new gc page */
-#define ED_PG_GC_LIST_MAX ((ED_PG_GC_DATA - sizeof(EdPgGcList)) / sizeof(EdPgno) + 1)
+#define ED_GC_LIST_MAX ((ED_GC_DATA - sizeof(EdPgGcList)) / sizeof(EdPgno) + 1)
 
+/**
+ * @brief  End-of-file free page information
+ */
 struct EdAllocTail {
-	EdPgno start;
-	EdPgno off;
+	EdPgno       start;            /**< Page number for the start of the tail pages */
+	EdPgno       off;              /**< Current offset from #start */
 };
 
+/**
+ * @brief  On-disk value for the page allocator
+ */
 struct EdAllocHdr {
-	uint32_t size_page;
-	EdPgno free_list;
-	_Atomic EdAllocTail tail;
+	uint32_t     size_page;        /**< Saved system page size in bytes */
+	EdPgno       free_list;        /**< Head page in the list of free pages */
+	_Atomic
+	EdAllocTail  tail;             /**< Tail allocation status */
 	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
 	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
 };
 
+/**
+ * @brief  Connection handle for each active process
+ */
 struct EdConn {
-	int pid;
-	int _pad;
-	EdTxnId xid;
+	int          pid;              /**< Process ID */
+	EdTime       active;           /**< Optional time of last activity */
+	EdTxnId      xid;              /**< Active read transaction id */
 };
 
 /**
@@ -985,10 +1020,13 @@ struct EdIdxHdr {
 	EdConn       conns[1];         /**< Flexible array of active process connections */
 };
 
+/**
+ * @brief  On-disk value for an entry in the slab
+ */
 struct EdObjectHdr {
-	uint16_t keylen;
-	uint16_t metalen;
-	uint32_t datalen;
+	uint16_t     keylen;           /**< Number of bytes for the key */
+	uint16_t     metalen;          /**< Number of bytes for the metadata */
+	uint32_t     datalen;          /**< Number of bytes for the data */
 };
 
 /**
@@ -1021,26 +1059,32 @@ struct EdObjectHdr {
  * start with a 64-bit key.
  */
 struct EdBpt {
-	EdPg     base;              /**< Page number and type */
-	EdTxnId  xid;               /**< Transaction ID that allocated this page */
-	EdPgno   next;              /**< Overflow leaf pointer */
-	uint16_t nkeys;             /**< Number of keys in the node */
-	uint8_t  _pad[2];
+	EdPg         base;             /**< Page number and type */
+	EdTxnId      xid;              /**< Transaction ID that allocated this page */
+	EdPgno       next;             /**< Overflow leaf pointer */
+	uint16_t     nkeys;            /**< Number of keys in the node */
+	uint8_t      _pad[2];
 #define ED_BPT_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdTxnId) - sizeof(EdPgno) - 4)
-	uint8_t  data[ED_BPT_DATA]; /**< Tree-specific data for nodes (8-byte aligned) */
+	uint8_t      data[ED_BPT_DATA];/**< Tree-specific data for nodes (8-byte aligned) */
 };
 
+/**
+ * @brief  B+Tree value type for indexing the slab by position
+ */
 struct EdNodeBlock {
-	EdBlkno block; // XXX last block of the entry?
-	EdPgno no;
-	uint32_t exp;
+	EdBlkno      block;            /**< Block number for the entry */ // XXX last block of the entry?
+	EdPgno       count;            /**< Number of blocks used by the entry */
+	EdTime       exp;              /**< Expiration of the entry */
 };
 
+/**
+ * @brief  B+Tree value type for indexing the slab by key
+ */
 struct EdNodeKey {
-	uint64_t hash;
-	EdBlkno no;
-	EdPgno count;
-	uint32_t exp;
+	uint64_t     hash;             /**< Hash of the key */
+	EdBlkno      no;               /**< Block number for the entry */
+	EdPgno       count;            /**< Number of blocks used by the entry */
+	EdTime       exp;              /**< Expiration of the entry */
 };
 
 #pragma GCC diagnostic pop

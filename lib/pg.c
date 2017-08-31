@@ -113,7 +113,7 @@ page_alloc_tail(EdAlloc *alloc, EdPg **p, EdPgno n)
 				// the free list.
 				EdPgFree *fs = ed_alloc_free_list(alloc);
 				if (fs != MAP_FAILED) {
-					for (; n > 0 && fs->count < ED_PG_FREE_COUNT; n--, no++) {
+					for (; n > 0 && fs->count < ED_PG_NFREE; n--, no++) {
 						fs->pages[fs->count++] = no;
 					}
 				}
@@ -281,7 +281,7 @@ ed_free(EdAlloc *alloc, EdPg **pages, EdPgno n)
 		EdPg *p = *pages;
 		if (p == NULL) { continue; }
 		// If there is space remaining, add the page to the list.
-		if (fs->count < ED_PG_FREE_COUNT) {
+		if (fs->count < ED_PG_NFREE) {
 			// This is an attempt to keep free pages in order. This slows down frees,
 			// but it can minimize the number of mmap calls during multi-page allocation
 			// from the free list.
@@ -318,7 +318,7 @@ ed_free_pgno(EdAlloc *alloc, EdPgno *pages, EdPgno n)
 		EdPgno pno = *pages;
 		if (pno == ED_PG_NONE) { continue; }
 		// If there is space remaining, add the page to the list.
-		if (fs->count < ED_PG_FREE_COUNT) {
+		if (fs->count < ED_PG_NFREE) {
 			// This is an attempt to keep free pages in order. This slows down frees,
 			// but it can minimize the number of mmap calls during multi-page allocation
 			// from the free list.
@@ -585,7 +585,7 @@ ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 
 	// Allocate all new pages in a single allocation if needed.
 	size_t used_pages = 0;
-	size_t alloc_pages = ED_COUNT_SIZE(remain, ED_PG_GC_LIST_MAX);
+	size_t alloc_pages = ED_COUNT_SIZE(remain, ED_GC_LIST_MAX);
 	EdPgGc *new[alloc_pages];
 	if (alloc_pages > 0) {
 		int rc = ed_alloc(alloc, (EdPg **)new, alloc_pages, true);
