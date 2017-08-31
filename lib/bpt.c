@@ -246,7 +246,6 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 		else {
 			rc = ed_txn_map(txn, next, node, 0, &node);
 			if (rc < 0) { goto done; }
-			leaf = node->tree;
 			dbp->tail = node;
 		}
 		p = dbp->tail->tree->data;
