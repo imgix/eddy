@@ -69,6 +69,7 @@ typedef struct EdTxnDb EdTxnDb;
 typedef struct EdTxnNode EdTxnNode;
 
 typedef struct EdConn EdConn;
+typedef struct EdConnHdr EdConnHdr;
 
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
@@ -503,10 +504,12 @@ struct EdTxnDb {
  * @brief  Base type for transactional objects
  */
 struct EdTxnType {
-	EdAlloc alloc;        /**< Page allocator */
-	EdLck lck;            /**< Write lock */
-	EdConn *conn;         /**< Process connection handle */
-	EdTxnId *gxid;        /**< Reference global to transaction id */
+	EdAlloc   alloc;       /**< Page allocator */
+	EdLck     lck;         /**< Write lock */
+	EdTxnId  *gxid;        /**< Reference global to transaction id */
+	EdConn   *conns;       /**< Reference to connection array */
+	uint16_t  nconns;      /**< Total number of connections in the array */
+	uint16_t  conn;        /**< Index into the array for the current connection */
 };
 
 /**
@@ -970,7 +973,7 @@ struct EdIdxHdr {
 	uint8_t      size_align;       /**< Size of max alignment */
 	uint8_t      alloc_count;      /**< Verification for the page growth count */
 	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
-	EdAllocHdr alloc;            /**< Page allocator */
+	EdAllocHdr   alloc;            /**< Page allocator */
 	EdTxnId      xid;              /**< Global transaction ID */
 	EdBlkno      pos;              /**< Current slab write block */
 	EdPgno       key_tree;         /**< Page pointer for the entry key b+tree */

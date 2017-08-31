@@ -18,7 +18,7 @@ static const char *path = "/tmp/eddy_test_bpt";
 typedef struct {
 	EdTxnId xid;
 	EdPgno db1, db2;
-	EdConn conn;
+	EdConn conns[3];
 } Tree;
 
 typedef struct {
@@ -82,11 +82,13 @@ start(EdTxn **txn, Tree **tree, int n)
 		t->db2 = ED_PG_NONE;
 	}
 
-	t->conn.pid = getpid();
-	t->conn.xid = 0;
+	t->conns[0].pid = getpid();
+	t->conns[0].xid = 0;
 
-	xtype.conn = &t->conn;
 	xtype.gxid = &t->xid;
+	xtype.conns = t->conns;
+	xtype.nconns = ed_len(t->conns);
+	xtype.conn = 0;
 
 	EdTxnRef ref[] = {
 		{ &t->db1, sizeof(Entry) },

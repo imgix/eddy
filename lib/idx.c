@@ -282,7 +282,9 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	ed_alloc_init(&idx->xtype.alloc, &hdr->alloc, fd, f);
 	idx->xtype.alloc.free = free_list;
 	idx->xtype.gxid = &hdr->xid;
-	idx->xtype.conn = hdr->conns + cix;
+	idx->xtype.conns = hdr->conns;
+	idx->xtype.nconns = hdr->nconns;
+	idx->xtype.conn = cix;
 	idx->flags = f;
 	idx->seed = hdr->seed;
 	idx->epoch = hdr->epoch;
@@ -319,7 +321,7 @@ ed_idx_close(EdIdx *idx)
 	if (idx == NULL) { return; }
 	ed_alloc_close(&idx->xtype.alloc);
 	ed_txn_close(&idx->txn, idx->flags);
-	conn_release(idx->hdr, idx->xtype.conn - idx->hdr->conns, idx->xtype.alloc.fd);
+	conn_release(idx->hdr, idx->xtype.conn, idx->xtype.alloc.fd);
 	ed_lck_final(&idx->xtype.lck);
 	ed_pg_unmap(idx->hdr, PG_NHDR(idx->hdr->nconns));
 	idx->hdr = NULL;
