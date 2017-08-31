@@ -508,8 +508,8 @@ struct EdTxnType {
 	EdLck     lck;         /**< Write lock */
 	EdTxnId  *gxid;        /**< Reference global to transaction id */
 	EdConn   *conns;       /**< Reference to connection array */
-	uint16_t  nconns;      /**< Total number of connections in the array */
-	uint16_t  conn;        /**< Index into the array for the current connection */
+	int       nconns;      /**< Total number of connections in the array */
+	int       conn;        /**< Index into the array for the current connection */
 };
 
 /**

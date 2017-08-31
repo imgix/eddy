@@ -180,8 +180,9 @@ conn_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
  * @param  fd  An open file descriptor to the file containing #hdr
  */
 static void
-conn_release(EdIdxHdr *hdr, uint16_t i, int fd)
+conn_release(EdIdxHdr *hdr, int i, int fd)
 {
+	if (i < 0) { return; }
 	memset(&hdr->conns[i], 0, sizeof(*hdr->conns));
 	ed_flck(fd, ED_LCK_UN,
 			offsetof(EdIdxHdr, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
@@ -193,7 +194,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 {
 	EdIdxHdr *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
-	int fd = -1, sfd = -1, rc = 0;
+	int fd = -1, sfd = -1, rc = 0, cix = -1;
 	uint64_t flags = cfg->flags;
 	unsigned nconns = cfg->max_conns;
 	if (nconns == 0) { nconns = hdrnew.nconns; }
@@ -271,7 +272,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	}
 	if (rc < 0) { goto error; }
 
-	int cix = conn_acquire(hdr, fd, 15);
+	cix = conn_acquire(hdr, fd, 15);
 	if (cix < 0) {
 		rc = cix;
 		goto error;
