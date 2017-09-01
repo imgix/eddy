@@ -26,6 +26,7 @@
 #define ED_FNOTLCK       UINT64_C(0x0000080000000000) /** Disable thread locking. */
 #define ED_FNOBLOCK      UINT64_C(0x0000100000000000) /** May return EAGAIN for open or create. */
 #define ED_FRDONLY       UINT64_C(0x0000200000000000) /** The operation does not need to write. */
+#define ED_FNOVACUUM     UINT64_C(0x0000400000000000) /** Disable fair vacuum for writers. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /** Reset the transaction when closing. */
 
 #define ED_FSTAT_EXTEND  (1<<0) /** Perform an extended status check. */

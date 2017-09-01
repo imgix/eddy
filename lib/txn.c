@@ -46,6 +46,7 @@ static EdNode *
 node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 {
 	assert(txn->nodes->nnodesused < txn->nodes->nnodes);
+	assert(pg != NULL);
 
 	EdNode *n = &txn->nodes->nodes[txn->nodes->nnodesused++];
 	n->page = pg;
@@ -53,6 +54,34 @@ node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 	n->pindex = pidx;
 	n->tree->xid = txn->xid;
 	return n;
+}
+
+/**
+ * @brief  Gets the minimum active transaction id
+ */
+static EdTxnId
+get_min_xid(EdTxnType *xtype, EdTxnId xmin, EdTime tmin)
+{
+	EdConn *c = xtype->conns;
+	int nconns = xtype->nconns;
+	int conn = xtype->conn;
+	EdTxnId xid = *xtype->gxid;
+
+	for (int i = 0; i < nconns; i++, c++) {
+		if (i == conn || c->pid == 0 || c->xid == 0) { continue; }
+		if (c->xid < xmin || (tmin > 0 && c->active > 0 && tmin < c->active)) {
+			printf("TODO trylock\n");
+#if 0
+			if (lock() == 0) {
+				memset(c, 0, sizeof(*c));
+				unlock();
+				continue;
+			}
+#endif
+		}
+		if (c->xid < xid) { xid = c->xid; }
+	}
+	return xid;
 }
 
 int
@@ -115,7 +144,12 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 {
 	if (txn == NULL || txn->isopen) { return ed_esys(EINVAL); }
 	bool rdonly = flags & ED_FRDONLY;
-	if (!rdonly) {
+	if (rdonly) {
+		EdConn *conn = &txn->xtype->conns[txn->xtype->conn];
+		conn->xid = *txn->xtype->gxid;
+		conn->active = ed_time_from_unix(txn->xtype->epoch, ed_now_unix());
+	}
+	else {
 		int rc = ed_lck(&txn->xtype->lck, txn->xtype->alloc.fd, ED_LCK_EX, flags);
 		if (rc < 0) { return rc; }
 		txn->xid = *txn->xtype->gxid + 1;
@@ -173,11 +207,25 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	ed_free(&txn->xtype->alloc, txn->pg+txn->npgused, txn->npg-txn->npgused);
 	free(txn->pg);
 
-	if (txn->isopen && !txn->isrdonly) {
-		if (!(flags & ED_FNOSYNC)) {
-			fsync(txn->xtype->alloc.fd);
+	if (txn->isopen) {
+		EdTime t = ed_time_from_unix(txn->xtype->epoch, ed_now_unix());
+
+		if (txn->isrdonly) {
+			EdConn *conn = &txn->xtype->conns[txn->xtype->conn];
+			conn->xid = 0;
+			conn->active = t;
 		}
-		ed_lck(&txn->xtype->lck, txn->xtype->alloc.fd, ED_LCK_UN, flags);
+		else {
+			if (!(flags & ED_FNOVACUUM)) {
+				EdTxnId xmin = *txn->xtype->gxid > 16 ? *txn->xtype->gxid - 16 : 0;
+				EdTxnId xid = get_min_xid(txn->xtype, xmin, t - 10);
+				ed_gc_run(&txn->xtype->alloc, xid, 2);
+			}
+			if (!(flags & ED_FNOSYNC)) {
+				fsync(txn->xtype->alloc.fd);
+			}
+			ed_lck(&txn->xtype->lck, txn->xtype->alloc.fd, ED_LCK_UN, flags);
+		}
 	}
 
 	EdPg *heads[ED_TXN_MAX_REF];
