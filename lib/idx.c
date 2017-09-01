@@ -290,8 +290,6 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	idx->flags = f;
 	idx->seed = hdr->seed;
 	idx->hdr = hdr;
-	idx->keys = NULL;
-	idx->blocks = NULL;
 	idx->txn = NULL;
 
 	EdTxnRef ref[] = {

@@ -671,8 +671,6 @@ struct EdIdx {
 	uint64_t     flags;            /**< Open flags merged with the saved flags */
 	uint64_t     seed;             /**< Seed pulled from the index header */
 	EdIdxHdr *   hdr;              /**< Index header reference */
-	EdBpt *      blocks;           /**< Mapped b+tree for the slab blocks */
-	EdBpt *      keys;             /**< Mapped b+tree for the entry keys */
 	EdTxn *      txn;              /**< Cached transaction object */
 };
 
