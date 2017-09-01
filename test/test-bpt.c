@@ -640,13 +640,13 @@ test_multi(void)
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
 		if (i % 3 == 0) {
 			Entry ent2 = { .key = rand_r(&seed) };
 			snprintf(ent2.name, sizeof(ent2.name), "b%u", i);
 			mu_assert_int_eq(ed_bpt_find(txn, 1, ent2.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 1, &ent2, false), 1);
 		}
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
