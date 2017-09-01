@@ -2,10 +2,10 @@
 
 _Static_assert(sizeof(EdIdxHdr) <= PAGESIZE,
 		"EdIdxHdr too big");
-_Static_assert(sizeof(EdBpt) + ED_NODE_BLOCK_COUNT*sizeof(EdNodeBlock) <= PAGESIZE,
+_Static_assert(sizeof(EdBpt) + ED_ENTRY_BLOCK_COUNT*sizeof(EdEntryBlock) <= PAGESIZE,
 		"ED_PAGE_BLOCK_COUNT is too high");
-_Static_assert(sizeof(EdBpt) + ED_NODE_KEY_COUNT*sizeof(EdNodeKey) <= PAGESIZE,
-		"ED_NODE_KEY_COUNT is too high");
+_Static_assert(sizeof(EdBpt) + ED_ENTRY_KEY_COUNT*sizeof(EdEntryKey) <= PAGESIZE,
+		"ED_ENTRY_KEY_COUNT is too high");
 
 #define BITMASK(b) (1 << ((b) % 8))
 #define BITSLOT(b) ((b) / 8)
@@ -295,8 +295,8 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	idx->txn = NULL;
 
 	EdTxnRef ref[] = {
-		{ &hdr->key_tree, sizeof(EdNodeKey) },
-		{ &hdr->block_tree, sizeof(EdNodeBlock) },
+		{ &hdr->key_tree, sizeof(EdEntryKey) },
+		{ &hdr->block_tree, sizeof(EdEntryBlock) },
 	};
 
 	rc = ed_txn_new(&idx->txn, &idx->xtype, ref, ed_len(ref));
@@ -349,7 +349,7 @@ ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 	int rc = ed_txn_open(idx->txn, idx->flags|ED_FRDONLY);
 	if (rc < 0) { return rc; }
 
-	EdNodeKey *nkey;
+	EdEntryKey *nkey;
 	rc = ed_bpt_find(idx->txn, 0, h, (void **)&nkey);
 	for (; rc == 1; rc = ed_bpt_next(idx->txn, 0, (void **)&nkey)) {
 		if (!ed_expired_at(idx->xtype.epoch, nkey->exp, now)) {

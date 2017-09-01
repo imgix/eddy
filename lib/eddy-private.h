@@ -74,8 +74,8 @@ typedef struct EdConnHdr EdConnHdr;
 typedef struct EdIdx EdIdx;
 typedef struct EdIdxHdr EdIdxHdr;
 
-typedef struct EdNodeBlock EdNodeBlock;
-typedef struct EdNodeKey EdNodeKey;
+typedef struct EdEntryBlock EdEntryBlock;
+typedef struct EdEntryKey EdEntryKey;
 typedef struct EdObjectHdr EdObjectHdr;
 
 
@@ -485,7 +485,7 @@ struct EdTxnRef {
 struct EdTxnDb {
 	EdNode *     head;             /**< First node searched */
 	EdNode *     tail;             /**< Current tail node */
-	EdPgno *     root;             /**< Pointer to page number of root node */
+	EdPgno *     no;               /**< Pointer to page number of root node */
 	uint64_t     key;              /**< Key searched for */
 	void *       start;            /**< Pointer to the first entry */
 	void *       entry;            /**< Pointer to the entry in the leaf */
@@ -880,8 +880,8 @@ ed_power2(unsigned p)
 
 
 
-#define ED_NODE_BLOCK_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeBlock))
-#define ED_NODE_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdNodeKey))
+#define ED_ENTRY_BLOCK_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdEntryBlock))
+#define ED_ENTRY_KEY_COUNT ((PAGESIZE - sizeof(EdBpt)) / sizeof(EdEntryKey))
 
 struct EdCache {
 	EdIdx        idx;
@@ -1070,7 +1070,7 @@ struct EdBpt {
 /**
  * @brief  B+Tree value type for indexing the slab by position
  */
-struct EdNodeBlock {
+struct EdEntryBlock {
 	EdBlkno      block;            /**< Block number for the entry */ // XXX last block of the entry?
 	EdPgno       count;            /**< Number of blocks used by the entry */
 	EdTime       exp;              /**< Expiration of the entry */
@@ -1079,7 +1079,7 @@ struct EdNodeBlock {
 /**
  * @brief  B+Tree value type for indexing the slab by key
  */
-struct EdNodeKey {
+struct EdEntryKey {
 	uint64_t     hash;             /**< Hash of the key */
 	EdBlkno      no;               /**< Block number for the entry */
 	EdPgno       count;            /**< Number of blocks used by the entry */

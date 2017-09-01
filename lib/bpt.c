@@ -505,8 +505,8 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 	if (dbp->entry_index == 0 && leaf->parent != NULL) {
 		branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(p));
 	}
-	if (*dbp->root != dbp->head->page->no) {
-		*dbp->root = dbp->head->page->no;
+	if (*dbp->no != dbp->head->page->no) {
+		*dbp->no = dbp->head->page->no;
 	}
 	dbp->nsplits = 0;
 	dbp->match = 1;

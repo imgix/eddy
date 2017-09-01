@@ -117,7 +117,7 @@ ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref)
 				(txn->db[i].head->page->type == ED_PG_BRANCH || txn->db[i].head->page->type == ED_PG_LEAF));
 			txn->db[i].tail = txn->db[i].head;
 		}
-		txn->db[i].root = no;
+		txn->db[i].no = no;
 		txn->db[i].entry_size = ref[i].entry_size;
 		txn->ndb++;
 	}
@@ -161,10 +161,16 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 		return ed_esys(EINVAL);
 	}
 
+	// FIXME: this needs to be atomic
+	// Possibly move page numbers to a sequential array. That way, 1, 2, and 4 way
+	// transactions can use lock;cmpxchg.
 	for (unsigned i = 0; i < txn->ndb; i++) {
 		EdNode *head = txn->db[i].head;
-		*txn->db[i].root = head && head->page ? head->page->no : ED_PG_NONE;
+		*txn->db[i].no = head && head->page ? head->page->no : ED_PG_NONE;
 	}
+
+	// Updating the tree pages first means a reader could hold an xid that is
+	// older than the committed tree pages. This is still a valid state, however.
 	*txn->xtype->gxid = txn->xid;
 
 	ed_txn_close(txnp, flags);
@@ -202,6 +208,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 
+	// If reseting for reuse, stash the mapped heads so they don't get unmapped.
 	EdPg *heads[ED_TXN_MAX_REF];
 	if (flags & ED_FRESET) {
 		for (unsigned i = 0; i < txn->ndb; i++) {
@@ -225,6 +232,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 		EdTxnNode *next = node->next;
 		if (next == NULL) {
+			// The first node array is allocated with the txn, so don't free.
 			txn->nodes = node;
 			break;
 		}
@@ -240,8 +248,8 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		txn->isopen = false;
 		for (unsigned i = 0; i < txn->ndb; i++) {
 			EdTxnDb *dbp = &txn->db[i];
-			dbp->tail = dbp->head = heads[i] ?
-				node_wrap(txn, heads[i], NULL, 0) : NULL;
+			// Restore the stashed mapped head page.
+			dbp->tail = dbp->head = heads[i] ? node_wrap(txn, heads[i], NULL, 0) : NULL;
 			dbp->key = 0;
 			dbp->start = NULL;
 			dbp->entry = NULL;
