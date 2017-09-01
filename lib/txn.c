@@ -96,14 +96,9 @@ ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref)
 	EdTxn *txn;
 	size_t sztx = sizeof(*txn) + (nref-1)*sizeof(txn->db[0]);
 	size_t sznodes = node_size(nnodes);
-
-	size_t szscratch = 0;
-	for (unsigned i = 0; i < nref; i++) { szscratch += ed_align_max(ref[i].entry_size); }
-
 	size_t offnodes = ed_align_max(sztx);
-	size_t offscratch = ed_align_max(offnodes + sznodes);
 
-	if ((txn = calloc(1, offscratch + szscratch)) == NULL) {
+	if ((txn = calloc(1, offnodes + sznodes)) == NULL) {
 		rc = ED_ERRNO;
 		goto error;
 	}
@@ -112,7 +107,6 @@ ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref)
 	txn->nodes = (EdTxnNode *)((uint8_t *)txn + offnodes);
 	txn->nodes->nnodes = nnodes;
 
-	uint8_t *scratch = (uint8_t *)txn + offscratch;
 	for (unsigned i = 0; i < nref; i++) {
 		EdPgno *no = ref[i].no;
 		if (no == NULL) { rc = ed_esys(EINVAL); break; }
@@ -124,10 +118,8 @@ ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref)
 			txn->db[i].tail = txn->db[i].head;
 		}
 		txn->db[i].root = no;
-		txn->db[i].scratch = scratch;
 		txn->db[i].entry_size = ref[i].entry_size;
 		txn->ndb++;
-		scratch += ed_align_max(ref[i].entry_size);
 	}
 
 	if (rc < 0) { goto error; }
@@ -164,37 +156,19 @@ int
 ed_txn_commit(EdTxn **txnp, uint64_t flags)
 {
 	EdTxn *txn = *txnp;
-	if (txn == NULL || !txn->isopen || txn->isrdonly) { return ed_esys(EINVAL); }
-
-	int rc = 0;
-	unsigned npg = 0;
-	for (unsigned i = 0; i < txn->ndb; i++) {
-		if (txn->db[i].apply == ED_BPT_INSERT) { npg += txn->db[i].nsplits; }
-	}
-	unsigned avail = txn->nodes->nnodes - txn->nodes->nnodesused;
-	if (npg > avail) {
-		rc = node_alloc(&txn->nodes, txn->nodes->nnodesused + npg);
-		if (rc < 0) { goto done; }
-	}
-	if (npg > 0) {
-		if ((txn->pg = calloc(npg, sizeof(txn->pg[0]))) == NULL) {
-			rc = ED_ERRNO;
-			goto done;
-		}
-		rc = ed_alloc(&txn->xtype->alloc, txn->pg, npg, true);
-		if (rc < 0) { goto done; }
-		txn->npg = npg;
-		rc = 0;
+	if (txn == NULL || !txn->isopen || txn->isrdonly) {
+		ed_txn_close(txnp, flags);
+		return ed_esys(EINVAL);
 	}
 
 	for (unsigned i = 0; i < txn->ndb; i++) {
-		ed_bpt_apply(txn, i, txn->db[i].scratch, txn->db[i].apply);
+		EdNode *head = txn->db[i].head;
+		*txn->db[i].root = head && head->page ? head->page->no : ED_PG_NONE;
 	}
 	*txn->xtype->gxid = txn->xid;
 
-done:
 	ed_txn_close(txnp, flags);
-	return rc;
+	return 0;
 }
 
 void
@@ -275,7 +249,6 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			dbp->nsplits = 0;
 			dbp->match = 0;
 			dbp->nmatches = 0;
-			dbp->apply = ED_BPT_NONE;
 		}
 	}
 	else {
@@ -307,17 +280,43 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 	return 0;
 }
 
-EdNode *
-ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx)
+int
+ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 {
-	if (txn->npg == txn->npgused || txn->nodes->nnodesused == txn->nodes->nnodes) {
-		fprintf(stderr, "*** too few pages allocated for transaction (%u)\n", txn->npg);
-#if ED_BACKTRACE
-		ed_backtrace_print(NULL, 0, stderr);
-#endif
-		abort();
+	unsigned npg = txn->npg;
+	bool alloc;
+	if (npg == 0) {
+		for (unsigned i = 0; i < txn->ndb; i++) {
+			npg += txn->db[i].nsplits;
+			/*
+			for (EdNode *node = txn->db[i].tail; node; node = node->parent) {
+				npg++;
+			}
+			*/
+		}
+		if ((txn->pg = calloc(npg, sizeof(txn->pg[0]))) == NULL) {
+			return ED_ERRNO;
+		}
+		alloc = true;
+		txn->npg = npg;
 	}
-	return node_wrap(txn, txn->pg[txn->npgused++], par, pidx);
+	else {
+		alloc = npg == txn->npgused;
+	}
+
+	if (alloc) {
+		int rc = ed_alloc(&txn->xtype->alloc, txn->pg, npg, true);
+		if (rc < 0) { return rc; }
+		txn->npgused = 0;
+	}
+
+	if (txn->nodes == NULL || txn->nodes->nnodesused == txn->nodes->nnodes) {
+		int rc = node_alloc(&txn->nodes, txn->nodes ? txn->nodes->nnodes + 1 : npg);
+		if (rc < 0) { return rc; }
+	}
+
+	*out = node_wrap(txn, txn->pg[txn->npgused++], par, pidx);
+	return 0;
 }
 
 EdTxnDb *
@@ -332,7 +331,6 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset)
 		dbp->nsplits = 0;
 		dbp->match = 0;
 		dbp->nmatches = 0;
-		dbp->apply = ED_BPT_NONE;
 	}
 	return dbp;
 }

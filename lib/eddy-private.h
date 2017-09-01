@@ -430,13 +430,6 @@ struct EdNode {
 	uint16_t        pindex;           /**< Index of page in the parent */
 };
 
-typedef enum EdBptApply {
-	ED_BPT_NONE,
-	ED_BPT_INSERT,
-	ED_BPT_REPLACE,
-	ED_BPT_DELETE
-} EdBptApply;
-
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
 
 ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
@@ -446,7 +439,6 @@ ED_LOCAL      int ed_bpt_next(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_loop(const EdTxn *txn, unsigned db);
 ED_LOCAL      int ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace);
 ED_LOCAL      int ed_bpt_del(EdTxn *txn, unsigned db);
-ED_LOCAL     void ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply);
 ED_LOCAL     void ed_bpt_print(EdBpt *, int fd, size_t esize, FILE *, EdBptPrint);
 ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 
@@ -505,8 +497,6 @@ struct EdTxnDb {
 	int          nloops;           /**< Number of full iterations */
 	bool         haskey;           /**< Mark if the cursor started with a find key */
 	bool         caninsert;        /**< Mark if the cursor either started as, or has become, read-only */
-	void *       scratch;          /**< New entry content */
-	EdBptApply   apply;            /**< Replace, insert, or delete entry */
 };
 
 /**
@@ -654,8 +644,8 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out);
  * @param  pidx  Index of the page in the parent
  * @return  Node object
  */
-ED_LOCAL EdNode *
-ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx);
+ED_LOCAL int
+ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out);
 
 /**
  * @brief  Gets the #EdTxnDb object for the numbered database

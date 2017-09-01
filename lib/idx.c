@@ -155,7 +155,7 @@ conn_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
 	for (int x = 0; x < 2; x++, all = true) {
 		EdConn *c = hdr->conns;
 		for (int i = 0; i < nconns; i++, c++) {
-			if (!all && c->pid > 0 && (c->xid >= xmin || c->xid == 0)) { continue; }
+			if (!all && c->pid > 0 && (c->xid == 0 || c->xid >= xmin)) { continue; }
 			rc = ed_flck(fd, ED_LCK_EX,
 					offsetof(EdIdxHdr, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
 					ED_FNOBLOCK);
@@ -272,7 +272,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	}
 	if (rc < 0) { goto error; }
 
-	cix = conn_acquire(hdr, fd, 15);
+	cix = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0);
 	if (cix < 0) {
 		rc = cix;
 		goto error;

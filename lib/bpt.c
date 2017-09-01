@@ -283,39 +283,6 @@ ed_bpt_loop(const EdTxn *txn, unsigned db)
 	return txn->db[db].nloops;
 }
 
-int
-ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
-{
-	if (txn->isrdonly) { return ED_EINDEX_RDONLY; }
-	EdTxnDb *dbp = ed_txn_db(txn, db, false);
-	if (!dbp->caninsert) { return ED_EINDEX_RDONLY; }
-	if (!dbp->haskey || ed_fetch64(ent) != dbp->key) { return ED_EINDEX_KEY_MATCH; }
-	memcpy(dbp->scratch, ent, dbp->entry_size);
-	if (replace && dbp->match == 1) {
-		dbp->apply = ED_BPT_REPLACE;
-		return 0;
-	}
-	else {
-		dbp->apply = ED_BPT_INSERT;
-		return 1;
-	}
-}
-
-int
-ed_bpt_del(EdTxn *txn, unsigned db)
-{
-	if (txn->isrdonly) { return ED_EINDEX_RDONLY; }
-	EdTxnDb *dbp = ed_txn_db(txn, db, false);
-	if (dbp->match == 1) {
-		dbp->apply = ED_BPT_DELETE;
-		return 1;
-	}
-	else {
-		dbp->apply = ED_BPT_NONE;
-		return 0;
-	}
-}
-
 static void
 insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdNode *left, EdNode *right, uint64_t rkey)
 {
@@ -323,11 +290,13 @@ insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdNode *left, EdNode *right, uint64
 	EdBpt *p;
 	EdPgno r = right->tree->base.no;
 	size_t pos;
+	int rc;
 
 	// No parent, so create new root node.
 	if (parent == NULL) {
 		// Initialize new parent node from the allocation array.
-		parent = ed_txn_alloc(txn, NULL, 0);
+		rc = ed_txn_alloc(txn, NULL, 0, &parent);
+		assert(rc >= 0); // FIXME
 		dbp->head = parent;
 		p = parent->tree;
 		p->base.type = ED_PG_BRANCH;
@@ -353,7 +322,9 @@ insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdNode *left, EdNode *right, uint64
 			size_t off = mid * BRANCH_ENTRY_SIZE;
 			uint64_t rbkey = branch_key(p, mid);
 
-			EdNode *leftb = parent, *rightb = ed_txn_alloc(txn, leftb->parent, leftb->pindex + 1);
+			EdNode *leftb = parent, *rightb;
+			rc = ed_txn_alloc(txn, leftb->parent, leftb->pindex + 1, &rightb);
+			assert(rc >= 0); // FIXME
 
 			rightb->tree->base.type = ED_PG_BRANCH;
 			rightb->tree->next = ED_PG_NONE;
@@ -433,7 +404,8 @@ overflow_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf)
 		goto done;
 	}
 
-	node = ed_txn_alloc(txn, leaf, 0);
+	int rc = ed_txn_alloc(txn, leaf, 0, &node);
+	assert(rc >= 0); // FIXME
 	node->tree->base.type = ED_PG_OVERFLOW;
 	node->tree->next = leaf->tree->next;
 	node->tree->nkeys = 0;
@@ -460,7 +432,9 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, int mid)
 	assert(ed_fetch64(leaf->tree->data + off - esize) < rkey);
 	assert(rkey <= ed_fetch64(leaf->tree->data + off));
 
-	EdNode *left = leaf, *right = ed_txn_alloc(txn, left->parent, left->pindex + 1);
+	EdNode *left = leaf, *right;
+	int rc = ed_txn_alloc(txn, left->parent, left->pindex + 1, &right);
+	assert(rc >= 0); // FIXME
 
 	right->tree->base.type = ED_PG_LEAF;
 	right->tree->next = ED_PG_NONE;
@@ -480,79 +454,89 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, int mid)
 	return INS_SHIFT;
 }
 
-void
-ed_bpt_apply(EdTxn *txn, unsigned db, const void *ent, EdBptApply a)
+int
+ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 {
+	if (txn->isrdonly) { return ED_EINDEX_RDONLY; }
+
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
+	if (!dbp->haskey || ed_fetch64(ent) != dbp->key) { return ED_EINDEX_KEY_MATCH; }
+
+	if (replace && dbp->match == 1) {
+		memcpy(dbp->entry, ent, dbp->entry_size);
+		return 0;
+	}
+
 	EdNode *leaf = dbp->tail;
 	size_t esize = dbp->entry_size;
 	int rc = INS_SHIFT;
 
-	switch (a) {
-
-	case ED_BPT_NONE:
-		break;
-
-	case ED_BPT_INSERT:
-		// If the root was NULL, create a new root node.
-		if (leaf == NULL) {
-			leaf = ed_txn_alloc(txn, NULL, 0);
-			leaf->tree->base.type = ED_PG_LEAF;
-			leaf->tree->next = ED_PG_NONE;
-			dbp->entry = leaf->tree->data;
-			dbp->entry_index = 0;
-			dbp->head = dbp->tail = leaf;
-			rc = INS_NOSHIFT;
-		}
-		// Otherwise use the leaf from the search.
-		// If the leaf is full, it needs to be redistributed or split.
-		else if (IS_LEAF_FULL(leaf->tree, esize)) {
-			int mid = split_point(dbp, leaf->tree);
-			rc = mid < 0 ?
-				overflow_leaf(txn, dbp, leaf) :
-				split_leaf(txn, dbp, leaf, mid);
-			leaf = dbp->tail;
-		}
-
-		// Insert the new entry before the current entry position.
-		uint8_t *p = dbp->entry;
-		assert(dbp->entry_index < LEAF_ORDER(esize));
-		assert(p == leaf->tree->data + (dbp->entry_index*esize));
-
-		if (rc == INS_SHIFT) {
-			memmove(p+esize, p, (leaf->tree->nkeys - dbp->entry_index) * esize);
-		}
-		memcpy(p, ent, esize);
-		leaf->tree->nkeys++;
-		if (dbp->entry_index == 0 && leaf->parent != NULL) {
-			branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(p));
-		}
-		if (*dbp->root != dbp->head->page->no) {
-			*dbp->root = dbp->head->page->no;
-		}
-		dbp->nsplits = 0;
-		dbp->match = 1;
-		break;
-
-	case ED_BPT_REPLACE:
-		memcpy(dbp->entry, ent, dbp->entry_size);
-		break;
-
-	case ED_BPT_DELETE:
-		memmove(dbp->entry, (uint8_t *)dbp->entry + esize,
-				(leaf->tree->nkeys - dbp->entry_index - 1) * esize);
-		if (leaf->tree->nkeys == 1) {
-			// FIXME: this is terrible
-			leaf->tree->nkeys = 0;
-		}
-		else {
-			leaf->tree->nkeys--;
-			if (leaf->parent && dbp->entry_index == 0) {
-				branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(dbp->entry));
-			}
-		}
-		break;
+	// If the root was NULL, create a new root node.
+	if (leaf == NULL) {
+		rc = ed_txn_alloc(txn, NULL, 0, &leaf);
+		assert(rc >= 0); // FIXME
+		leaf->tree->base.type = ED_PG_LEAF;
+		leaf->tree->next = ED_PG_NONE;
+		dbp->entry = leaf->tree->data;
+		dbp->entry_index = 0;
+		dbp->head = dbp->tail = leaf;
+		rc = INS_NOSHIFT;
 	}
+	// Otherwise use the leaf from the search.
+	// If the leaf is full, it needs to be redistributed or split.
+	else if (IS_LEAF_FULL(leaf->tree, esize)) {
+		int mid = split_point(dbp, leaf->tree);
+		rc = mid < 0 ?
+			overflow_leaf(txn, dbp, leaf) :
+			split_leaf(txn, dbp, leaf, mid);
+		leaf = dbp->tail;
+	}
+
+	// Insert the new entry before the current entry position.
+	uint8_t *p = dbp->entry;
+	assert(dbp->entry_index < LEAF_ORDER(esize));
+	assert(p == leaf->tree->data + (dbp->entry_index*esize));
+
+	if (rc == INS_SHIFT) {
+		memmove(p+esize, p, (leaf->tree->nkeys - dbp->entry_index) * esize);
+	}
+	memcpy(p, ent, esize);
+	leaf->tree->nkeys++;
+	if (dbp->entry_index == 0 && leaf->parent != NULL) {
+		branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(p));
+	}
+	if (*dbp->root != dbp->head->page->no) {
+		*dbp->root = dbp->head->page->no;
+	}
+	dbp->nsplits = 0;
+	dbp->match = 1;
+	return 1;
+}
+
+int
+ed_bpt_del(EdTxn *txn, unsigned db)
+{
+	if (txn->isrdonly) { return ED_EINDEX_RDONLY; }
+
+	EdTxnDb *dbp = ed_txn_db(txn, db, false);
+	if (dbp->match < 1) { return 0; }
+
+	EdNode *leaf = dbp->tail;
+	size_t esize = dbp->entry_size;
+
+	memmove(dbp->entry, (uint8_t *)dbp->entry + esize,
+			(leaf->tree->nkeys - dbp->entry_index - 1) * esize);
+	if (leaf->tree->nkeys == 1) {
+		// FIXME: this is terrible
+		leaf->tree->nkeys = 0;
+	}
+	else {
+		leaf->tree->nkeys--;
+		if (leaf->parent && dbp->entry_index == 0) {
+			branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(dbp->entry));
+		}
+	}
+	return 1;
 }
 
 
