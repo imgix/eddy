@@ -13,7 +13,7 @@
 #define FRESET (FCLOSE|ED_FRESET)
 
 static EdTxnType xtype;
-static const char *path = "/tmp/eddy_test_bpt";
+static const char *path = "/tmp/eddy/test_bpt";
 
 typedef struct {
 	EdTxnId xid;
