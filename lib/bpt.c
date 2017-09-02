@@ -21,10 +21,6 @@ _Static_assert(offsetof(EdBpt, data) % 8 == 0,
 #define IS_LEAF_FULL(n, esize) ((n)->nkeys == LEAF_ORDER(esize))
 #define IS_FULL(n, esize) (IS_BRANCH(n) ? IS_BRANCH_FULL(n) : IS_LEAF_FULL(n, esize))
 
-#define INS_NONE 0
-#define INS_SHIFT 1
-#define INS_NOSHIFT 2
-
 static inline uint64_t
 branch_key(EdBpt *b, uint16_t idx)
 {
@@ -415,7 +411,7 @@ done:
 	dbp->tail = node;
 	dbp->entry = node->tree->data + esize*node->tree->nkeys;
 	dbp->entry_index = node->tree->nkeys;
-	return INS_NOSHIFT;
+	return 0;
 }
 
 static int
@@ -433,25 +429,51 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, int mid)
 	assert(rkey <= ed_fetch64(leaf->tree->data + off));
 
 	EdNode *left = leaf, *right;
-	int rc = ed_txn_alloc(txn, left->parent, left->pindex + 1, &right);
-	assert(rc >= 0); // FIXME
+	int rc = ed_txn_alloc(txn, leaf->parent, leaf->pindex + 1, &right);
+	if (rc < 0) { return rc; }
+
+	/*
+	if (leaf->tree->xid < txn->xid) {
+		rc = ed_txn_alloc(txn, leaf->parent, leaf->pindex, &left);
+		if (rc < 0) { return rc; }
+		left->tree->next = leaf->tree->next;
+		memcpy(left->tree->data, left->tree->data, off);
+	}
+	*/
 
 	right->tree->base.type = ED_PG_LEAF;
 	right->tree->next = ED_PG_NONE;
 	right->tree->nkeys = n - mid;
 	left->tree->nkeys = mid;
 
-	memcpy(right->tree->data, left->tree->data+off, sizeof(left->tree->data) - off);
-
-	if (dbp->entry_index >= (uint16_t)mid) {
-		dbp->entry_index -= mid;
-		dbp->entry = right->tree->data + dbp->entry_index*esize;
-		dbp->tail = right;
+	if (dbp->entry_index < (uint16_t)mid) {
+		dbp->tail = left;
+		// Copy entries after the mid point to new right leaf.
+		memcpy(right->tree->data, leaf->tree->data+off, sizeof(leaf->tree->data) - off);
+		// Shift entries before the mid point over in left leaf.
+		memmove(left->tree->data + (dbp->entry_index+1)*esize,
+				left->tree->data + dbp->entry_index*esize,
+				(left->tree->nkeys - dbp->entry_index) * esize);
 	}
+	else {
+		dbp->entry_index -= mid;
+		dbp->tail = right;
+		// Copy entries after the mid point but before the new index to new right leaf.
+		memcpy(right->tree->data, leaf->tree->data+off, dbp->entry_index*esize);
+		// Copy entries after the mid point and after the new index to new right leaf.
+		memcpy(right->tree->data + (dbp->entry_index+1)*esize,
+				leaf->tree->data + off + dbp->entry_index*esize,
+				(right->tree->nkeys - dbp->entry_index) * esize);
+	}
+	dbp->entry = dbp->tail->tree->data + dbp->entry_index*esize;
 
 	insert_into_parent(txn, dbp, left, right, rkey);
+	/* TODO
+	rc = insert_into_parent(txn, dbp, left, right, rkey);
+	if (rc < 0) { return rc; }
+	*/
 
-	return INS_SHIFT;
+	return 0;
 }
 
 int
@@ -469,45 +491,44 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 
 	EdNode *leaf = dbp->tail;
 	size_t esize = dbp->entry_size;
-	int rc = INS_SHIFT;
+	int rc = 0;
 
 	// If the root was NULL, create a new root node.
 	if (leaf == NULL) {
 		rc = ed_txn_alloc(txn, NULL, 0, &leaf);
-		assert(rc >= 0); // FIXME
+		if (rc < 0) { return rc; }
 		leaf->tree->base.type = ED_PG_LEAF;
 		leaf->tree->next = ED_PG_NONE;
+		leaf->tree->nkeys = 0;
 		dbp->entry = leaf->tree->data;
 		dbp->entry_index = 0;
 		dbp->head = dbp->tail = leaf;
-		rc = INS_NOSHIFT;
 	}
-	// Otherwise use the leaf from the search.
-	// If the leaf is full, it needs to be redistributed or split.
+
+	// Otherwise use the leaf from the search. If full, it needs to be split.
 	else if (IS_LEAF_FULL(leaf->tree, esize)) {
 		int mid = split_point(dbp, leaf->tree);
 		rc = mid < 0 ?
 			overflow_leaf(txn, dbp, leaf) :
 			split_leaf(txn, dbp, leaf, mid);
+		if (rc < 0) { return rc; }
 		leaf = dbp->tail;
 	}
 
-	// Insert the new entry before the current entry position.
-	uint8_t *p = dbp->entry;
-	assert(dbp->entry_index < LEAF_ORDER(esize));
-	assert(p == leaf->tree->data + (dbp->entry_index*esize));
-
-	if (rc == INS_SHIFT) {
-		memmove(p+esize, p, (leaf->tree->nkeys - dbp->entry_index) * esize);
+	else {
+		uint8_t *p = dbp->entry;
+		memmove(p+esize, dbp->entry, (leaf->tree->nkeys - dbp->entry_index) * esize);
 	}
-	memcpy(p, ent, esize);
-	leaf->tree->nkeys++;
+
+	memcpy(dbp->entry, ent, esize);
 	if (dbp->entry_index == 0 && leaf->parent != NULL) {
-		branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(p));
+		branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(ent));
 	}
 	if (*dbp->no != dbp->head->page->no) {
 		*dbp->no = dbp->head->page->no;
 	}
+
+	leaf->tree->nkeys++;
 	dbp->nsplits = 0;
 	dbp->match = 1;
 	return 1;
