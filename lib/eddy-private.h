@@ -426,8 +426,10 @@ struct EdNode {
 		EdPg *      page;             /**< Mapped page */
 		EdBpt *     tree;             /**< Mapped page as a tree */
 	};
+	EdNode *        old;              /**< Previous version this node replace */
 	EdNode *        parent;           /**< Parent node */
 	uint16_t        pindex;           /**< Index of page in the parent */
+	bool            alloc;            /**< Was this page from the allotor */
 };
 
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);

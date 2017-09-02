@@ -43,7 +43,7 @@ node_alloc(EdTxnNode **head, unsigned nnodes)
  * relationships as well as the dirty state of the page's contents.
  */
 static EdNode *
-node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
+node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx, bool alloc)
 {
 	assert(txn->nodes->nnodesused < txn->nodes->nnodes);
 	assert(pg != NULL);
@@ -52,6 +52,7 @@ node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 	n->page = pg;
 	n->parent = par;
 	n->pindex = pidx;
+	n->alloc = alloc;
 	n->tree->xid = txn->xid;
 	return n;
 }
@@ -249,7 +250,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		for (unsigned i = 0; i < txn->ndb; i++) {
 			EdTxnDb *dbp = &txn->db[i];
 			// Restore the stashed mapped head page.
-			dbp->tail = dbp->head = heads[i] ? node_wrap(txn, heads[i], NULL, 0) : NULL;
+			dbp->tail = dbp->head = heads[i] ? node_wrap(txn, heads[i], NULL, 0, false) : NULL;
 			dbp->key = 0;
 			dbp->start = NULL;
 			dbp->entry = NULL;
@@ -284,7 +285,7 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 
 	EdPg *pg = ed_pg_map(txn->xtype->alloc.fd, no, 1);
 	if (pg == MAP_FAILED) { return ED_ERRNO; }
-	*out = node_wrap(txn, pg, par, pidx);
+	*out = node_wrap(txn, pg, par, pidx, false);
 	return 0;
 }
 
@@ -323,7 +324,7 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 		if (rc < 0) { return rc; }
 	}
 
-	*out = node_wrap(txn, txn->pg[txn->npgused++], par, pidx);
+	*out = node_wrap(txn, txn->pg[txn->npgused++], par, pidx, true);
 	return 0;
 }
 
