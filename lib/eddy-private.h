@@ -426,10 +426,9 @@ struct EdNode {
 		EdPg *      page;             /**< Mapped page */
 		EdBpt *     tree;             /**< Mapped page as a tree */
 	};
-	EdNode *        old;              /**< Previous version this node replace */
+	EdNode *        gc;               /**< Previous version this node replace */
 	EdNode *        parent;           /**< Parent node */
 	uint16_t        pindex;           /**< Index of page in the parent */
-	bool            alloc;            /**< Was this page from the allotor */
 };
 
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
@@ -526,9 +525,11 @@ struct EdTxn {
 	EdPg **      pg;               /**< Array to hold allocated pages */
 	unsigned     npg;              /**< Number of pages allocated */
 	unsigned     npgused;          /**< Number of pages used */
+	unsigned     npgslot;          /**< Number of page slots in the #pg array */
 	EdTxnNode *  nodes;            /**< Linked list of node arrays */
 	EdTxnId      xid;              /**< Transaction ID or 0 for read-only */
 	uint64_t     cflags;           /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
+	int          error;            /**< Error code during transaction */
 	bool         isrdonly;         /**< Was #ed_txn_open() called with #ED_FRDONLY */
 	bool         isopen;           /**< Has #ed_txn_open() been called */
 	unsigned     ndb;              /**< Number of search objects */
@@ -644,10 +645,14 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out);
  * @param  txn  Transaction object
  * @param  par  Parent node or `NULL`
  * @param  pidx  Index of the page in the parent
- * @return  Node object
+ * @param  out  Node pointer to assign to
+ * @return  0 on success <0 on error
  */
 ED_LOCAL int
 ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out);
+
+ED_LOCAL int
+ed_txn_clone(EdTxn *txn, EdNode *node, EdNode **out);
 
 /**
  * @brief  Gets the #EdTxnDb object for the numbered database

@@ -161,6 +161,26 @@ test_gc_large(void)
 	mu_assert_int_eq(ed_gc_run(&alloc, 257, 1000), 2512);
 }
 
+static void
+test_gc_single(void)
+{
+	mu_teardown = cleanup;
+
+	unlink(path);
+	mu_assert_int_eq(ed_alloc_new(&alloc, path, 0, ED_FNOSYNC), 0);
+
+	EdTxnId xid = 0;
+
+	EdPg *pages[1024];
+	mu_assert_int_eq(ed_alloc(&alloc, pages, ed_len(pages), true), ed_len(pages));
+
+	for (size_t i = 0; i < ed_len(pages); i++) {
+		mu_assert_int_eq(ed_gc_put(&alloc, ++xid, pages+i, 1), 0);
+		mu_assert_int_eq(ed_gc_run(&alloc, xid, 2), i > 0);
+	}
+	mu_assert_int_eq(ed_gc_run(&alloc, ++xid, 2), 1);
+}
+
 int
 main(void)
 {
@@ -170,6 +190,7 @@ main(void)
 	mu_run(test_gc_merge);
 	mu_run(test_gc_reopen);
 	mu_run(test_gc_large);
+	mu_run(test_gc_single);
 	return 0;
 }
 

@@ -4,13 +4,15 @@
 // Enough entries to get to depth 3.
 // The entry size is bloated to get there in fewer ops.
 #define LARGE 22000
-#define SMALL 12
+#define SMALL 62
 #define MULTI 5000
 
 // These flags aren't terribly safe to use, but they do speed up the tests.
 #define FOPEN (ED_FNOTLCK)
 #define FCLOSE (FOPEN|ED_FNOSYNC)
 #define FRESET (FCLOSE|ED_FRESET)
+
+static void __attribute__((unused)) breakpoint(void) {}
 
 static EdTxnType xtype;
 static const char *path = "/tmp/eddy/test_bpt";
@@ -53,7 +55,7 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 		return ED_ERRNO;
 	}
 	int rc = ed_bpt_verify(bt, xtype.alloc.fd, sizeof(Entry), stderr);
-	if (rc == 0 && tryprint) {
+	if (tryprint) {
 		print_tree(bt, xtype.alloc.fd);
 	}
 	ed_pg_unload((EdPg **)&bt);
@@ -63,7 +65,7 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 static void
 cleanup(void)
 {
-	unlink(path);
+	//unlink(path);
 #if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pg_check(), 0);
 #endif
@@ -131,12 +133,21 @@ test_basic(void)
 
 	start(&txn, &t, 1);
 
-	for (unsigned i = 1; i <= SMALL; i++) {
-		Entry ent = { .key = i };
-		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+	for (unsigned i = 1; i <= SMALL; i += 2) {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
-		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		{
+			Entry ent = { .key = i };
+			snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		}
+		mu_assert_uint_eq(txn->db[0].head->tree->xid, txn->xid);
+		{
+			Entry ent = { .key = i+1 };
+			snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		}
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -155,7 +166,10 @@ test_basic(void)
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 1, (void **)&found), 1);
 	mu_assert_uint_eq(found->key, 1);
 	mu_assert_str_eq(found->name, "a1");
-	mu_assert_uint_eq(t->xid, SMALL);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 6, (void **)&found), 1);
+	mu_assert_uint_eq(found->key, 6);
+	mu_assert_str_eq(found->name, "a6");
+	mu_assert_uint_eq(t->xid, SMALL/2);
 
 	finish(&txn);
 }
@@ -175,7 +189,7 @@ test_repeat(void)
 		Entry ent = { .key = 0, .name = "a1" };
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_ge(ed_bpt_find(txn, 0, 0, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -183,16 +197,16 @@ test_repeat(void)
 		Entry ent = { .key = 20, .name = "a2" };
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_ge(ed_bpt_find(txn, 0, 20, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	for (unsigned i = 0; i < 200; i++) {
+	for (unsigned i = 0; i < 50; i++) {
 		Entry ent = { .key = 10 };
 		snprintf(ent.name, sizeof(ent.name), "b%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_ge(ed_bpt_find(txn, 0, 10, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -208,7 +222,7 @@ test_repeat(void)
 
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 10, NULL), 1);
-	for (unsigned i = 1; i < 200; i++) {
+	for (unsigned i = 1; i < 50; i++) {
 		mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 1);
 	}
 
@@ -243,12 +257,21 @@ test_large(void)
 
 	start(&txn, &t, 1);
 
-	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
-		Entry ent = { .key = rand_r(&seed) };
-		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+	for (unsigned seed = 0, i = 0; i < LARGE; i += 2) {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
-		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		{
+			Entry ent = { .key = rand_r(&seed) };
+			snprintf(ent.name, sizeof(ent.name), "a%u", i);
+			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		}
+		mu_assert_uint_eq(txn->db[0].head->tree->xid, txn->xid);
+		{
+			Entry ent = { .key = rand_r(&seed) };
+			snprintf(ent.name, sizeof(ent.name), "a%u", i+1);
+			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		}
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -281,11 +304,11 @@ test_large_sequential(void)
 	start(&txn, &t, 1);
 
 	for (unsigned i = 0; i < LARGE; i++) {
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		Entry ent = { .key = i };
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
-		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -321,7 +344,7 @@ test_large_sequential_reverse(void)
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -360,7 +383,7 @@ test_split_leaf_middle_left(void)
 		snprintf(ent.name, sizeof(ent.name), "a%zu", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -369,7 +392,7 @@ test_split_leaf_middle_left(void)
 		snprintf(ent.name, sizeof(ent.name), "a%zu", mid);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -408,7 +431,7 @@ test_split_leaf_middle_right(void)
 		snprintf(ent.name, sizeof(ent.name), "a%zu", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -417,7 +440,7 @@ test_split_leaf_middle_right(void)
 		snprintf(ent.name, sizeof(ent.name), "a%zu", mid);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -455,7 +478,7 @@ test_split_middle_branch(void)
 		snprintf(ent.name, sizeof(ent.name), "a%zu", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -464,7 +487,7 @@ test_split_middle_branch(void)
 		snprintf(ent.name, sizeof(ent.name), "a%zu", mid);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -500,7 +523,7 @@ test_remove_small(void)
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -533,7 +556,7 @@ test_remove_small(void)
 		snprintf(ent.name, sizeof(ent.name), "b%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -570,7 +593,7 @@ test_remove_large(void)
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -603,7 +626,7 @@ test_remove_large(void)
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -644,9 +667,9 @@ test_multi(void)
 			Entry ent2 = { .key = rand_r(&seed) };
 			snprintf(ent2.name, sizeof(ent2.name), "b%u", i);
 			mu_assert_int_eq(ed_bpt_find(txn, 1, ent2.key, NULL), 0);
-			mu_assert_int_eq(ed_bpt_set(txn, 1, &ent2, false), 1);
+			mu_assert_int_eq(ed_bpt_set(txn, 1, &ent2, false), 0);
 		}
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
@@ -692,7 +715,7 @@ test_iter(void)
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
-		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 

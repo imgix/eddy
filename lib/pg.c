@@ -211,9 +211,6 @@ ed_alloc(EdAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 {
 	if (n == 0) { return 0; }
 
-	// Try the lock-free allocation from the tail pages.
-	if (!exclusive) { return page_alloc_tail(alloc, pages, n); }
-
 	int rc = 0;
 	EdPgno rem = n;
 	EdPg **p = pages;
@@ -221,6 +218,10 @@ ed_alloc(EdAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 	// First take from the tail. It may be preferrable to leave tail pages for
 	// unlocked allocations, but currently that is rarely used.
 	rc = page_alloc_tail(alloc, p, rem);
+
+	// When not exclusive, only use lock-free allocation from the tail pages.
+	if (!exclusive) { return rc; }
+
 	if (rc >= 0) {
 		p += rc; rem -= rc;
 		// Allocate from the free list or expand the file.
@@ -550,6 +551,7 @@ gc_list_init(EdPgGc *pgc, EdTxnId xid)
 	pgc->remain = sizeof(pgc->data);
 	pgc->nlists = 0;
 	pgc->npages = 0;
+	memset(pgc->data, 0, sizeof(pgc->data));
 	return gc_list_next(pgc, xid);
 }
 
