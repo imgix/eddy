@@ -190,8 +190,6 @@ done:
 static int
 move_right(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 {
-	// Traverse up to leaf node from any overflow nodes.
-	for (; from->page->type == ED_PG_OVERFLOW; from = from->parent) {}
 	assert(from->page->type == ED_PG_LEAF);
 
 	// Traverse up the nearest node that isn't the last key of its parent.
@@ -427,39 +425,10 @@ split_point(EdTxnDb *dbp, EdBpt *l)
 	// If repeat keys span the mid point, pick the larger side to split on.
 	if (min != mid) {
 		for (; max < n && leaf_key(l, max, esize) == key; max++) {}
-		if (min == 0 && max == n) { return -1; }
+		if (min == 0 && max == n) { return ED_EINDEX_DUPKEY; }
 		mid = min >= n - max ? min : max;
 	}
 	return mid;
-}
-
-static int
-overflow_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf)
-{
-	assert(leaf->tree->nkeys == LEAF_ORDER(dbp->entry_size));
-	return ED_EINDEX_DUPKEY;
-
-	EdNode *node;
-	size_t esize = dbp->entry_size;
-
-	if (leaf->tree->next != ED_PG_NONE &&
-			ed_txn_map(txn, leaf->tree->next, leaf, 0, &node) == 0 &&
-			node->tree->nkeys < LEAF_ORDER(esize)) {
-		goto done;
-	}
-
-	int rc = ed_txn_alloc(txn, leaf, 0, &node);
-	assert(rc >= 0); // FIXME
-	node->page->type = ED_PG_OVERFLOW;
-	node->tree->next = leaf->tree->next;
-	node->tree->nkeys = 0;
-	leaf->tree->next = node->page->no;
-
-done:
-	dbp->tail = node;
-	dbp->entry = node->tree->data + esize*node->tree->nkeys;
-	dbp->entry_index = node->tree->nkeys;
-	return 0;
 }
 
 static int
@@ -544,9 +513,8 @@ insert_into_leaf(EdTxn *txn, EdTxnDb *dbp, const void *ent, bool replace)
 	// If the leaf is full, it needs to be split.
 	else if (!replace && IS_LEAF_FULL(leaf->tree, esize)) {
 		int mid = split_point(dbp, leaf->tree);
-		int rc = mid < 0 ?
-			overflow_leaf(txn, dbp, leaf) :
-			split_leaf(txn, dbp, leaf, mid);
+		if (mid < 0) { return mid; }
+		int rc = split_leaf(txn, dbp, leaf, mid);
 		if (rc < 0) { return rc; }
 		leaf = dbp->tail;
 		leaf->tree->nkeys++;
@@ -738,8 +706,7 @@ print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
 static void
 print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool *stack, int top)
 {
-	fprintf(out, "%s p%u, xid=%llu, nkeys=%u/%zu",
-			leaf->base.type == ED_PG_LEAF ? "leaf" : "overflow",
+	fprintf(out, "leaf p%u, xid=%llu, nkeys=%u/%zu",
 			leaf->base.no, leaf->xid, leaf->nkeys, LEAF_ORDER(esize));
 
 	uint32_t n = leaf->nkeys;
@@ -796,7 +763,6 @@ static void
 print_node(int fd, size_t esize, EdBpt *t, FILE *out, EdBptPrint print, bool *stack, int top)
 {
 	switch (t->base.type) {
-	case ED_PG_OVERFLOW:
 	case ED_PG_LEAF:
 		print_leaf(fd, esize, t, out, print, stack, top);
 		break;
@@ -816,24 +782,6 @@ print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBptPrint print, bool *
 	}
 	print_node(fd, esize, t, out, print, stack, top);
 	ed_pg_unmap(t, 1);
-}
-
-static int
-verify_overflow(int fd, size_t esize, EdBpt *o, FILE *out, uint64_t expect)
-{
-	uint8_t *p = o->data;
-	for (uint32_t i = 0; i < o->nkeys; i++, p += esize) {
-		uint64_t key = ed_fetch64(p);
-		if (key != expect) {
-			if (out != NULL) {
-				fprintf(out, "overflow key incorrect: %llu, %llu\n", key, expect);
-				bool stack[16] = {0};
-				print_leaf(fd, esize, o, out, print_value, stack, 0);
-			}
-			return -1;
-		}
-	}
-	return 0;
 }
 
 static int
@@ -862,15 +810,6 @@ verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t ma
 			return -1;
 		}
 		last = key;
-	}
-
-	EdPgno ptr = l->next;
-	while (ptr != ED_PG_NONE) {
-		EdBpt *next = ed_pg_map(fd, ptr, 1);
-		int rc = verify_overflow(fd, esize, next, out, last);
-		ptr = next->next;
-		ed_pg_unmap(next, 1);
-		if (rc < 0) { return -1; }
 	}
 	return 0;
 }

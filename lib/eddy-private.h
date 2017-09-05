@@ -204,7 +204,6 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 #define ED_PG_FREE_CHLD UINT32_C(0x44435246)
 #define ED_PG_BRANCH    UINT32_C(0x48435242)
 #define ED_PG_LEAF      UINT32_C(0x4641454c)
-#define ED_PG_OVERFLOW  UINT32_C(0x5245564f)
 #define ED_PG_GC        UINT32_C(0x4c4c4347)
 
 #define ED_PG_NONE UINT32_MAX
