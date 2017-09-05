@@ -549,8 +549,8 @@ struct EdTxn {
  */
 struct EdTxnNode {
 	EdTxnNode *  next;             /**< Next chunk of nodes */
-	unsigned     nnodes;           /**< Length of node array */
-	unsigned     nnodesused;       /**< Number of nodes used */
+	unsigned     nslot;            /**< Length of node array */
+	unsigned     nused;            /**< Number of nodes used */
 	EdNode       nodes[1];         /**< Flexible array of node wrapped pages */
 };
 

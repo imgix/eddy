@@ -6,13 +6,13 @@
 
 /**
  * @brief  Calculates the allocation size for a node array
- * @param  nnodes  The number of nodes desired
+ * @param  nslot  The number of nodes desired
  * @return  Size in bytes of the allocation required
  */
 static inline size_t
-node_size(unsigned nnodes)
+node_size(unsigned nslot)
 {
-	return sizeof(EdTxnNode) + (nnodes-1)*sizeof(((EdTxnNode *)0)->nodes[0]);
+	return sizeof(EdTxnNode) + (nslot-1)*sizeof(((EdTxnNode *)0)->nodes[0]);
 }
 
 /**
@@ -21,17 +21,17 @@ node_size(unsigned nnodes)
  * This will allocate the next array and push it onto the link list head.
  *
  * @param  head  Indirect pointer to the current head node
- * @param  nnodes  Minimum size of the array
+ * @param  nslot  Minimum size of the array
  * @return  0 on success, <0 on error
  */
 static inline int
-node_alloc(EdTxnNode **head, unsigned nnodes)
+node_alloc(EdTxnNode **head, unsigned nslot)
 {
-	nnodes = ed_power2(nnodes);
-	EdTxnNode *next = calloc(1, node_size(nnodes));
+	nslot = ed_power2(nslot);
+	EdTxnNode *next = calloc(1, node_size(nslot));
 	if (next == NULL) { return ED_ERRNO; }
 	next->next = *head;
-	next->nnodes = nnodes;
+	next->nslot = nslot;
 	*head = next;
 	return 0;
 }
@@ -45,10 +45,10 @@ node_alloc(EdTxnNode **head, unsigned nnodes)
 static EdNode *
 node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 {
-	assert(txn->nodes->nnodesused < txn->nodes->nnodes);
+	assert(txn->nodes->nused < txn->nodes->nslot);
 	assert(pg != NULL);
 
-	EdNode *n = &txn->nodes->nodes[txn->nodes->nnodesused++];
+	EdNode *n = &txn->nodes->nodes[txn->nodes->nused++];
 	n->page = pg;
 	n->parent = par;
 	n->pindex = pidx;
@@ -65,7 +65,8 @@ node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 static bool
 node_is_live(EdTxn *txn, EdNode *node)
 {
-	return node && node->tree && (txn->error == 0 || node->tree->xid < txn->xid);
+	return node && node->tree && !node->gc &&
+		(txn->error == 0 || node->tree->xid < txn->xid);
 }
 
 /**
@@ -103,11 +104,11 @@ ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref)
 		return ed_esys(EINVAL);
 	}
 
-	unsigned nnodes = nref * 8;
+	unsigned nslot = nref * 12;
 	int rc = 0;
 	EdTxn *txn;
 	size_t sztx = sizeof(*txn) + (nref-1)*sizeof(txn->db[0]);
-	size_t sznodes = node_size(nnodes);
+	size_t sznodes = node_size(nslot);
 	size_t offnodes = ed_align_max(sztx);
 
 	if ((txn = calloc(1, offnodes + sznodes)) == NULL) {
@@ -117,7 +118,7 @@ ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref)
 
 	txn->xtype = xtype;
 	txn->nodes = (EdTxnNode *)((uint8_t *)txn + offnodes);
-	txn->nodes->nnodes = nnodes;
+	txn->nodes->nslot = nslot;
 
 	for (unsigned i = 0; i < nref; i++) {
 		EdPgno *no = ref[i].no;
@@ -246,7 +247,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 
 	EdTxnNode *node = txn->nodes;
 	do {
-		for (int i = (int)node->nnodesused-1; i >= 0; i--) {
+		for (int i = (int)node->nused-1; i >= 0; i--) {
 			if (node_is_live(txn, &node->nodes[i])) {
 				ed_pg_unmap(node->nodes[i].page, 1);
 				node->nodes[i].page = NULL;
@@ -264,8 +265,9 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 
 	if (flags & ED_FRESET) {
 		txn->npgused = 0;
-		txn->nodes->nnodesused = 0;
 		txn->ngcused = 0;
+		txn->nodes->nused = 0;
+		memset(txn->nodes->nodes, 0, txn->nodes->nslot*sizeof(txn->nodes->nodes[0]));
 		txn->error = 0;
 		txn->isopen = false;
 		for (unsigned i = 0; i < txn->ndb; i++) {
@@ -294,7 +296,7 @@ int
 ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 {
 	for (EdTxnNode *node = txn->nodes; node != NULL; node = node->next) {
-		for (int i = (int)node->nnodesused-1; i >= 0; i--) {
+		for (int i = (int)node->nused-1; i >= 0; i--) {
 			if (node->nodes[i].page->no == no) {
 				*out = &node->nodes[i];
 				return 0;
@@ -302,8 +304,8 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 		}
 	}
 
-	if (txn->nodes->nnodesused == txn->nodes->nnodes) {
-		int rc = node_alloc(&txn->nodes, txn->nodes->nnodes+1);
+	if (txn->nodes->nused == txn->nodes->nslot) {
+		int rc = node_alloc(&txn->nodes, txn->nodes->nslot+1);
 		if (rc < 0) { return rc; }
 	}
 
@@ -331,8 +333,8 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 		txn->npg = txn->npgslot;
 	}
 
-	if (txn->nodes == NULL || txn->nodes->nnodesused == txn->nodes->nnodes) {
-		int rc = node_alloc(&txn->nodes, txn->nodes ? txn->nodes->nnodes + 1 : npg);
+	if (txn->nodes == NULL || txn->nodes->nused == txn->nodes->nslot) {
+		int rc = node_alloc(&txn->nodes, txn->nodes ? txn->nodes->nslot + 1 : npg);
 		if (rc < 0) { return rc; }
 	}
 
