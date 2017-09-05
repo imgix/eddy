@@ -67,6 +67,17 @@ branch_index(EdBpt *node, EdPgno *ptr)
 }
 
 
+size_t
+ed_branch_order(void)
+{
+	return BRANCH_ORDER;
+}
+
+size_t
+ed_leaf_order(size_t esize)
+{
+	return LEAF_ORDER(esize);
+}
 
 size_t
 ed_bpt_capacity(size_t esize, size_t depth)
@@ -322,75 +333,99 @@ set_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, uint32_t eidx)
 }
 
 static int
-insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdNode *left, EdNode *right, uint64_t rkey)
+insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdNode *l, EdNode *r, uint64_t rkey)
 {
-	assert(right->pindex == left->pindex + 1);
-	EdNode *parent = left->parent;
-	uint32_t eidx = left->pindex;
+	assert(r->pindex == l->pindex + 1);
+	EdNode *branch = l->parent;
+	uint32_t eidx = l->pindex;
 
-	if (parent == NULL) {
-		int rc = ed_txn_alloc(txn, NULL, 0, &parent);
+	// When the branch is NULL, we have a new root of the tree.
+	if (branch == NULL) {
+		int rc = ed_txn_alloc(txn, NULL, 0, &branch);
 		if (rc < 0) { return rc; }
-		parent->page->type = ED_PG_BRANCH;
-		parent->tree->next = ED_PG_NONE;
-		parent->tree->nkeys = 1;
+		branch->page->type = ED_PG_BRANCH;
+		branch->tree->next = ED_PG_NONE;
+		branch->tree->nkeys = 1;
 	}
-	else {
-		if (IS_BRANCH_FULL(parent->tree)) {
-			int mid = (parent->tree->nkeys+1) / 2;
-			size_t off = mid * BRANCH_ENTRY_SIZE;
-			uint64_t rbkey = branch_key(parent->tree, mid);
+	// If the branch is full, it needs to be split. This splitting approach is
+	// less efficent than the way leaves are split: entry positions are fully
+	// copied and then shifted at the insertion point. But given the additional
+	// complexity of splitting branch data, and the relatively infrequent need to
+	// do so, this hasn't been improved.
+	else if (IS_BRANCH_FULL(branch->tree)) {
+		int mid = (branch->tree->nkeys+1) / 2;
+		size_t off = mid * BRANCH_ENTRY_SIZE;
+		uint64_t rbkey = branch_key(branch->tree, mid);
 
-			EdNode *leftb = parent, *rightb;
-			int rc = ed_txn_alloc(txn, leftb->parent, leftb->pindex + 1, &rightb);
+		EdNode *left = branch, *right;
+		int rc = ed_txn_alloc(txn, left->parent, left->pindex + 1, &right);
+		if (rc < 0) { return rc; }
+		if (branch->tree->xid < txn->xid) {
+			rc = ed_txn_clone(txn, branch, &left);
 			if (rc < 0) { return rc; }
-			if (parent->tree->xid < txn->xid) {
-				rc = ed_txn_clone(txn, parent, &leftb);
-				if (rc < 0) { return rc; }
-				memcpy(leftb->tree->data, parent->tree->data, off - BRANCH_KEY_SIZE);
-			}
-
-			rightb->page->type = ED_PG_BRANCH;
-			rightb->tree->next = ED_PG_NONE;
-			rightb->tree->nkeys = parent->tree->nkeys - mid;
-			leftb->tree->nkeys = mid - 1;
-
-			memcpy(rightb->tree->data, parent->tree->data+off, sizeof(parent->tree->data) - off);
-
-			rc = insert_into_parent(txn, dbp, leftb, rightb, rbkey);
-			if (rc < 0) { return rc; }
-
-			if (rkey < rbkey) {
-				parent = leftb;
-			}
-			else {
-				parent = rightb;
-				eidx -= mid;
-				left->pindex = eidx;
-				right->pindex = eidx + 1;
-			}
-		}
-		else if (parent->tree->xid < txn->xid) {
-			EdNode *src = parent;
-			int rc = ed_txn_clone(txn, src, &parent);
-			if (rc < 0) { return rc; }
-			memcpy(parent->tree->data, src->tree->data, sizeof(src->tree->data));
+			// Copy all entries left of the mid point.
+			memcpy(left->tree->data, branch->tree->data, off - BRANCH_KEY_SIZE);
 		}
 
-		// The parent has space, so shift space for the right node.
+		right->page->type = ED_PG_BRANCH;
+		right->tree->next = ED_PG_NONE;
+		right->tree->nkeys = branch->tree->nkeys - mid;
+		left->tree->nkeys = mid - 1;
+
+		// Copy all entries right of the mid point.
+		memcpy(right->tree->data, branch->tree->data+off, sizeof(branch->tree->data) - off);
+
+		// The new entry goes on the left-side branch.
+		if (rkey < rbkey) {
+			branch = left;
+		}
+		// The new entry goes on the right-side branch.
+		else {
+			branch = right;
+			eidx -= mid;
+			l->pindex = eidx;
+			r->pindex = eidx + 1;
+		}
+
+		// Shift the new branch entries to make room for the new entry.
 		size_t pos = BRANCH_PTR_SIZE + eidx*BRANCH_ENTRY_SIZE;
-		memmove(parent->tree->data + pos + BRANCH_ENTRY_SIZE,
-				parent->tree->data + pos,
-				(parent->tree->nkeys - eidx) * BRANCH_ENTRY_SIZE);
-		parent->tree->nkeys++;
+		memmove(branch->tree->data + pos + BRANCH_ENTRY_SIZE,
+				branch->tree->data + pos,
+				(branch->tree->nkeys - eidx) * BRANCH_ENTRY_SIZE);
+
+		branch->tree->nkeys++;
+
+		rc = insert_into_parent(txn, dbp, left, right, rbkey);
+		if (rc < 0) { return rc; }
+	}
+	// Otherwie we expand the current node.
+	else {
+		size_t pos = BRANCH_PTR_SIZE + eidx*BRANCH_ENTRY_SIZE;
+		EdNode *src = branch;
+		// The source node must be cloned if was from a previous transaction. This
+		// node could have already been modified from a prior operation within the
+		// current transaction.
+		if (src->tree->xid < txn->xid) {
+			int rc = ed_txn_clone(txn, src, &branch);
+			if (rc < 0) { return rc; }
+			memcpy(branch->tree->data, src->tree->data, pos);
+		}
+		// Shift all entries after the new index over. The src node must be part of
+		// the current transaction at this point. If the node was cloned, this will
+		// copy the remaining data from the previous version. Otherwise, this will
+		// shift the entries in place.
+		memmove(branch->tree->data + pos + BRANCH_ENTRY_SIZE,
+				src->tree->data + pos,
+				(src->tree->nkeys - eidx) * BRANCH_ENTRY_SIZE);
+		branch->tree->nkeys++;
 	}
 
-	left->parent = parent;
-	right->parent = parent;
+	l->parent = branch;
+	r->parent = branch;
 
-	set_node(txn, dbp, left);
-	set_node(txn, dbp, right);
-	branch_set_key(right->parent, right->pindex, rkey);
+	set_node(txn, dbp, l);
+	branch_set_key(r->parent, r->pindex, rkey);
+	set_node(txn, dbp, r);
 	return 0;
 }
 
@@ -741,7 +776,7 @@ static void
 print_branch(int fd, size_t esize, EdBpt *branch, FILE *out, EdBptPrint print, bool *stack, int top)
 {
 	fprintf(out, "branch p%u, xid=%llu, nkeys=%u/%zu\n",
-			branch->base.no, branch->xid, branch->nkeys, BRANCH_ORDER);
+			branch->base.no, branch->xid, branch->nkeys, BRANCH_ORDER-1);
 
 	uint32_t end = branch->nkeys;
 	uint8_t *p = branch->data + BRANCH_PTR_SIZE;

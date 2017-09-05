@@ -432,6 +432,8 @@ struct EdNode {
 
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
 
+ED_LOCAL   size_t ed_branch_order(void);
+ED_LOCAL   size_t ed_leaf_order(size_t esize);
 ED_LOCAL   size_t ed_bpt_capacity(size_t esize, size_t depth);
 ED_LOCAL      int ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent);
 ED_LOCAL      int ed_bpt_first(EdTxn *txn, unsigned db, void **ent);

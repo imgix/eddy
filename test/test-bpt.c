@@ -461,6 +461,144 @@ test_split_leaf_middle_right(void)
 }
 
 static void
+test_split_branch_left0(void)
+{
+	mu_teardown = cleanup;
+	unlink(path);
+
+	Tree *t;
+	EdTxn *txn;
+
+	start(&txn, &t, 1);
+
+	// The leaf order is odd, so we'll so this funky business to get a full tree
+	int branch_order = ed_branch_order();
+	int leaf_order = ed_leaf_order(sizeof(Entry)) - 1;
+	int n = branch_order * leaf_order;
+	int final = 0;
+	for (int i = 0; i < n; i += 2) {
+		Entry ent = { .key = i };
+		snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+	for (int i = n-1; i > 0; i -= 2) {
+		Entry ent = { .key = i };
+		snprintf(ent.name, sizeof(ent.name), "b%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+	for (int i = 0; i < n; i += leaf_order) {
+		Entry ent = { .key = i };
+		snprintf(ent.name, sizeof(ent.name), "c%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+	{
+		Entry ent = { .key = final };
+		snprintf(ent.name, sizeof(ent.name), "d%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+
+	for (int i = 0; i < n; i++) {
+		Entry *ent;
+		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, i, (void **)&ent), 1);
+		char name[64], ch;
+		if (i == final) { ch = 'd'; }
+		else if (i % leaf_order == 0) { ch = 'c'; }
+		else if (i % 2) { ch = 'b'; }
+		else { ch = 'a'; }
+		snprintf(name, sizeof(name), "%c%d", ch, i);
+		mu_assert_int_eq(ent->key, i);
+		mu_assert_str_eq(ent->name, name);
+		ed_txn_close(&txn, FRESET);
+	}
+
+	finish(&txn);
+}
+
+static void
+test_split_branch_right0(void)
+{
+	mu_teardown = cleanup;
+	unlink(path);
+
+	Tree *t;
+	EdTxn *txn;
+
+	start(&txn, &t, 1);
+
+	// The leaf order is odd, so we'll so this funky business to get a full tree
+	int branch_order = ed_branch_order();
+	int leaf_order = ed_leaf_order(sizeof(Entry)) - 1;
+	int n = branch_order * leaf_order;
+	int final = (branch_order/2) * leaf_order;
+	for (int i = 0; i < n; i += 2) {
+		Entry ent = { .key = i };
+		snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+	for (int i = n-1; i > 0; i -= 2) {
+		Entry ent = { .key = i };
+		snprintf(ent.name, sizeof(ent.name), "b%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+	for (int i = 0; i < n; i += leaf_order) {
+		Entry ent = { .key = i };
+		snprintf(ent.name, sizeof(ent.name), "c%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+	{
+		Entry ent = { .key = final };
+		snprintf(ent.name, sizeof(ent.name), "d%llu", ent.key);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+
+	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+
+	for (int i = 0; i < n; i++) {
+		Entry *ent;
+		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, i, (void **)&ent), 1);
+		char name[64], ch;
+		if (i == final) { ch = 'd'; }
+		else if (i % leaf_order == 0) { ch = 'c'; }
+		else if (i % 2) { ch = 'b'; }
+		else { ch = 'a'; }
+		snprintf(name, sizeof(name), "%c%d", ch, i);
+		mu_assert_int_eq(ent->key, i);
+		mu_assert_str_eq(ent->name, name);
+		ed_txn_close(&txn, FRESET);
+	}
+
+	finish(&txn);
+}
+
+static void
 test_split_middle_branch(void)
 {
 	mu_teardown = cleanup;
@@ -752,6 +890,8 @@ main(void)
 	mu_run(test_large_sequential_reverse);
 	mu_run(test_split_leaf_middle_left);
 	mu_run(test_split_leaf_middle_right);
+	mu_run(test_split_branch_left0);
+	mu_run(test_split_branch_right0);
 	mu_run(test_split_middle_branch);
 	mu_run(test_remove_small);
 	mu_run(test_remove_large);
