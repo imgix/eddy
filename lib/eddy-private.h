@@ -425,9 +425,9 @@ struct EdNode {
 		EdPg *      page;             /**< Mapped page */
 		EdBpt *     tree;             /**< Mapped page as a tree */
 	};
-	EdNode *        gc;               /**< Previous version this node replace */
 	EdNode *        parent;           /**< Parent node */
 	uint16_t        pindex;           /**< Index of page in the parent */
+	bool            gc;               /**< Is this node marked to discard */
 };
 
 typedef int (*EdBptPrint)(const void *, char *buf, size_t len);
@@ -527,6 +527,9 @@ struct EdTxn {
 	unsigned     npg;              /**< Number of pages allocated */
 	unsigned     npgused;          /**< Number of pages used */
 	unsigned     npgslot;          /**< Number of page slots in the #pg array */
+	EdPg **      gc;               /**< Array to hold discarded pages */
+	unsigned     ngcused;          /**< Number of pages discarded */
+	unsigned     ngcslot;          /**< Number of page slots in the #gc array */
 	EdTxnNode *  nodes;            /**< Linked list of node arrays */
 	EdTxnId      xid;              /**< Transaction ID or 0 for read-only */
 	uint64_t     cflags;           /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
@@ -652,8 +655,32 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out);
 ED_LOCAL int
 ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out);
 
+/**
+ * @brief  Allocates a new node that clones the node header of a prior version
+ *
+ * This does not clone the main node data. If successful, #node will be marked
+ * for discarding using #ed_txn_discard().
+ *
+ * @param  txn  Transaction object
+ * @param  node  Node to clone
+ * @param  out  Node pointer to assign to
+ * @return  0 on success <0 on error
+ */
 ED_LOCAL int
 ed_txn_clone(EdTxn *txn, EdNode *node, EdNode **out);
+
+/**
+ * @brief  Marks a page for removal
+ *
+ * This node will only be discarded fully when, and if, the transaction is
+ * committed.
+ *
+ * @param  txn  Transaction object
+ * @param  node  Node to discard
+ * @return  0 on success <0 on error
+ */
+ED_LOCAL int
+ed_txn_discard(EdTxn *txn, EdNode *node);
 
 /**
  * @brief  Gets the #EdTxnDb object for the numbered database

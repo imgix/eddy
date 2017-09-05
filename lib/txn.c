@@ -175,19 +175,9 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 		goto close;
 	}
 	else {
-		EdPg *gc[txn->npg];
-		unsigned ngc = 0;
-		for (EdTxnNode *node = txn->nodes; node; node = node->next) {
-			for (int i = (int)node->nnodesused-1; i >= 0; i--) {
-				if (node->nodes[i].gc) {
-					gc[ngc++] = node->nodes[i].gc->page;
-					node->nodes[i].gc->page = NULL;
-					node->nodes[i].gc = NULL;
-				}
-			}
-		}
-		rc = ed_gc_put(&txn->xtype->alloc, txn->xid, gc, ngc);
+		rc = ed_gc_put(&txn->xtype->alloc, txn->xid, txn->gc, txn->ngcused);
 		if (rc < 0) { goto close; }
+		txn->ngcused = 0;
 	}
 
 	memmove(txn->pg, txn->pg+txn->npgused, (txn->npg-txn->npgused) * sizeof(txn->pg[0]));
@@ -275,6 +265,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (flags & ED_FRESET) {
 		txn->npgused = 0;
 		txn->nodes->nnodesused = 0;
+		txn->ngcused = 0;
 		txn->error = 0;
 		txn->isopen = false;
 		for (unsigned i = 0; i < txn->ndb; i++) {
@@ -293,6 +284,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	else {
 		ed_free(&txn->xtype->alloc, txn->pg, txn->npg);
 		free(txn->pg);
+		free(txn->gc);
 		free(txn);
 		*txnp = NULL;
 	}
@@ -359,10 +351,32 @@ ed_txn_clone(EdTxn *txn, EdNode *node, EdNode **out)
 		copy->page->type = node->page->type;
 		copy->tree->next = node->tree->next;
 		copy->tree->nkeys = node->tree->nkeys;
-		copy->gc = node;
+		rc = ed_txn_discard(txn, node);
+		if (rc < 0) {
+			txn->npgused--;
+			return rc;
+		}
 		*out = copy;
 	}
 	return rc;
+}
+
+int
+ed_txn_discard(EdTxn *txn, EdNode *node)
+{
+	if (!node->gc) {
+		unsigned ngcslot = txn->ngcslot;
+		if (txn->ngcused == ngcslot) {
+			ngcslot = ngcslot ? ngcslot * 2 : txn->ndb*12;
+			EdPg **gc = realloc(txn->gc, ngcslot * sizeof(*gc));
+			if (gc == NULL) { return ED_ERRNO; }
+			txn->gc = gc;
+			txn->ngcslot = ngcslot;
+		}
+		txn->gc[txn->ngcused++] = node->page;
+		node->gc = true;
+	}
+	return 0;
 }
 
 EdTxnDb *
