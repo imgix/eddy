@@ -532,10 +532,11 @@ gc_list_next(EdPgGc *pgc, EdTxnId xid)
 	// Load the next list in the current gc page.
 	pgc->tail = tail;
 	pgc->remain = remain;
-	list = (EdPgGcList *)(pgc->data + pgc->tail);
+	pgc->nlists++;
+	pgc->nskip = 0;
+	list = (EdPgGcList *)(pgc->data + tail);
 	list->xid = xid;
 	list->npages = 0;
-	pgc->nlists++;
 	return list;
 }
 
@@ -554,7 +555,7 @@ gc_list_init(EdPgGc *pgc, EdTxnId xid)
 	pgc->tail = 0;
 	pgc->remain = sizeof(pgc->data);
 	pgc->nlists = 0;
-	pgc->npages = 0;
+	pgc->nskip = 0;
 	memset(pgc->data, 0, sizeof(pgc->data));
 	return gc_list_next(pgc, xid);
 }
@@ -630,7 +631,6 @@ ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 		}
 		list->npages += rem;
 		tail->remain -= rem * sizeof(list->pages[0]);
-		tail->npages += rem;
 		pg += rem;
 		n -= rem;
 	} while (n > 0);
@@ -651,9 +651,11 @@ ed_gc_run(EdAlloc *alloc, EdTxnId xid, int limit)
 	for (; head != NULL && limit > 0; limit--) {
 		EdPgGcList *list = (EdPgGcList *)(head->data + pos);
 		if (list->xid == 0 || list->xid >= xid) { break; }
-		ed_free_pgno(alloc, list->pages, list->npages);
-		rc += list->npages;
-		head->npages -= list->npages;
+		int n = (int)list->npages - (int)head->nskip;
+		if (n > 0) {
+			ed_free_pgno(alloc, list->pages+head->nskip, n);
+			rc += n;
+		}
 
 		// While more lists are available, bump to the next one.
 		if (--head->nlists > 0) {

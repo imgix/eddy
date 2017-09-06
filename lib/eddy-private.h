@@ -974,7 +974,7 @@ struct EdPgGc {
 	uint16_t     tail;             /**< Data offset for the last list object */
 	uint16_t     remain;           /**< Data space after the last list object */
 	uint16_t     nlists;           /**< Number of list objects in this page */
-	uint16_t     npages;           /**< Number of pages across all list objects in page */
+	uint16_t     nskip;            /**< Number of pages to skip from the start of the head list */
 	uint8_t      _pad[2];
 #define ED_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 12)
 	uint8_t      data[ED_GC_DATA]; /**< Array for #EdPgGcList values */
