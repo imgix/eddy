@@ -83,14 +83,12 @@ get_min_xid(EdTxnType *xtype, EdTxnId xmin, EdTime tmin)
 	for (int i = 0; i < nconns; i++, c++) {
 		if (i == conn || c->pid == 0 || c->xid == 0) { continue; }
 		if (c->xid < xmin || (tmin > 0 && c->active > 0 && tmin < c->active)) {
-			printf("TODO trylock\n");
-#if 0
-			if (lock() == 0) {
+			off_t pos = xtype->connpos + i*sizeof(*c);
+			if (ed_flck(xtype->alloc.fd, ED_LCK_EX, pos, sizeof(*c), ED_FNOBLOCK) == 0) {
 				memset(c, 0, sizeof(*c));
-				unlock();
+				ed_flck(xtype->alloc.fd, ED_LCK_UN, pos, sizeof(*c), ED_FNOBLOCK);
 				continue;
 			}
-#endif
 		}
 		if (c->xid < xid) { xid = c->xid; }
 	}

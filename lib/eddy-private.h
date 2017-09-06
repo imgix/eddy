@@ -511,6 +511,7 @@ struct EdTxnType {
 	EdConn *     conns;            /**< Reference to connection array */
 	int          nconns;           /**< Total number of connections in the array */
 	int          conn;             /**< Index into the array for the current connection */
+	off_t        connpos;          /**< Byte offset of the connection array in the file */
 	EdTimeUnix   epoch;            /**< Time offset from UNIX time */
 };
 

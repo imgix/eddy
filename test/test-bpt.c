@@ -65,7 +65,7 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 static void
 cleanup(void)
 {
-	//unlink(path);
+	unlink(path);
 #if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pg_check(), 0);
 #endif
@@ -91,6 +91,7 @@ start(EdTxn **txn, Tree **tree, int n)
 	xtype.conns = t->conns;
 	xtype.nconns = ed_len(t->conns);
 	xtype.conn = 0;
+	xtype.connpos = offsetof(Tree, conns);
 
 	EdTxnRef ref[] = {
 		{ &t->db1, sizeof(Entry) },

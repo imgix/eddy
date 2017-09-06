@@ -286,6 +286,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	idx->xtype.conns = hdr->conns;
 	idx->xtype.nconns = hdr->nconns;
 	idx->xtype.conn = cix;
+	idx->xtype.connpos = offsetof(EdIdxHdr, conns);
 	idx->xtype.epoch = hdr->epoch;
 	idx->flags = f;
 	idx->seed = hdr->seed;
