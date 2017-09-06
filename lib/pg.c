@@ -4,8 +4,8 @@ _Static_assert(sizeof(EdPgFree) == PAGESIZE,
 		"EdPgFree size invalid");
 _Static_assert(sizeof(EdPgGc) == PAGESIZE,
 		"EdPgGc size invalid");
-_Static_assert(offsetof(EdPgGc, data) % 8 == 0,
-		"EdPgGc data not 8-byte aligned");
+_Static_assert(offsetof(EdPgGc, data) % ed_alignof(EdPgGcList) == 0,
+		"EdPgGc data not properly aligned");
 
 #define GC_LIST_PAGE_SIZE (sizeof(((EdPgGcList *)0)->pages[0]))
 
@@ -485,9 +485,10 @@ gc_list_npages_for(EdPgGc *pgc, EdTxnId xid)
 {
 	if (pgc == NULL) { return 0; }
 	EdPgGcList *list = (EdPgGcList *)(pgc->data + pgc->tail);
-	return xid <= list->xid ?
-		pgc->remain / GC_LIST_PAGE_SIZE :
-		gc_list_npages(pgc->remain);
+	if (xid <= list->xid) { return pgc->remain / GC_LIST_PAGE_SIZE; }
+
+	ssize_t tail = ed_align_type((ssize_t)sizeof(pgc->data) - pgc->remain, EdPgGcList);
+	return gc_list_npages(sizeof(pgc->data) - tail);
 }
 
 /**
@@ -498,7 +499,7 @@ gc_list_npages_for(EdPgGc *pgc, EdTxnId xid)
 static size_t
 gc_list_size(EdPgno npages)
 {
-	return offsetof(EdPgGcList, pages) + npages*GC_LIST_PAGE_SIZE;
+	return ed_align_type(offsetof(EdPgGcList, pages) + npages*GC_LIST_PAGE_SIZE, EdPgGcList);
 }
 
 /**
@@ -520,14 +521,17 @@ gc_list_next(EdPgGc *pgc, EdTxnId xid)
 		return pgc->remain < GC_LIST_PAGE_SIZE ? NULL : list;
 	}
 
+	ssize_t tail = ed_align_type((ssize_t)sizeof(pgc->data) - pgc->remain, EdPgGcList);
+	ssize_t remain = (ssize_t)sizeof(pgc->data) - tail - offsetof(EdPgGcList, pages);
+
 	// If the page is full, return NULL.
-	if (pgc->remain < sizeof(EdPgGcList)) {
+	if (remain < (ssize_t)sizeof(list->pages[0])) {
 		return NULL;
 	}
 
 	// Load the next list in the current gc page.
-	pgc->tail = sizeof(pgc->data) - pgc->remain;
-	pgc->remain -= offsetof(EdPgGcList, pages);
+	pgc->tail = tail;
+	pgc->remain = remain;
 	list = (EdPgGcList *)(pgc->data + pgc->tail);
 	list->xid = xid;
 	list->npages = 0;

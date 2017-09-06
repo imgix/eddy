@@ -818,10 +818,14 @@ ed_expired_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at);
 #define ed_count_pg(n) ED_COUNT_SIZE(n, PAGESIZE)
 #define ed_align_pg(n) ED_ALIGN_SIZE(n, PAGESIZE)
 
+#define ed_count_type(n, t) ED_COUNT_SIZE(n, ed_alignof(t))
+#define ed_align_type(n, t) ED_ALIGN_SIZE(n, ed_alignof(t))
+
 #define ed_fsave(f) ((uint32_t)((f) & UINT64_C(0x00000000FFFFFFFF)))
 #define ed_fopen(f) ((f) & UINT64_C(0xFFFFFFFF00000000))
 
 #define ed_len(arr) (sizeof(arr) / sizeof((arr)[0]))
+#define ed_alignof(t) offsetof(struct { char c; t m; }, m)
 
 #if BYTE_ORDER == LITTLE_ENDIAN
 # define ed_b16(v) __builtin_bswap16(v)
