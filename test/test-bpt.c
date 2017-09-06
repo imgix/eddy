@@ -15,7 +15,7 @@
 static void __attribute__((unused)) breakpoint(void) {}
 
 static EdTxnType xtype;
-static const char *path = "/tmp/eddy/test_bpt";
+static const char *path = "./test/tmp/test_bpt";
 
 typedef struct {
 	EdTxnId xid;

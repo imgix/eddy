@@ -179,11 +179,11 @@ analyze:
 test: $(TESTSRC:test/test-%.c=test-%)
 
 # Build and run a single test.
-test-%: $(TEST)/test-% | /tmp/eddy
+test-%: $(TEST)/test-% | ./test/tmp
 	@./$<
 
-/tmp/eddy:
-	./test/setup.sh
+./test/tmp:
+	./test/setup.sh $@
 
 # Build and run a single test in a debugger.
 debug-%: $(TEST)/test-%

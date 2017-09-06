@@ -2,7 +2,7 @@
 #include "mu.h"
 
 static EdAlloc alloc;
-static const char *path = "/tmp/eddy/test_page";
+static const char *path = "./test/tmp/test_page";
 
 static void
 cleanup(void)
