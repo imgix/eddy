@@ -306,11 +306,11 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 
 	if (txn->nodes->nused == txn->nodes->nslot) {
 		int rc = node_alloc(&txn->nodes, txn->nodes->nslot+1);
-		if (rc < 0) { return rc; }
+		if (rc < 0) { return (txn->error = rc); }
 	}
 
 	EdPg *pg = ed_pg_map(txn->xtype->alloc.fd, no, 1);
-	if (pg == MAP_FAILED) { return ED_ERRNO; }
+	if (pg == MAP_FAILED) { return (txn->error = ED_ERRNO); }
 	*out = node_wrap(txn, pg, par, pidx);
 	return 0;
 }
@@ -324,18 +324,18 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 			unsigned npgslot = txn->ndb*5;
 			npgslot = ED_ALIGN_SIZE(need, npgslot);
 			EdPg **pg = realloc(txn->pg, npgslot*sizeof(pg[0]));
-			if (pg == NULL) { return ED_ERRNO; }
+			if (pg == NULL) { return (txn->error = ED_ERRNO); }
 			txn->pg = pg;
 			txn->npgslot = npgslot;
 		}
 		int rc = ed_alloc(&txn->xtype->alloc, txn->pg+npg, txn->npgslot-npg, true);
-		if (rc < 0) { return rc; }
+		if (rc < 0) { return (txn->error = rc); }
 		txn->npg = txn->npgslot;
 	}
 
 	if (txn->nodes == NULL || txn->nodes->nused == txn->nodes->nslot) {
 		int rc = node_alloc(&txn->nodes, txn->nodes ? txn->nodes->nslot + 1 : npg);
-		if (rc < 0) { return rc; }
+		if (rc < 0) { return (txn->error = rc); }
 	}
 
 	EdNode *node = node_wrap(txn, txn->pg[txn->npgused++], par, pidx);
@@ -371,7 +371,7 @@ ed_txn_discard(EdTxn *txn, EdNode *node)
 		if (txn->ngcused == ngcslot) {
 			ngcslot = ngcslot ? ngcslot * 2 : txn->ndb*12;
 			EdPg **gc = realloc(txn->gc, ngcslot * sizeof(*gc));
-			if (gc == NULL) { return ED_ERRNO; }
+			if (gc == NULL) { return (txn->error = ED_ERRNO); }
 			txn->gc = gc;
 			txn->ngcslot = ngcslot;
 		}
