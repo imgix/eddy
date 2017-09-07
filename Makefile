@@ -77,8 +77,8 @@ ifeq ($(findstring .cc,$(suffix $(LIBSRC))),.cc)
 else
   LD:=$(CC)
 endif
-CC:= $(CC) -std=c11
-CXX:= $(CXX) -std=c++11
+CC:= $(CC) -std=gnu11
+CXX:= $(CXX) -std=gnu++11
 
 # Append required flags.
 ifeq ($(DEBUG),yes)
