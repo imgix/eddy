@@ -1,7 +1,7 @@
 #include "eddy-private.h"
 
-_Static_assert(sizeof(EdIdxHdr) <= PAGESIZE,
-		"EdIdxHdr too big");
+_Static_assert(sizeof(EdPgIdx) <= PAGESIZE,
+		"EdPgIdx too big");
 _Static_assert(sizeof(EdBpt) + ED_ENTRY_BLOCK_COUNT*sizeof(EdEntryBlock) <= PAGESIZE,
 		"ED_PAGE_BLOCK_COUNT is too high");
 _Static_assert(sizeof(EdBpt) + ED_ENTRY_KEY_COUNT*sizeof(EdEntryKey) <= PAGESIZE,
@@ -15,14 +15,14 @@ _Static_assert(sizeof(EdBpt) + ED_ENTRY_KEY_COUNT*sizeof(EdEntryKey) <= PAGESIZE
 #define BITNSLOTS(nb) ((nb + 8 - 1) / 8)
 
 #define PG_ROOT_FREE 1
-#define PG_NHDR(nconns) ed_count_pg(offsetof(EdIdxHdr, conns) + sizeof(EdConn)*nconns)
+#define PG_NHDR(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)
 #define PG_NEXTRA 1
 #define PG_NINIT(nconns) (PG_NHDR(nconns) + PG_NEXTRA)
 
 #define ed_idx_flags(f) ((f) & ~ED_FRESET)
 
 
-static const EdIdxHdr INDEX_DEFAULT = {
+static const EdPgIdx INDEX_DEFAULT = {
 	.base = { 0, ED_PG_INDEX },
 	.magic = { 'E', 'D', 'D', 'Y' },
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -34,21 +34,19 @@ static const EdIdxHdr INDEX_DEFAULT = {
 #endif
 	.mark = 0xfc,
 	.version = 2,
+	.size_page = PAGESIZE,
 	.size_align = ED_MAX_ALIGN,
 	.alloc_count = ED_ALLOC_COUNT,
 	.slab_block_size = PAGESIZE,
-	.alloc = {
-		.size_page = PAGESIZE,
-		.gc_head = ED_PG_NONE,
-		.gc_tail = ED_PG_NONE,
-	},
-	.key_tree = ED_PG_NONE,
-	.block_tree = ED_PG_NONE,
+	.free_list = ED_PG_NONE,
+	.gc_head = ED_PG_NONE,
+	.gc_tail = ED_PG_NONE,
+	.tree = { ED_PG_NONE, ED_PG_NONE },
 	.nconns = 64,
 };
 
 static int
-hdr_verify(const EdIdxHdr *hdr, const struct stat *s)
+hdr_verify(const EdPgIdx *hdr, const struct stat *s)
 {
 	if (s->st_size < (off_t)sizeof(*hdr)) { return ED_EINDEX_SIZE; }
 	if (memcmp(hdr->magic, INDEX_DEFAULT.magic, sizeof(hdr->magic)) != 0) {
@@ -59,12 +57,12 @@ hdr_verify(const EdIdxHdr *hdr, const struct stat *s)
 	if (hdr->version != INDEX_DEFAULT.version) { return ED_EINDEX_VERSION; }
 	if (hdr->size_align != ED_MAX_ALIGN) { return ED_EINDEX_MAX_ALIGN; }
 	if (hdr->alloc_count != ED_ALLOC_COUNT) { return ED_EINDEX_ALLOC_COUNT; }
-	if (hdr->alloc.size_page != INDEX_DEFAULT.alloc.size_page) { return ED_EINDEX_PAGE_SIZE; }
+	if (hdr->size_page != INDEX_DEFAULT.size_page) { return ED_EINDEX_PAGE_SIZE; }
 	return 0;
 }
 
 static int
-hdr_verify_slab(const EdIdxHdr *hdr, int64_t size, ino_t ino)
+hdr_verify_slab(const EdPgIdx *hdr, int64_t size, ino_t ino)
 {
 	if (hdr->slab_block_count != (EdBlkno)(size/hdr->slab_block_size)) { return ED_ESLAB_BLOCK_COUNT; }
 	if (hdr->slab_ino != (uint64_t)ino) { return ED_ESLAB_INODE; }
@@ -147,7 +145,7 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
  * @return >=0 the connection index, <0 on error
  */
 static int
-conn_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
+conn_acquire(EdPgIdx *hdr, int fd, EdTxnId xmin)
 {
 	int nconns = (int)hdr->nconns;
 	int rc = ed_esys(EAGAIN);
@@ -157,7 +155,7 @@ conn_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
 		for (int i = 0; i < nconns; i++, c++) {
 			if (!all && c->pid > 0 && (c->xid == 0 || c->xid >= xmin)) { continue; }
 			rc = ed_flck(fd, ED_LCK_EX,
-					offsetof(EdIdxHdr, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
+					offsetof(EdPgIdx, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
 					ED_FNOBLOCK);
 			if (rc == 0) {
 				c->pid = getpid();
@@ -180,21 +178,39 @@ conn_acquire(EdIdxHdr *hdr, int fd, EdTxnId xmin)
  * @param  fd  An open file descriptor to the file containing #hdr
  */
 static void
-conn_release(EdIdxHdr *hdr, int i, int fd)
+conn_release(EdPgIdx *hdr, int i, int fd)
 {
 	if (i < 0) { return; }
 	memset(&hdr->conns[i], 0, sizeof(*hdr->conns));
 	ed_flck(fd, ED_LCK_UN,
-			offsetof(EdIdxHdr, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
+			offsetof(EdPgIdx, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
 			ED_FNOBLOCK);
 }
 
-int
-ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
+static void
+ed_idx_clear(EdIdx *idx)
 {
-	EdIdxHdr *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
+	idx->hdr = NULL;
+	idx->fd = -1;
+	idx->slabfd = -1;
+	idx->free = NULL;
+	idx->gc_head = NULL;
+	idx->gc_tail = NULL;
+	idx->flags = 0;
+	idx->txn = NULL;
+	idx->conn = -1;
+	idx->nconns = 64;
+}
+
+int
+ed_idx_open(EdIdx *idx, const EdConfig *cfg)
+{
+	ed_idx_clear(idx);
+	ed_lck_init(&idx->lck, ED_IDX_LCK_WRITE_OFF, ED_IDX_LCK_WRITE_LEN);
+
+	EdPgIdx *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
-	int fd = -1, sfd = -1, rc = 0, cix = -1;
+	int fd = -1, sfd = -1, rc = 0;
 	uint64_t flags = cfg->flags;
 	unsigned nconns = cfg->max_conns;
 	if (nconns == 0) { nconns = hdrnew.nconns; }
@@ -204,8 +220,8 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	hdrnew.epoch = ed_now_unix();
 	hdrnew.flags = ed_fsave(flags);
 	hdrnew.slab_block_size = cfg->slab_block_size ? cfg->slab_block_size : PAGESIZE;
-	hdrnew.alloc.free_list = PG_ROOT_FREE;
-	hdrnew.alloc.tail = (EdAllocTail){ PG_NINIT(nconns), 0 };
+	hdrnew.free_list = PG_ROOT_FREE;
+	hdrnew.tail = (EdIdxTail){ .pos = { PG_NINIT(nconns), 0 } };
 	if (cfg->slab_path == NULL) {
 		int len = snprintf(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1, "%s-slab", cfg->index_path);
 		if (len < 0) { return ED_ERRNO; }
@@ -220,13 +236,15 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 	}
 	hdrnew.nconns = nconns;
 
-	fd = OPEN(cfg->index_path, flags, ED_FCREATE|ED_FREPLACE);
+	idx->fd = fd = OPEN(cfg->index_path, flags, ED_FCREATE|ED_FREPLACE);
 	if (fd < 0) { rc = ED_ERRNO; goto error; }
 
-	hdr = ed_pg_map(fd, 0, PG_NINIT(nconns));
+	idx->nconns = nconns;
+	idx->hdr = hdr = ed_pg_map(fd, 0, PG_NINIT(nconns));
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgFree *free_list = (EdPgFree *)((uint8_t *)hdr + PG_ROOT_FREE*PAGESIZE);
+	idx->free = free_list;
 
 	rc = ed_flck(fd, ED_LCK_EX, ED_IDX_LCK_OPEN_OFF, ED_IDX_LCK_OPEN_LEN, cfg->flags);
 	if (rc == 0) {
@@ -243,7 +261,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 				slab_path = hdr->slab_path;
 			}
 
-			sfd = OPEN(slab_path, flags, ED_FALLOCATE);
+			idx->slabfd = sfd = OPEN(slab_path, flags, ED_FALLOCATE);
 			if (sfd < 0 || fstat(sfd, &stat) < 0) { rc = ED_ERRNO; break; }
 
 			int64_t slab_size = slab_init(sfd, cfg, &stat);
@@ -257,6 +275,8 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 			hdrnew.slab_block_count = (EdBlkno)(slab_size/hdrnew.slab_block_size);
 			hdrnew.slab_ino = (uint64_t)stat.st_ino;
 
+			ftruncate(fd, 0);
+
 			size_t size = PG_NINIT(nconns) * PAGESIZE;
 			rc = allocate_file(flags, fd, size + (ED_ALLOC_COUNT * PAGESIZE), "index");
 			if (rc < 0) { break; }
@@ -266,65 +286,56 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg, int *slab_fd)
 			free_list->base.no = PG_ROOT_FREE;
 			free_list->base.type = ED_PG_FREE_HEAD;
 			free_list->count = 0;
-			if (msync(hdr, size, MS_SYNC) < 0) { rc = ED_ERRNO; break; }
+			if (!(cfg->flags & ED_FNOSYNC)) {
+				fsync(fd);
+			}
 		} while (0);
 		ed_flck(fd, ED_LCK_UN, ED_IDX_LCK_OPEN_OFF, ED_IDX_LCK_OPEN_LEN, cfg->flags);
 	}
 	if (rc < 0) { goto error; }
 
-	cix = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0);
-	if (cix < 0) {
-		rc = cix;
-		goto error;
-	}
+	idx->conn = rc = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0);
+	if (rc < 0) { goto error; }
 
-	uint64_t f = ed_idx_flags(hdr->flags | ed_fopen(flags));
-	ed_lck_init(&idx->xtype.lck, ED_IDX_LCK_WRITE_OFF, ED_IDX_LCK_WRITE_LEN);
-	ed_alloc_init(&idx->xtype.alloc, &hdr->alloc, fd, f);
-	idx->xtype.alloc.free = free_list;
-	idx->xtype.gxid = &hdr->xid;
-	idx->xtype.conns = hdr->conns;
-	idx->xtype.nconns = hdr->nconns;
-	idx->xtype.conn = cix;
-	idx->xtype.connpos = offsetof(EdIdxHdr, conns);
-	idx->xtype.epoch = hdr->epoch;
-	idx->flags = f;
-	idx->seed = hdr->seed;
-	idx->hdr = hdr;
-	idx->txn = NULL;
+	rc = ed_txn_new(&idx->txn, idx);
+	if (rc < 0) { goto error; }
 
-	EdTxnRef ref[] = {
-		{ &hdr->key_tree, sizeof(EdEntryKey) },
-		{ &hdr->block_tree, sizeof(EdEntryBlock) },
-	};
+	idx->flags = ed_idx_flags(hdr->flags | ed_fopen(flags));
 
-	rc = ed_txn_new(&idx->txn, &idx->xtype, ref, ed_len(ref));
-	if (rc < 0) {
-		ed_lck_final(&idx->xtype.lck);
-		ed_alloc_close(&idx->xtype.alloc);
-		goto error;
-	}
-
-	*slab_fd = sfd;
 	return 0;
 
 error:
-	if (hdr != MAP_FAILED) { ed_pg_unmap(hdr, PG_NINIT(nconns)); }
-	if (sfd >= 0) { close(sfd); }
-	if (fd >= 0) { close(fd); }
+	ed_idx_close(idx);
 	return rc;
 }
 
 void
 ed_idx_close(EdIdx *idx)
 {
+	// DO NOT READ OR WRITE INTO ANY MAPPED PAGES (hdr, gc_head, gc_tail, etc.)
+	// This is used when cleaning up from failures when opening. That may mean
+	// mapped pages have not yet been allocated in the underlying file.
+
 	if (idx == NULL) { return; }
-	ed_alloc_close(&idx->xtype.alloc);
+
+	conn_release(idx->hdr, idx->conn, idx->fd);
 	ed_txn_close(&idx->txn, idx->flags);
-	conn_release(idx->hdr, idx->xtype.conn, idx->xtype.alloc.fd);
-	ed_lck_final(&idx->xtype.lck);
-	ed_pg_unmap(idx->hdr, PG_NHDR(idx->hdr->nconns));
-	idx->hdr = NULL;
+	if (idx->gc_tail && idx->gc_tail != MAP_FAILED && idx->gc_tail != idx->gc_head) {
+		ed_pg_unmap(idx->gc_tail, 1);
+	}
+	if (idx->gc_head && idx->gc_head != MAP_FAILED) {
+		ed_pg_unmap(idx->gc_head, 1);
+	}
+	if (idx->free && idx->free != MAP_FAILED) {
+		ed_pg_unmap(idx->free, 1);
+	}
+	if (idx->hdr && idx->hdr != MAP_FAILED) {
+		ed_pg_unmap(idx->hdr, PG_NHDR(idx->nconns));
+	}
+	if (idx->fd > -1) { close(idx->fd); }
+	if (idx->slabfd > -1) { close(idx->slabfd); }
+	ed_lck_final(&idx->lck);
+	ed_idx_clear(idx);
 }
 
 void
@@ -342,7 +353,7 @@ idx_set_obj(EdObject *obj, EdObjectHdr *hdr)
 int
 ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 {
-	uint64_t h = ed_hash(k, klen, idx->seed);
+	uint64_t h = ed_hash(k, klen, idx->hdr->seed);
 	EdTimeUnix now = ed_now_unix();
 
 	int rc = ed_txn_open(idx->txn, idx->flags|ED_FRDONLY);
@@ -351,14 +362,14 @@ ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 	EdEntryKey *nkey;
 	rc = ed_bpt_find(idx->txn, 0, h, (void **)&nkey);
 	for (; rc == 1; rc = ed_bpt_next(idx->txn, 0, (void **)&nkey)) {
-		if (!ed_expired_at(idx->xtype.epoch, nkey->exp, now)) {
-			EdObjectHdr *hdr = ed_pg_map(obj->cache->fd, nkey->no, nkey->count);
+		if (!ed_expired_at(idx->hdr->epoch, nkey->exp, now)) {
+			EdObjectHdr *hdr = ed_pg_map(obj->cache->idx.slabfd, nkey->no, nkey->count);
 			if (hdr == MAP_FAILED) {
 				rc = ED_ERRNO;
 				break;
 			}
 			if (hdr->keylen == klen && memcmp((uint8_t *)hdr+sizeof(*hdr), k, klen) == 0) {
-				obj->expiry = ed_expiry_at(idx->xtype.epoch, nkey->exp, now);
+				obj->expiry = ed_expiry_at(idx->hdr->epoch, nkey->exp, now);
 				idx_set_obj(obj, hdr);
 				break;
 			}
@@ -372,7 +383,7 @@ ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 int
 ed_idx_lock(EdIdx *idx, EdLckType type)
 {
-	return ed_lck(&idx->xtype.lck, idx->xtype.alloc.fd, type, idx->flags);
+	return ed_lck(&idx->lck, idx->fd, type, idx->flags);
 }
 
 // Tests and sets a page number in the bit vector.
@@ -418,7 +429,7 @@ stat_free(EdIdx *idx, uint8_t *vec, EdPgFree *fs, FILE *out)
 	EdPgno c = fs->count;
 	int rc = stat_pages(vec, fs->base.no, fs->pages, c, out);
 	if (rc == 0 && c > 0) {
-		EdPgFree *p = ed_pg_map(idx->xtype.alloc.fd, fs->pages[0], 1);
+		EdPgFree *p = ed_pg_map(idx->fd, fs->pages[0], 1);
 		if (p == MAP_FAILED) { return ED_ERRNO; }
 		if (p->base.type == ED_PG_FREE_CHLD || p->base.type == ED_PG_FREE_HEAD) {
 			rc = stat_free(idx, vec, (EdPgFree *)p, out);
@@ -431,19 +442,19 @@ stat_free(EdIdx *idx, uint8_t *vec, EdPgFree *fs, FILE *out)
 static int
 stat_tail(EdIdx *idx, uint8_t *vec, FILE *out)
 {
-	EdAllocTail tail = atomic_load(&idx->hdr->alloc.tail);
-	EdPgno buf[ED_ALLOC_COUNT], n = ED_ALLOC_COUNT - tail.off;
+	EdIdxTail tail = { .vpos = idx->hdr->tail.vpos };
+	EdPgno buf[ED_ALLOC_COUNT], n = ED_ALLOC_COUNT - tail.pos.off;
 	for (EdPgno i = 0; i < n; i++) {
-		buf[i] = tail.start + tail.off + i;
+		buf[i] = tail.pos.start + tail.pos.off + i;
 	}
-	return stat_pages(vec, tail.start+tail.off, buf, n, out);
+	return stat_pages(vec, tail.pos.start+tail.pos.off, buf, n, out);
 }
 
 int
 ed_idx_stat(EdIdx *idx, FILE *out, int flags)
 {
 	struct stat s;
-	if (fstat(idx->xtype.alloc.fd, &s) < 0) { return ED_ERRNO; }
+	if (fstat(idx->fd, &s) < 0) { return ED_ERRNO; }
 
 	int rc = 0;
 	EdPgno pgno = s.st_size / PAGESIZE;
@@ -478,8 +489,8 @@ ed_idx_stat(EdIdx *idx, FILE *out, int flags)
 		rc = ed_idx_lock(idx, ED_LCK_SH);
 		if (rc < 0) { goto done; }
 
-		BITSET(vec, idx->xtype.alloc.hdr->free_list);
-		rc = stat_free(idx, vec, ed_alloc_free_list(&idx->xtype.alloc), out);
+		BITSET(vec, idx->hdr->free_list);
+		rc = stat_free(idx, vec, ed_alloc_free_list(idx), out);
 
 		ed_idx_lock(idx, ED_LCK_UN);
 		if (rc < 0) { goto done; }

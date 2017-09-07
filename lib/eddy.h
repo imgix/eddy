@@ -50,7 +50,6 @@ struct EdConfig {
 	long long slab_size;
 	unsigned slab_block_size;
 	uint64_t flags;
-	int writer_vacuum;
 };
 
 struct EdObjectAttr {
@@ -60,7 +59,7 @@ struct EdObjectAttr {
 	EdTimeTTL ttl;
 };
 
-#define ed_config_make() ((EdConfig){ .writer_vacuum = 2 })
+#define ed_config_make() ((EdConfig){ .flags = 0 })
 
 
 

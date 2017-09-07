@@ -39,6 +39,9 @@
 #define ED_LOCAL __attribute__((visibility ("hidden")))
 #define ED_INLINE static inline __attribute__((always_inline))
 
+#define ED_DB_KEYS 0
+#define ED_DB_BLOCKS 1
+
 
 
 /** @brief  Seconds from an internal epoch */
@@ -53,26 +56,20 @@ typedef struct EdPg EdPg;
 typedef struct EdPgFree EdPgFree;
 typedef struct EdPgGc EdPgGc;
 typedef struct EdPgGcList EdPgGcList;
-
-typedef struct EdAlloc EdAlloc;
-typedef struct EdAllocHdr EdAllocHdr;
-typedef struct EdAllocTail EdAllocTail;
+typedef struct EdPgIdx EdPgIdx;
 
 typedef struct EdNode EdNode;
 typedef struct EdBpt EdBpt;
 
 typedef uint64_t EdTxnId;
 typedef struct EdTxn EdTxn;
-typedef struct EdTxnType EdTxnType;
-typedef struct EdTxnRef EdTxnRef;
 typedef struct EdTxnDb EdTxnDb;
 typedef struct EdTxnNode EdTxnNode;
 
 typedef struct EdConn EdConn;
-typedef struct EdConnHdr EdConnHdr;
 
 typedef struct EdIdx EdIdx;
-typedef struct EdIdxHdr EdIdxHdr;
+typedef union EdIdxTail EdIdxTail;
 
 typedef struct EdEntryBlock EdEntryBlock;
 typedef struct EdEntryKey EdEntryKey;
@@ -211,20 +208,6 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 
 #define ED_PG_NFREE ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
 
-/**
- * @brief  Page allocator in-memory object
- */
-struct EdAlloc {
-	EdAllocHdr * hdr;              /**< Reference to the on-disk allocation value */
-	EdPgFree *   free;             /**< Currently mapped free array page */
-	EdPgGc *     gc_head;          /**< Currently mapped head of the garbage collected pages */
-	EdPgGc *     gc_tail;          /**< Currently mapped tail of the garbage collected pages */
-	void *       pg;               /**< Mapped page pointer containing #hdr */
-	uint64_t     flags;            /**< Flags for customizeing the allocator behavior */
-	int          fd;               /**< Open file discriptor for the file to allocate from */
-	bool         from_new;         /**< Status if created from #ed_alloc_new */
-};
-
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
 ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
@@ -245,7 +228,7 @@ ED_LOCAL     void ed_pg_unload(EdPg **pgp);
  * reclaiming previously freed pages. If there are not enough free pages
  * available, the file will be expanded.
  *
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  p  Array to store allocated pages into
  * @param  n  Number of pages to allocate
  * @param  exclusive  If this allocation call has exclusive access to the allocator
@@ -253,7 +236,7 @@ ED_LOCAL     void ed_pg_unload(EdPg **pgp);
  *          <0 error code
  */
 ED_LOCAL int
-ed_alloc(EdAlloc *alloc, EdPg **, EdPgno n, bool exclusive);
+ed_alloc(EdIdx *idx, EdPg **, EdPgno n, bool exclusive);
 
 /**
  * @brief  Frees disused page objects
@@ -263,70 +246,30 @@ ed_alloc(EdAlloc *alloc, EdPg **, EdPgno n, bool exclusive);
  *
  * Exclusive access to allocator is assumed for this call.
  *
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  p  Array of pages objects to deallocate
  * @param  n  Number of pages to deallocate
  */
 ED_LOCAL void
-ed_free(EdAlloc *alloc, EdPg **p, EdPgno n);
+ed_free(EdIdx *idx, EdPg **p, EdPgno n);
 
 /**
  * @brief  Frees disused page numbers
  * @see ed_free
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  p  Array of pages numbers to deallocate
  * @param  n  Number of pages to deallocate
  */
 ED_LOCAL void
-ed_free_pgno(EdAlloc *alloc, EdPgno *pages, EdPgno n);
-
-/**
- * @brief  Constructs a new page allocator on disk
- *
- * This is primarily used for testing the page allocator. In typical usage, the
- * page allocator is embedded in the index.
- * 
- * @param  alloc  Page allocator to initialize
- * @param  path  Path on disk to store the allocator
- * @param  meta  Meta data space to reserve with the page allocator
- * @param  flags  Flags for operational options
- * @return 0 on succes, <0 on error
- */
-ED_LOCAL int
-ed_alloc_new(EdAlloc *alloc, const char *path, size_t meta, uint64_t flags);
-
-/**
- * @brief  Initializes a page allocator from an existing mapped header
- * @param  alloc  Page allocator to initialize
- * @param  hdr  Allocator header embedded in another object
- * @param  fd  File descriptor for the file on disk
- * @param  flags  Flags for operational options
- */
-ED_LOCAL void
-ed_alloc_init(EdAlloc *alloc, EdAllocHdr *hdr, int fd, uint64_t flags);
-
-/**
- * @brief  Closes the allocator and releases all resources
- * @param  alloc  Page allocator
- */
-ED_LOCAL void
-ed_alloc_close(EdAlloc *alloc);
+ed_free_pgno(EdIdx *idx, EdPgno *pages, EdPgno n);
 
 /**
  * @brief  Gets the meta data space requested from #ed_alloc_new
- * @param  alloc  Page allocator
- * @return  Pointer to meta data space
- */
-ED_LOCAL void *
-ed_alloc_meta(EdAlloc *alloc);
-
-/**
- * @brief  Gets the meta data space requested from #ed_alloc_new
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @return  Object with the list of free pages
  */
 ED_LOCAL EdPgFree *
-ed_alloc_free_list(EdAlloc *alloc);
+ed_alloc_free_list(EdIdx *idx);
 
 /**
  * @brief  Pushes an array of page numbers into the garbage collector
@@ -337,14 +280,14 @@ ed_alloc_free_list(EdAlloc *alloc);
  * is transfered to the garbage collector, and any external pointers should be
  * considered invalid after a successful call.
  *
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  xid  The transaction ID that is discarding these pages
  * @param  pg  Array of page objects
  * @param  n  Number of entries in the page number array
  * @returns  0 on success, <0 on error
  */
 ED_LOCAL int
-ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
+ed_gc_put(EdIdx *idx, EdTxnId xid, EdPg **pg, EdPgno n);
 
 /**
  * @brief  Runs the garbage collector
@@ -352,13 +295,13 @@ ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n);
  * This will transfer garbage pages back the free pool if their associated
  * transaction ids are less than #xid.
  *
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  xid  The lowest active transaction ID
  * @param  limit  The maximum number of transaction IDs to free
  * @returns  0 on success, <0 on error
  */
 ED_LOCAL int
-ed_gc_run(EdAlloc *alloc, EdTxnId xid, int limit);
+ed_gc_run(EdIdx *idx, EdTxnId xid, int limit);
 
 /** @} */
 
@@ -468,17 +411,6 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 #define ED_TXN_OPEN 1
 
 /**
- * @brief  Transaction database instance information
- *
- * This describes each database involved in the transaction. An array of these
- * is passed to #ed_txn_new().
- */
-struct EdTxnRef {
-	EdPgno *     no;               /**< Pointer to the page number for the root of the b+tree */
-	size_t       entry_size;       /**< Size in bytes of the entry value in the b+tree */
-};
-
-/**
  * @brief  Transaction database reference
  *
  * This is the object allocated for each database involved in the transaction.
@@ -502,20 +434,6 @@ struct EdTxnDb {
 };
 
 /**
- * @brief  Base type for transactional objects
- */
-struct EdTxnType {
-	EdAlloc      alloc;            /**< Page allocator */
-	EdLck        lck;              /**< Write lock */
-	EdTxnId *    gxid;             /**< Reference global to transaction id */
-	EdConn *     conns;            /**< Reference to connection array */
-	int          nconns;           /**< Total number of connections in the array */
-	int          conn;             /**< Index into the array for the current connection */
-	off_t        connpos;          /**< Byte offset of the connection array in the file */
-	EdTimeUnix   epoch;            /**< Time offset from UNIX time */
-};
-
-/**
  * @brief  Transaction object
  *
  * This holds all information for an active or reset transaction. Once
@@ -523,7 +441,7 @@ struct EdTxnType {
  * used for multiple transactions agains the same database set.
  */
 struct EdTxn {
-	EdTxnType *  xtype;            /**< Transaction type inforation */
+	EdIdx *      idx;              /**< Index for the transaction */
 	EdPg **      pg;               /**< Array to hold allocated pages */
 	unsigned     npg;              /**< Number of pages allocated */
 	unsigned     npgused;          /**< Number of pages used */
@@ -537,8 +455,7 @@ struct EdTxn {
 	int          error;            /**< Error code during transaction */
 	bool         isrdonly;         /**< Was #ed_txn_open() called with #ED_FRDONLY */
 	bool         isopen;           /**< Has #ed_txn_open() been called */
-	unsigned     ndb;              /**< Number of search objects */
-	EdTxnDb      db[1];            /**< Flexible array of #EdTxnDb values */
+	EdTxnDb      db[2];            /**< State information for each b+tree */
 };
 
 /**
@@ -563,13 +480,10 @@ struct EdTxnNode {
  * these functions.
  *
  * @param  txnp  Indirect pointer to a assign the allocation to
- * @param  xtype  Initialized transaction type pointer
- * @param  ref  An Array of #EdTxnRef structs
- * @param  nref  The number of #EdTxnRef structs
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_new(EdTxn **txnp, EdTxnType *xtype, EdTxnRef *ref, unsigned nref);
+ed_txn_new(EdTxn **txnp, EdIdx *idx);
 
 /**
  * @brief  Starts an allocated transaction
@@ -703,14 +617,20 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset);
  */
 
 struct EdIdx {
-	EdTxnType    xtype;            /**< Transaction type fields */
+	EdPgIdx *    hdr;              /**< Index header reference */
+	int          fd;               /**< Open file discriptor for the file to allocate from */
+	int          slabfd;           /**< Open file descriptor for the slab */
+	EdLck        lck;              /**< Write lock */
+	EdPgFree *   free;             /**< Currently mapped free array page */
+	EdPgGc *     gc_head;          /**< Currently mapped head of the garbage collected pages */
+	EdPgGc *     gc_tail;          /**< Currently mapped tail of the garbage collected pages */
 	uint64_t     flags;            /**< Open flags merged with the saved flags */
-	uint64_t     seed;             /**< Seed pulled from the index header */
-	EdIdxHdr *   hdr;              /**< Index header reference */
 	EdTxn *      txn;              /**< Cached transaction object */
+	int          conn;             /**< Connection index */
+	int          nconns;           /**< Number of available connections */
 };
 
-ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg, int *slab_fd);
+ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL      int ed_idx_get(EdIdx *, const void *key, size_t len, EdObject *obj);
 ED_LOCAL      int ed_idx_put(EdIdx *, const void *key, size_t len, EdObject *obj);
@@ -924,7 +844,6 @@ ed_power2(unsigned p)
 struct EdCache {
 	EdIdx        idx;
 	atomic_int   ref;
-	int          fd;
 	size_t       bytes_used;
 	size_t       blocks_used;
 };
@@ -993,26 +912,6 @@ struct EdPgGcList {
 #define ED_GC_LIST_MAX ((ED_GC_DATA - sizeof(EdPgGcList)) / sizeof(EdPgno) + 1)
 
 /**
- * @brief  End-of-file free page information
- */
-struct EdAllocTail {
-	EdPgno       start;            /**< Page number for the start of the tail pages */
-	EdPgno       off;              /**< Current offset from #start */
-};
-
-/**
- * @brief  On-disk value for the page allocator
- */
-struct EdAllocHdr {
-	uint32_t     size_page;        /**< Saved system page size in bytes */
-	EdPgno       free_list;        /**< Head page in the list of free pages */
-	_Atomic
-	EdAllocTail  tail;             /**< Tail allocation status */
-	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
-	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
-};
-
-/**
  * @brief  Connection handle for each active process
  */
 struct EdConn {
@@ -1021,10 +920,18 @@ struct EdConn {
 	EdTxnId      xid;              /**< Active read transaction id */
 };
 
+union EdIdxTail {
+	uint64_t     vpos;         /**< Atomic CAS value for the tail fields */
+	struct {
+		EdPgno   start;        /**< Page number for the start of the tail pages */
+		EdPgno   off;          /**< Current offset from #start */
+	} pos;                     /**< Tail allocation positionn information */
+};
+
 /**
  * @brief  Page type for the index file
  */
-struct EdIdxHdr {
+struct EdPgIdx {
 	EdPg         base;             /**< Page number and type */
 	char         magic[4];         /**< Magic identifier string, "edix" */
 	char         endian;           /**< Endianness of the index, 'l' or 'B' */
@@ -1033,29 +940,35 @@ struct EdIdxHdr {
 	uint64_t     seed;             /**< Randomized seed */
 	EdTimeUnix   epoch;            /**< Epoch adjustment in seconds */
 	uint32_t     flags;            /**< Permanent flags used when creating */
+	uint32_t     size_page;        /**< Saved system page size in bytes */
 	uint8_t      size_align;       /**< Size of max alignment */
 	uint8_t      alloc_count;      /**< Verification for the page growth count */
 	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
-	EdAllocHdr   alloc;            /**< Page allocator */
+	EdPgno       free_list;        /**< Head page in the list of free pages */
+	EdIdxTail    tail;             /**< Available space at the end of the file */
 	EdTxnId      xid;              /**< Global transaction ID */
+	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
+	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
+	union {
+		uint64_t vtree;            /**< Atomic CAS value for the trees */
+		EdPgno   tree[2];          /**< Page pointer for the key and slab b+trees */
+	};
 	EdBlkno      pos;              /**< Current slab write block */
-	EdPgno       key_tree;         /**< Page pointer for the entry key b+tree */
-	EdPgno       block_tree;       /**< Page pointer for the slab block b+tree */
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
 	uint64_t     slab_ino;         /**< Inode number of the slab */
-	char         slab_path[1022];  /**< Path to the slab */
+	char         slab_path[918];   /**< Path to the slab */
 	uint16_t     nconns;           /**< Number of process connection slots */
 	EdConn       conns[1];         /**< Flexible array of active process connections */
 };
 
 #define ED_IDX_LCK_OPEN base
-#define ED_IDX_LCK_WRITE alloc
+#define ED_IDX_LCK_WRITE xid
 
-#define ED_IDX_LCK_OPEN_OFF offsetof(EdIdxHdr, ED_IDX_LCK_OPEN)
-#define ED_IDX_LCK_OPEN_LEN sizeof(((EdIdxHdr *)0)->ED_IDX_LCK_OPEN)
+#define ED_IDX_LCK_OPEN_OFF offsetof(EdPgIdx, ED_IDX_LCK_OPEN)
+#define ED_IDX_LCK_OPEN_LEN sizeof(((EdPgIdx *)0)->ED_IDX_LCK_OPEN)
 
-#define ED_IDX_LCK_WRITE_OFF offsetof(EdIdxHdr, ED_IDX_LCK_WRITE)
-#define ED_IDX_LCK_WRITE_LEN sizeof(((EdIdxHdr *)0)->ED_IDX_LCK_WRITE)
+#define ED_IDX_LCK_WRITE_OFF offsetof(EdPgIdx, ED_IDX_LCK_WRITE)
+#define ED_IDX_LCK_WRITE_LEN sizeof(((EdPgIdx *)0)->ED_IDX_LCK_WRITE)
 
 /**
  * @brief  On-disk value for an entry in the slab

@@ -1,3 +1,7 @@
+/**
+ * This tests the b+tree structure. We cheat a bit here and overwrite some of
+ * the internals so that the tests are a bit simpler.
+ */
 #include "../lib/eddy-private.h"
 #include "mu.h"
 
@@ -8,20 +12,17 @@
 #define MULTI 5000
 
 // These flags aren't terribly safe to use, but they do speed up the tests.
-#define FOPEN (ED_FNOTLCK)
-#define FCLOSE (FOPEN|ED_FNOSYNC)
+#define FOPEN (ED_FNOTLCK|ED_FNOSYNC)
+#define FCLOSE (FOPEN)
 #define FRESET (FCLOSE|ED_FRESET)
 
-static void __attribute__((unused)) breakpoint(void) {}
-
-static EdTxnType xtype;
-static const char *path = "./test/tmp/test_bpt";
-
-typedef struct {
-	EdTxnId xid;
-	EdPgno db1, db2;
-	EdConn conns[3];
-} Tree;
+static EdIdx idx;
+static EdConfig cfg = {
+	.index_path = "./test/tmp/test_bpt",
+	.slab_path = "./test/tmp/slab",
+	.slab_size = 16*1024*1024,
+	.flags = FOPEN|ED_FCREATE,
+};
 
 typedef struct {
 	uint64_t key;
@@ -54,9 +55,9 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 	if (ed_pg_load(fd, (EdPg **)&bt, no) == MAP_FAILED) {
 		return ED_ERRNO;
 	}
-	int rc = ed_bpt_verify(bt, xtype.alloc.fd, sizeof(Entry), stderr);
+	int rc = ed_bpt_verify(bt, idx.fd, sizeof(Entry), stderr);
 	if (tryprint) {
-		print_tree(bt, xtype.alloc.fd);
+		print_tree(bt, idx.fd);
 	}
 	ed_pg_unload((EdPg **)&bt);
 	return rc;
@@ -65,43 +66,36 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 static void
 cleanup(void)
 {
-	unlink(path);
+	//unlink(cfg.index_path);
 #if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pg_check(), 0);
 #endif
 }
 
 static void
-start(EdTxn **txn, Tree **tree, int n)
+setup(EdTxn **txn)
 {
-	ed_lck_init(&xtype.lck, 0, PAGESIZE);
-
-	mu_assert_int_eq(ed_alloc_new(&xtype.alloc, path, sizeof(Tree), ED_FNOSYNC), 0);
-
-	Tree *t = ed_alloc_meta(&xtype.alloc);
-	if (t->xid == 0) {
-		t->db1 = ED_PG_NONE;
-		t->db2 = ED_PG_NONE;
-	}
-
-	t->conns[0].pid = getpid();
-	t->conns[0].xid = 0;
-
-	xtype.gxid = &t->xid;
-	xtype.conns = t->conns;
-	xtype.nconns = ed_len(t->conns);
-	xtype.conn = 0;
-	xtype.connpos = offsetof(Tree, conns);
-
-	EdTxnRef ref[] = {
-		{ &t->db1, sizeof(Entry) },
-		{ &t->db2, sizeof(Entry) },
-	};
-
+	int rc;
 	EdTxn *x;
-	mu_assert_int_eq(ed_txn_new(&x, &xtype, ref, n), 0);
 
-	*tree = t;
+	int fd = open(cfg.slab_path, O_CREAT|O_RDWR, 0640);
+	mu_assert_msg(fd >= 0, "failed to open slab: %s\n", strerror(errno));
+
+	rc = ed_mkfile(fd, cfg.slab_size);
+	mu_assert_msg(rc >= 0, "failed to create slab: %s\n", ed_strerror(rc));
+
+	close(fd);
+
+	rc = ed_idx_open(&idx, &cfg);
+	mu_assert_msg(rc >= 0, "failed to open index: %s\n", ed_strerror(rc));
+
+	rc = ed_txn_new(&x, &idx);
+	mu_assert_msg(rc >= 0, "failed to create transaction: %s\n", ed_strerror(rc));
+
+	// Testing hack. Don't do this!
+	x->db[0].entry_size = sizeof(Entry);
+	x->db[1].entry_size = sizeof(Entry);
+
 	*txn = x;
 }
 
@@ -109,8 +103,7 @@ static void
 finish(EdTxn **txn)
 {
 	ed_txn_close(txn, FCLOSE);
-	ed_alloc_close(&xtype.alloc);
-	ed_lck_final(&xtype.lck);
+	ed_idx_close(&idx);
 }
 
 static void
@@ -126,13 +119,12 @@ static void
 test_basic(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
 	Entry *found = NULL;
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	for (unsigned i = 1; i <= SMALL; i += 2) {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
@@ -152,7 +144,7 @@ test_basic(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 1, (void **)&found), 1);
@@ -161,7 +153,7 @@ test_basic(void)
 
 	finish(&txn);
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 1, (void **)&found), 1);
@@ -170,7 +162,7 @@ test_basic(void)
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 6, (void **)&found), 1);
 	mu_assert_uint_eq(found->key, 6);
 	mu_assert_str_eq(found->name, "a6");
-	mu_assert_uint_eq(t->xid, SMALL/2);
+	mu_assert_uint_eq(idx.hdr->xid, SMALL/2);
 
 	finish(&txn);
 }
@@ -179,12 +171,11 @@ static void
 test_repeat(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	{
 		Entry ent = { .key = 0, .name = "a1" };
@@ -211,7 +202,7 @@ test_repeat(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 0, NULL), 1);
@@ -251,12 +242,11 @@ static void
 test_large(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i += 2) {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
@@ -276,7 +266,7 @@ test_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -297,12 +287,11 @@ static void
 test_large_sequential(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
@@ -313,7 +302,7 @@ test_large_sequential(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -333,12 +322,11 @@ static void
 test_large_sequential_reverse(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		Entry ent = { .key = i };
@@ -349,7 +337,7 @@ test_large_sequential_reverse(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned i = LARGE; i > 0; i--) {
 		Entry *ent;
@@ -369,12 +357,11 @@ static void
 test_split_leaf_middle_left(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	size_t n = ed_bpt_capacity(sizeof(Entry), 1);
 	size_t mid = (n / 2) - 1;
@@ -397,7 +384,7 @@ test_split_leaf_middle_left(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (size_t i = 0; i <= n; i++) {
 		Entry *ent;
@@ -417,12 +404,11 @@ static void
 test_split_leaf_middle_right(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	size_t n = ed_bpt_capacity(sizeof(Entry), 1);
 	size_t mid = n / 2;
@@ -445,7 +431,7 @@ test_split_leaf_middle_right(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (size_t i = 0; i <= n; i++) {
 		Entry *ent;
@@ -465,12 +451,11 @@ static void
 test_split_branch_left0(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	// The leaf order is odd, so we'll so this funky business to get a full tree
 	int branch_order = ed_branch_order();
@@ -510,7 +495,7 @@ test_split_branch_left0(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (int i = 0; i < n; i++) {
 		Entry *ent;
@@ -534,12 +519,11 @@ static void
 test_split_branch_right0(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	// The leaf order is odd, so we'll so this funky business to get a full tree
 	int branch_order = ed_branch_order();
@@ -579,7 +563,7 @@ test_split_branch_right0(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (int i = 0; i < n; i++) {
 		Entry *ent;
@@ -603,12 +587,11 @@ static void
 test_split_middle_branch(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	size_t mid = LARGE / 2;
 	for (size_t i = 0; i <= LARGE; i++) {
@@ -630,7 +613,7 @@ test_split_middle_branch(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (size_t i = 0; i <= LARGE; i++) {
 		Entry *ent;
@@ -650,12 +633,11 @@ static void
 test_remove_small(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -666,7 +648,7 @@ test_remove_small(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		Entry *ent;
@@ -681,7 +663,7 @@ test_remove_small(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, false), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], false), 0);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		int key = rand_r(&seed);
@@ -699,7 +681,7 @@ test_remove_small(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
 		Entry *ent;
@@ -720,12 +702,11 @@ static void
 test_remove_large(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -736,7 +717,7 @@ test_remove_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, false), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], false), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -751,7 +732,7 @@ test_remove_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		int key = rand_r(&seed);
@@ -769,7 +750,7 @@ test_remove_large(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
 		Entry *ent;
@@ -790,12 +771,11 @@ static void
 test_multi(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 2);
+	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < MULTI; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -812,8 +792,8 @@ test_multi(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db2, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[1], true), 0);
 
 	for (unsigned seed = 0, i = 0; i < MULTI; i++) {
 		Entry *ent;
@@ -842,12 +822,11 @@ static void
 test_iter(void)
 {
 	mu_teardown = cleanup;
-	unlink(path);
+	unlink(cfg.index_path);
 
-	Tree *t;
 	EdTxn *txn;
 
-	start(&txn, &t, 1);
+	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry ent = { .key = rand_r(&seed) };
@@ -858,7 +837,7 @@ test_iter(void)
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 	}
 
-	mu_assert_int_eq(verify_tree(xtype.alloc.fd, t->db1, true), 0);
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	Entry *ent;
 

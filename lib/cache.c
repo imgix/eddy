@@ -6,7 +6,7 @@ ed_cache_open(EdCache **cachep, const EdConfig *cfg)
 	EdCache *cache = malloc(sizeof(*cache));
 	if (cache == NULL) { return ED_ERRNO; }
 
-	int rc = ed_idx_open(&cache->idx, cfg, &cache->fd);
+	int rc = ed_idx_open(&cache->idx, cfg);
 	if (rc < 0) {
 		free(cache);
 		return rc;
@@ -36,7 +36,6 @@ ed_cache_close(EdCache **cachep)
 		*cachep = NULL;
 		if (atomic_fetch_sub(&cache->ref, 1) == 1) {
 			ed_idx_close(&cache->idx);
-			close(cache->fd);
 			free(cache);
 		}
 	}

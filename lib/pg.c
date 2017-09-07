@@ -1,7 +1,5 @@
 #include "eddy-private.h"
 
-_Static_assert(sizeof(EdPgFree) == PAGESIZE,
-		"EdPgFree size invalid");
 _Static_assert(sizeof(EdPgGc) == PAGESIZE,
 		"EdPgGc size invalid");
 _Static_assert(offsetof(EdPgGc, data) % ed_alignof(EdPgGcList) == 0,
@@ -63,7 +61,7 @@ ed_pg_unload(EdPg **pgp)
 
 /**
  * @brief  Maps a number of pages and assigns them to the array
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  no  Starting page number
  * @param  p  Array to store mapped pages into
  * @param  n  Number of pages to map
@@ -71,9 +69,9 @@ ed_pg_unload(EdPg **pgp)
  *          <0 error code
  */
 static int
-map_live_pages(EdAlloc *alloc, EdPgno no, EdPg **p, EdPgno n)
+map_live_pages(EdIdx *idx, EdPgno no, EdPg **p, EdPgno n)
 {
-	uint8_t *pages = ed_pg_map(alloc->fd, no, n);
+	uint8_t *pages = ed_pg_map(idx->fd, no, n);
 	if (pages == MAP_FAILED) { return ED_ERRNO; }
 	for (EdPgno i = 0; i < n; i++, pages += PAGESIZE) {
 		EdPg *live = (EdPg *)pages;
@@ -85,7 +83,7 @@ map_live_pages(EdAlloc *alloc, EdPgno no, EdPg **p, EdPgno n)
 
 /**
  * @brief  Lock-free allocation from the tail pages
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  p  Array to store allocated pages into
  * @param  n  Number of pages to allocate
  * @return  >0 the number of pages allocated from the tail,
@@ -93,53 +91,38 @@ map_live_pages(EdAlloc *alloc, EdPgno no, EdPg **p, EdPgno n)
  *          <0 error code
  */
 static int
-page_alloc_tail(EdAlloc *alloc, EdPg **p, EdPgno n)
+page_alloc_tail(EdIdx *idx, EdPg **p, EdPgno n)
 {
-	EdAllocHdr *hdr = alloc->hdr;
+	EdPgIdx *hdr = idx->hdr;
 	do {
-		EdAllocTail old = atomic_load(&hdr->tail);
-		if (old.off > ED_ALLOC_COUNT) { return ed_esys(EBADF); }
+		EdIdxTail old = { .vpos = hdr->tail.vpos };
+		if (old.pos.off > ED_ALLOC_COUNT) { return ed_esys(EBADF); }
 
-		EdPgno avail = ED_ALLOC_COUNT - old.off;
+		EdPgno avail = ED_ALLOC_COUNT - old.pos.off;
 		if (avail == 0) { return 0; }
 		if (avail < n) { n = avail; }
 
-		EdAllocTail tail = { old.start, old.off + n };
-		if (atomic_compare_exchange_weak(&hdr->tail, &old, tail)) {
-			EdPgno no = old.start + old.off;
-			int rc = map_live_pages(alloc, no, p, n);
-			if (rc < 0) {
-				// The map should not really fail, but if it does, try to put it into
-				// the free list.
-				EdPgFree *fs = ed_alloc_free_list(alloc);
-				if (fs != MAP_FAILED) {
-					for (; n > 0 && fs->count < ED_PG_NFREE; n--, no++) {
-						fs->pages[fs->count++] = no;
-					}
-				}
-				if (n > 0) {
-					fprintf(stderr, "*** %u page(s) at %u lost from mmap error: %s\n",
-							n, no, strerror(ed_ecode(rc)));
-				}
-			}
-			return rc;
+		EdIdxTail tail = { .pos = { old.pos.start, old.pos.off + n } };
+		if (__sync_bool_compare_and_swap(&hdr->tail.vpos, old.vpos, tail.vpos)) {
+			EdPgno no = old.pos.start + old.pos.off;
+			return map_live_pages(idx, no, p, n);
 		}
 	} while (1);
 }
 
 /**
  * @brief  Locked page allocation from the free list or a new expanded tail.
- * @param  alloc  Page allocator
+ * @param  idx  Index object
  * @param  p  Array to store allocated pages into
  * @param  n  Number of pages to allocate
  * @return  >0 the number of pages allocated from the tail or free list,
  *          <0 error code
  */
 static int
-page_alloc_free_or_expand(EdAlloc *alloc, EdPg **p, EdPgno n)
+page_alloc_free_or_expand(EdIdx *idx, EdPg **p, EdPgno n)
 {
-	EdAllocHdr *hdr = alloc->hdr;
-	EdPgFree *fs = ed_alloc_free_list(alloc);
+	EdPgIdx *hdr = idx->hdr;
+	EdPgFree *fs = ed_alloc_free_list(idx);
 	if (fs == MAP_FAILED) { return ED_ERRNO; }
 
 	switch (fs->count) {
@@ -150,18 +133,18 @@ page_alloc_free_or_expand(EdAlloc *alloc, EdPg **p, EdPgno n)
 	// more that ED_ALLOC_COUNT makes error handling tricker, and in practive,
 	// we won't be allocating that many at a time.
 	case 0: {
-		EdAllocTail tail = atomic_load(&hdr->tail);
-		assert(tail.off == ED_ALLOC_COUNT);
-		tail.start += ED_ALLOC_COUNT;
-		tail.off = 0;
+		EdIdxTail tail = { .vpos = hdr->tail.vpos };
+		assert(tail.pos.off == ED_ALLOC_COUNT);
+		tail.pos.start += ED_ALLOC_COUNT;
+		tail.pos.off = 0;
 
 		if (n > ED_ALLOC_COUNT) { n = ED_ALLOC_COUNT; }
-		off_t size = (off_t)(tail.start + ED_ALLOC_COUNT) * PAGESIZE;
-		if (ftruncate(alloc->fd, size) < 0) { return ED_ERRNO; }
-		int rc = map_live_pages(alloc, tail.start, p, n);
+		off_t size = (off_t)(tail.pos.start + ED_ALLOC_COUNT) * PAGESIZE;
+		if (ftruncate(idx->fd, size) < 0) { return ED_ERRNO; }
+		int rc = map_live_pages(idx, tail.pos.start, p, n);
 		// only mark the pages as used if the map succeeds
-		if (rc > 0) { tail.off = (EdPgno)rc; }
-		atomic_store(&hdr->tail, tail);
+		if (rc > 0) { tail.pos.off = (EdPgno)rc; }
+		hdr->tail.vpos = tail.vpos;
 		return rc;
 	}
 
@@ -169,13 +152,13 @@ page_alloc_free_or_expand(EdAlloc *alloc, EdPg **p, EdPgno n)
 	// stored in the first index. When a single page remains, map that page and
 	// assert its a free page. This page needs to be mapped either way.
 	case 1: {
-		EdPg *tmp = ed_pg_map(alloc->fd, fs->pages[0], 1);
+		EdPg *tmp = ed_pg_map(idx->fd, fs->pages[0], 1);
 		if (tmp == MAP_FAILED) { return ED_ERRNO; }
 		if (fs->base.type == ED_PG_FREE_CHLD) {
 			// If the first page is a free list, promote it to the main free list.
 			// The old free list page can now be changed to a live page.
 			p[0] = (EdPg *)fs;
-			alloc->free = fs = (EdPgFree *)tmp;
+			idx->free = fs = (EdPgFree *)tmp;
 			hdr->free_list = tmp->no;
 		}
 		else {
@@ -196,7 +179,7 @@ page_alloc_free_or_expand(EdAlloc *alloc, EdPg **p, EdPgno n)
 		EdPgno *pg = fs->pages + fs->count, *pgm = pg - 1, *pge = pg - max;
 		// Scan for sequential pages in descending order from the end of the list.
 		for (; pgm > pge && pgm[0] == pgm[-1]-1; pgm--) {}
-		int rc = map_live_pages(alloc, pg[-1], p, pg - pgm);
+		int rc = map_live_pages(idx, pg[-1], p, pg - pgm);
 		if (rc > 0) {
 			fs->count -= (EdPgno)rc;
 		}
@@ -207,7 +190,7 @@ page_alloc_free_or_expand(EdAlloc *alloc, EdPg **p, EdPgno n)
 }
 
 int
-ed_alloc(EdAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
+ed_alloc(EdIdx *idx, EdPg **pages, EdPgno n, bool exclusive)
 {
 	if (n == 0) { return 0; }
 
@@ -217,7 +200,7 @@ ed_alloc(EdAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 
 	// First take from the tail. It may be preferrable to leave tail pages for
 	// unlocked allocations, but currently that is rarely used.
-	rc = page_alloc_tail(alloc, p, rem);
+	rc = page_alloc_tail(idx, p, rem);
 
 	// When not exclusive, only use lock-free allocation from the tail pages.
 	if (!exclusive) { return rc; }
@@ -226,9 +209,9 @@ ed_alloc(EdAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 		p += rc; rem -= rc;
 		// Allocate from the free list or expand the file.
 		while (rem > 0) {
-			rc = page_alloc_free_or_expand(alloc, p, rem);
+			rc = page_alloc_free_or_expand(idx, p, rem);
 			if (rc < 0) {
-				ed_free(alloc, pages, p - pages);
+				ed_free(idx, pages, p - pages);
 				break;
 			}
 			p += rc; rem -= rc;
@@ -240,7 +223,7 @@ ed_alloc(EdAlloc *alloc, EdPg **pages, EdPgno n, bool exclusive)
 }
 
 static EdPgFree *
-pg_push_free(EdAlloc *alloc, EdPgFree *old, EdPgFree *new)
+pg_push_free(EdIdx *idx, EdPgFree *old, EdPgFree *new)
 {
 	// Initialize the new free list with the previous as its first member.
 	new->base.type = ED_PG_FREE_CHLD;
@@ -249,19 +232,19 @@ pg_push_free(EdAlloc *alloc, EdPgFree *old, EdPgFree *new)
 
 	// Remove the old list and place the new one.
 	ed_pg_unmap(old, 1);
-	alloc->hdr->free_list = new->base.no;
-	alloc->free = new;
+	idx->hdr->free_list = new->base.no;
+	idx->free = new;
 
 	return new;
 }
 
 void
-ed_free(EdAlloc *alloc, EdPg **pages, EdPgno n)
+ed_free(EdIdx *idx, EdPg **pages, EdPgno n)
 {
 	for (; n > 0 && *pages == NULL; pages++, n--) {}
 	if (n == 0) { return; }
 
-	EdPgFree *fs = ed_alloc_free_list(alloc);
+	EdPgFree *fs = ed_alloc_free_list(idx);
 	if (fs == MAP_FAILED) { 
 		int err = errno;
 		EdPgno no = pages[0]->no;
@@ -295,20 +278,20 @@ ed_free(EdAlloc *alloc, EdPg **pages, EdPgno n)
 		}
 		// Otherwise, promote the freeing page to a new list.
 		else {
-			fs = pg_push_free(alloc, fs, (EdPgFree *)*pages);
+			fs = pg_push_free(idx, fs, (EdPgFree *)*pages);
 		}
 	}
 }
 
 void
-ed_free_pgno(EdAlloc *alloc, EdPgno *pages, EdPgno n)
+ed_free_pgno(EdIdx *idx, EdPgno *pages, EdPgno n)
 {
 	for (; n > 0 && *pages == ED_PG_NONE; pages++, n--) {}
 	if (n == 0) { return; }
 
 	int err = 0;
 
-	EdPgFree *fs = ed_alloc_free_list(alloc);
+	EdPgFree *fs = ed_alloc_free_list(idx);
 	if (fs == MAP_FAILED) {
 		err = errno;
 		goto done;
@@ -331,12 +314,12 @@ ed_free_pgno(EdAlloc *alloc, EdPgno *pages, EdPgno n)
 		}
 		// Otherwise, promote the freeing page to a new list.
 		else {
-			EdPgFree *nfs = ed_pg_map(alloc->fd, pno, 1);
+			EdPgFree *nfs = ed_pg_map(idx->fd, pno, 1);
 			if (nfs == MAP_FAILED) {
 				err = errno;
 				goto done;
 			}
-			fs = pg_push_free(alloc, fs, nfs);
+			fs = pg_push_free(idx, fs, nfs);
 		}
 	}
 
@@ -351,115 +334,10 @@ done:
 	return;
 }
 
-int
-ed_alloc_new(EdAlloc *alloc, const char *path, size_t meta, uint64_t flags)
-{
-	int fd = open(path, O_CLOEXEC|O_RDWR|O_CREAT, 0600);
-	if (fd < 0) { return ED_ERRNO; }
-
-	int rc = 0;
-	uint8_t *map = MAP_FAILED;
-	struct stat stat;
-
-	if (fstat(fd, &stat) < 0) {
-		rc = ED_ERRNO;
-		goto done;
-	}
-
-	EdPg *top;
-	EdAllocHdr *hdr;
-	EdPgFree *free_list;
-
-	off_t hdrpages = ed_count_pg(ed_align_max(sizeof(*top)) + ed_align_max(sizeof(*hdr)) + meta);
-	off_t allpages = hdrpages + 1 + ED_ALLOC_COUNT;
-
-	if ((map = ed_pg_map(fd, 0, hdrpages + 1)) == MAP_FAILED) {
-		rc = ED_ERRNO;
-		goto done;
-	}
-
-	top = (EdPg *)map;
-	hdr = (EdAllocHdr *)(map + ed_align_max(sizeof(*top)));
-	free_list = (EdPgFree *)(map + PAGESIZE);
-
-	if (stat.st_size < allpages*PAGESIZE) {
-		if (ftruncate(fd, allpages*PAGESIZE) < 0) {
-			rc = ED_ERRNO;
-			goto done;
-		}
-		top->no = 0;
-		top->type = 0;
-		free_list->base.no = hdrpages;
-		free_list->base.type = ED_PG_FREE_HEAD;
-		free_list->count = 0;
-		hdr->size_page = PAGESIZE;
-		hdr->free_list = hdrpages;
-		hdr->tail = (EdAllocTail){ hdrpages+1, 0 };
-		hdr->gc_head = ED_PG_NONE;
-		hdr->gc_tail = ED_PG_NONE;
-	}
-
-	ed_alloc_init(alloc, hdr, fd, flags);
-	alloc->free = free_list;
-	alloc->from_new = true;
-	alloc->gc_head = NULL;
-	alloc->gc_tail = NULL;
-
-done:
-	if (rc < 0) {
-		if (map != MAP_FAILED) { ed_pg_unmap(map, 2); }
-		close(fd);
-	}
-	return rc;
-}
-
-void *
-ed_alloc_meta(EdAlloc *alloc)
-{
-	return (uint8_t *)alloc->hdr + ed_align_max(sizeof(*alloc->hdr));
-}
-
-void
-ed_alloc_init(EdAlloc *alloc, EdAllocHdr *hdr, int fd, uint64_t flags)
-{
-	alloc->hdr = hdr;
-	alloc->pg = (void *)((uintptr_t)hdr/PAGESIZE * PAGESIZE);
-	alloc->free = NULL;
-	alloc->flags = flags;
-	alloc->fd = fd;
-	alloc->from_new = false;
-}
-
-void
-ed_alloc_close(EdAlloc *alloc)
-{
-	if (alloc->hdr && alloc->hdr != MAP_FAILED) {
-		if (alloc->from_new) {
-			ed_pg_unmap(alloc->pg, 1);
-		}
-		if (alloc->free != NULL) {
-			ed_pg_unmap(alloc->free, 1);
-		}
-		alloc->hdr = NULL;
-		alloc->pg = NULL;
-	}
-	if (alloc->gc_tail != NULL && alloc->gc_tail != alloc->gc_head) {
-		ed_pg_unmap(alloc->gc_tail, 1);
-	}
-	if (alloc->gc_head != NULL) {
-		ed_pg_unmap(alloc->gc_head, 1);
-	}
-	alloc->gc_head = NULL;
-	alloc->gc_tail = NULL;
-	if (alloc->fd > -1) {
-		close(alloc->fd);
-	}
-}
-
 EdPgFree *
-ed_alloc_free_list(EdAlloc *alloc)
+ed_alloc_free_list(EdIdx *idx)
 {
-	return ed_pg_load(alloc->fd, (EdPg **)&alloc->free, alloc->hdr->free_list);
+	return ed_pg_load(idx->fd, (EdPg **)&idx->free, idx->hdr->free_list);
 }
 
 /**
@@ -580,11 +458,11 @@ gc_set(EdPgGc **pg, EdPgno *no, EdPgGc *new)
 }
 
 int
-ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
+ed_gc_put(EdIdx *idx, EdTxnId xid, EdPg **pg, EdPgno n)
 {
 	if (n < 1) { return 0; }
 
-	EdPgGc *tail = ed_pg_load(alloc->fd, (EdPg **)&alloc->gc_tail, alloc->hdr->gc_tail);
+	EdPgGc *tail = ed_pg_load(idx->fd, (EdPg **)&idx->gc_tail, idx->hdr->gc_tail);
 
 	// Determine how many pages can be discarded into the current gc page.
 	EdPgno avail = gc_list_npages_for(tail, xid);
@@ -595,7 +473,7 @@ ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 	size_t alloc_pages = ED_COUNT_SIZE(remain, ED_GC_LIST_MAX);
 	EdPgGc *new[alloc_pages];
 	if (alloc_pages > 0) {
-		int rc = ed_alloc(alloc, (EdPg **)new, alloc_pages, true);
+		int rc = ed_alloc(idx, (EdPg **)new, alloc_pages, true);
 		if (rc < 0) { return rc; }
 	}
 
@@ -610,13 +488,13 @@ ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 			list = gc_list_init(next, xid);
 
 			// Update linked list poiners, cleaning up when necessary.
-			if (alloc->gc_head == NULL) {
-				gc_set(&alloc->gc_head, &alloc->hdr->gc_head, next);
+			if (idx->gc_head == NULL) {
+				gc_set(&idx->gc_head, &idx->hdr->gc_head, next);
 			}
-			else if (alloc->gc_head != alloc->gc_tail) {
-				ed_pg_unmap(alloc->gc_tail, 1);
+			else if (idx->gc_head != idx->gc_tail) {
+				ed_pg_unmap(idx->gc_tail, 1);
 			}
-			gc_set(&alloc->gc_tail, &alloc->hdr->gc_tail, next);
+			gc_set(&idx->gc_tail, &idx->hdr->gc_tail, next);
 
 			tail = next;
 		}
@@ -642,9 +520,9 @@ ed_gc_put(EdAlloc *alloc, EdTxnId xid, EdPg **pg, EdPgno n)
 }
 
 int
-ed_gc_run(EdAlloc *alloc, EdTxnId xid, int limit)
+ed_gc_run(EdIdx *idx, EdTxnId xid, int limit)
 {
-	EdPgGc *head = ed_pg_load(alloc->fd, (EdPg **)&alloc->gc_head, alloc->hdr->gc_head);
+	EdPgGc *head = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head);
 	uint16_t pos = head ? head->head : 0;
 	int rc = 0;
 
@@ -653,7 +531,7 @@ ed_gc_run(EdAlloc *alloc, EdTxnId xid, int limit)
 		if (list->xid == 0 || list->xid >= xid) { break; }
 		int n = (int)list->npages - (int)head->nskip;
 		if (n > 0) {
-			ed_free_pgno(alloc, list->pages+head->nskip, n);
+			ed_free_pgno(idx, list->pages+head->nskip, n);
 			rc += n;
 		}
 
@@ -663,23 +541,23 @@ ed_gc_run(EdAlloc *alloc, EdTxnId xid, int limit)
 			continue;
 		}
 		// Stop if the tail is reached.
-		else if (alloc->hdr->gc_head == alloc->hdr->gc_tail) {
+		else if (idx->hdr->gc_head == idx->hdr->gc_tail) {
 			// If full, free the page and mark as empty
 			if (head->remain < sizeof(EdPgGcList)) {
-				ed_free(alloc, (EdPg **)&head, 1);
-				gc_set(&alloc->gc_head, &alloc->hdr->gc_head, NULL);
-				gc_set(&alloc->gc_tail, &alloc->hdr->gc_tail, NULL);
+				ed_free(idx, (EdPg **)&head, 1);
+				gc_set(&idx->gc_head, &idx->hdr->gc_head, NULL);
+				gc_set(&idx->gc_tail, &idx->hdr->gc_tail, NULL);
 			}
 			break;
 		}
 
 		// Map the next page in the list, and free the old head.
-		EdPgGc *next = ed_pg_map(alloc->fd, head->next, 1);
+		EdPgGc *next = ed_pg_map(idx->fd, head->next, 1);
 		if (next == MAP_FAILED) { rc = ED_ERRNO; break; }
 		pos = next->head;
-		ed_free(alloc, (EdPg **)&head, 1);
+		ed_free(idx, (EdPg **)&head, 1);
 		head = next;
-		gc_set(&alloc->gc_head, &alloc->hdr->gc_head, head);
+		gc_set(&idx->gc_head, &idx->hdr->gc_head, head);
 	}
 
 	if (head) { head->head = pos; }
