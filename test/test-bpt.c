@@ -162,7 +162,7 @@ test_basic(void)
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 6, (void **)&found), 1);
 	mu_assert_uint_eq(found->key, 6);
 	mu_assert_str_eq(found->name, "a6");
-	mu_assert_uint_eq(idx.hdr->xid, SMALL/2);
+	mu_assert_uint_eq(idx.hdr->xid, SMALL/2 + 1);
 
 	finish(&txn);
 }

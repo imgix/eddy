@@ -39,6 +39,7 @@ static const EdPgIdx INDEX_DEFAULT = {
 	.alloc_count = ED_ALLOC_COUNT,
 	.slab_block_size = PAGESIZE,
 	.free_list = ED_PG_NONE,
+	.xid = 1,
 	.gc_head = ED_PG_NONE,
 	.gc_tail = ED_PG_NONE,
 	.tree = { ED_PG_NONE, ED_PG_NONE },

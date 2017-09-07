@@ -74,12 +74,13 @@ node_is_live(EdTxn *txn, EdNode *node)
  * @brief  Gets the minimum active transaction id
  */
 static EdTxnId
-get_min_xid(EdIdx *idx, EdTxnId xmin, EdTime tmin)
+get_min_xid(EdIdx *idx, EdTime tmin)
 {
-	EdConn *c = idx->hdr->conns;
-	int nconns = idx->hdr->nconns;
-	int conn = idx->conn;
 	EdTxnId xid = idx->hdr->xid;
+	EdTxnId xmin = xid > 16 ? xid - 16 : 0;
+	EdConn *c = idx->hdr->conns;
+	int nconns = idx->nconns;
+	int conn = idx->conn;
 
 	for (int i = 0; i < nconns; i++, c++) {
 		if (i == conn || c->pid == 0 || c->xid == 0) { continue; }
@@ -220,9 +221,8 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 		else {
 			if (!(flags & ED_FNOVACUUM)) {
-				EdTxnId xmin = txn->idx->hdr->xid > 16 ? txn->idx->hdr->xid - 16 : 0;
-				EdTxnId xid = get_min_xid(txn->idx, xmin, t - 10);
-				ed_gc_run(txn->idx, xid, 2);
+				EdTxnId xid = get_min_xid(txn->idx, t - 10);
+				ed_gc_run(txn->idx, xid - 1, 2);
 			}
 			if (!(flags & ED_FNOSYNC)) {
 				fsync(txn->idx->fd);
