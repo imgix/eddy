@@ -56,3 +56,4 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags)
 	while (fcntl(fd, op, &f) < 0 && (rc = ED_ERRNO) == ed_esys(EINTR)) {}
 	return rc;
 }
+
