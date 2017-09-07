@@ -52,6 +52,23 @@ A cusomized build may be maintained by placing a `Build.mk` file in the
 root of the source tree. If present, this will be included in the Makefile,
 allowing the persistence of overrides to these build settings.
 
+## Testing
+
+To run the test suite, run:
+
+```bash
+make BUILD=debug test
+```
+
+The `debug` build mode enables page map/unmap tracking as well as sanitizer
+checks. This will slow things down considerably.
+
+There is a build stage for static analysis using `scan-build`:
+
+```bash
+make BUILD=debug analyze
+```
+
 # Thread Safety
 
 Generally, eddy is geared towards parallel, multi-process access. Currently,
