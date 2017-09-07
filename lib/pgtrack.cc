@@ -110,28 +110,37 @@ ed_pg_untrack(uint8_t *pg, EdPgno count)
 		else {
 			auto start = track->lower_bound(k);
 			auto end = track->upper_bound(ke-PAGESIZE);
-
-			std::set<uintptr_t> skip = {};
-			for (auto &it = start; it != end; ++it) {
-				if (!it->second.active) {
-					fprintf(stderr, "*** page address unmapped multiple times: 0x%012" PRIxPTR "/%u\n",
-							it->first, it->second.no);
-					fprintf(stderr, "*** deallocation stack:\n");
-					it->second.Print();
-					fprintf(stderr, "*** current stack:\n");
-					PrintStack(stack.get());
-					fprintf(stderr, "\n");
-					track_errors++;
-					skip.emplace(it->first);
-				}
+			if (start == track->end()) {
+				fprintf(stderr, "*** page address unmapped not tracked: 0x%012" PRIxPTR "u\n", k);
+				fprintf(stderr, "*** current stack:\n");
+				PrintStack(stack.get());
+				fprintf(stderr, "\n");
+				track_errors++;
 			}
+			else {
+				EdPgno no = start->second.no;
+				std::set<uintptr_t> skip = {};
+				for (auto &it = start; it != end; ++it) {
+					if (!it->second.active) {
+						fprintf(stderr, "*** page address unmapped multiple times: 0x%012" PRIxPTR "/%u\n",
+								it->first, it->second.no);
+						fprintf(stderr, "*** deallocation stack:\n");
+						it->second.Print();
+						fprintf(stderr, "*** current stack:\n");
+						PrintStack(stack.get());
+						fprintf(stderr, "\n");
+						track_errors++;
+						skip.emplace(it->first);
+					}
+				}
 
-			for (; k < ke; k += PAGESIZE) {
-				if (skip.find(k) != skip.end()) { continue; }
-				EdPgState state = { ((EdPg *)k)->no, false, stack };
-				auto result = track->emplace(k, state);
-				if (!result.second) {
-					result.first->second = state;
+				for (; k < ke; k += PAGESIZE, no++) {
+					if (skip.find(k) != skip.end()) { continue; }
+					EdPgState state = { no, false, stack };
+					auto result = track->emplace(k, state);
+					if (!result.second) {
+						result.first->second = state;
+					}
 				}
 			}
 		}
