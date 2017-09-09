@@ -65,10 +65,9 @@ typedef struct EdTxn EdTxn;
 typedef struct EdTxnDb EdTxnDb;
 typedef struct EdTxnNode EdTxnNode;
 
+typedef struct EdIdx EdIdx;
 typedef struct EdConn EdConn;
 
-typedef struct EdIdx EdIdx;
-typedef struct EdIdxTail EdIdxTail;
 
 typedef struct EdEntryBlock EdEntryBlock;
 typedef struct EdEntryKey EdEntryKey;
