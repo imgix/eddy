@@ -198,10 +198,10 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			conn->active = t;
 		}
 		else {
+			ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
 			if (!(flags & ED_FNOSYNC)) {
 				fsync(txn->idx->fd);
 			}
-			ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
 		}
 	}
 
