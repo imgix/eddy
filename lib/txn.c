@@ -70,33 +70,6 @@ node_is_live(EdTxn *txn, EdNode *node)
 		(txn->error == 0 || node->tree->xid < txn->xid);
 }
 
-/**
- * @brief  Gets the minimum active transaction id
- */
-static EdTxnId
-get_min_xid(EdIdx *idx, EdTime tmin)
-{
-	EdTxnId xid = idx->hdr->xid;
-	EdTxnId xmin = xid > 16 ? xid - 16 : 0;
-	EdConn *c = idx->hdr->conns;
-	int nconns = idx->nconns;
-	int conn = idx->conn;
-
-	for (int i = 0; i < nconns; i++, c++) {
-		if (i == conn || c->pid == 0 || c->xid == 0) { continue; }
-		if (c->xid < xmin || (tmin > 0 && c->active > 0 && tmin < c->active)) {
-			off_t pos = offsetof(EdPgIdx, conns) + i*sizeof(*c);
-			if (ed_flck(idx->fd, ED_LCK_EX, pos, sizeof(*c), ED_FNOBLOCK) == 0) {
-				memset(c, 0, sizeof(*c));
-				ed_flck(idx->fd, ED_LCK_UN, pos, sizeof(*c), ED_FNOBLOCK);
-				continue;
-			}
-		}
-		if (c->xid < xid) { xid = c->xid; }
-	}
-	return xid;
-}
-
 int
 ed_txn_new(EdTxn **txnp, EdIdx *idx)
 {
@@ -174,12 +147,17 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 		goto close;
 	}
 	else {
-		rc = ed_gc_put(txn->idx, txn->xid, txn->gc, txn->ngcused);
+		// Pass all replaced pages to be reused. This must be the last step that
+		// might error.
+		rc = ed_free(txn->idx, txn->xid, txn->gc, txn->ngcused);
 		if (rc < 0) { goto close; }
 		txn->ngcused = 0;
 	}
 
-	memmove(txn->pg, txn->pg+txn->npgused, (txn->npg-txn->npgused) * sizeof(txn->pg[0]));
+	// Shift over any unused pages to the start of the array. When closed, these
+	// will either be used for the next transaction or discarded.
+	memmove(txn->pg, txn->pg+txn->npgused,
+			(txn->npg-txn->npgused) * sizeof(txn->pg[0]));
 	txn->npg -= txn->npgused;
 	txn->npgused = 0;
 
@@ -220,10 +198,6 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			conn->active = t;
 		}
 		else {
-			if (!(flags & ED_FNOVACUUM)) {
-				EdTxnId xid = get_min_xid(txn->idx, t - 10);
-				ed_gc_run(txn->idx, xid - 1, 2);
-			}
 			if (!(flags & ED_FNOSYNC)) {
 				fsync(txn->idx->fd);
 			}
@@ -285,7 +259,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 	else {
-		ed_free(txn->idx, txn->pg, txn->npg);
+		ed_free(txn->idx, 0, txn->pg, txn->npg);
 		free(txn->pg);
 		free(txn->gc);
 		free(txn);
@@ -319,17 +293,17 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 int
 ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 {
-	unsigned npg = txn->npg, need = txn->npgused + 1;
-	if (npg < need) {
-		if (txn->npgslot < need) {
+	unsigned npg = txn->npg;
+	if (txn->npgused == npg) {
+		if (txn->npgslot == npg) {
 			unsigned npgslot = ed_len(txn->db)*5;
-			npgslot = ED_ALIGN_SIZE(need, npgslot);
+			npgslot = ED_ALIGN_SIZE(npg+1, npgslot);
 			EdPg **pg = realloc(txn->pg, npgslot*sizeof(pg[0]));
 			if (pg == NULL) { return (txn->error = ED_ERRNO); }
 			txn->pg = pg;
 			txn->npgslot = npgslot;
 		}
-		int rc = ed_alloc(txn->idx, txn->pg+npg, txn->npgslot-npg, true);
+		int rc = ed_alloc(txn->idx, txn->pg+npg, txn->npgslot-npg);
 		if (rc < 0) { return (txn->error = rc); }
 		txn->npg = txn->npgslot;
 	}
@@ -343,6 +317,20 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 	node->tree->xid = txn->xid;
 	*out = node;
 	return 0;
+}
+
+int
+ed_txn_calloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
+{
+	EdNode *node;
+	int rc = ed_txn_alloc(txn, par, pidx, &node);
+	if (rc == 0) {
+		node->tree->next = ED_PG_NONE;
+		node->tree->nkeys = 0;
+		memset(node->tree->data, 0, sizeof(node->tree->data));
+		*out = node;
+	}
+	return rc;
 }
 
 int

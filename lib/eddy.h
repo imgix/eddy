@@ -205,17 +205,15 @@ ed_discard(EdObject *obj);
 #define ED_EINDEX_MARK           ed_eindex(4)  /** Error code if the index byte marker is invalid. */
 #define ED_EINDEX_VERSION        ed_eindex(5)  /** Error code if the index version is invalid. */
 #define ED_EINDEX_FLAGS          ed_eindex(6)  /** Error code if the index flags don't match. */
-#define ED_EINDEX_MAX_ALIGN      ed_eindex(7)  /** Error code if the index max alignment changed. */
-#define ED_EINDEX_PAGE_SIZE      ed_eindex(8)  /** Error code if the index page size changed. */
-#define ED_EINDEX_ALLOC_COUNT    ed_eindex(9)  /** Error code if the index alloc count changed. */
-#define ED_EINDEX_PAGE_REF       ed_eindex(10) /** Error code if a page is double referenced. */
-#define ED_EINDEX_PAGE_LOST      ed_eindex(11) /** Error code if a page has been lost. */
-#define ED_EINDEX_DEPTH          ed_eindex(12) /** Error code if a btree depth exceeds maximum. */
-#define ED_EINDEX_KEY_MATCH      ed_eindex(13) /** Error code if an entry key doesn't match the tree key. */
-#define ED_EINDEX_RANDOM         ed_eindex(14) /** Error code if /dev/urandom seed failed. */
-#define ED_EINDEX_RDONLY         ed_eindex(15) /** Error code if the search cursor is read-only. */
-#define ED_EINDEX_BUSY           ed_eindex(16) /** Error code if connection cannot be acquired. */
-#define ED_EINDEX_DUPKEY         ed_eindex(17) /** Error code if too many duplicate keys are added */
+#define ED_EINDEX_PAGE_SIZE      ed_eindex(7)  /** Error code if the index page size changed. */
+#define ED_EINDEX_PAGE_REF       ed_eindex(8)  /** Error code if a page is double referenced. */
+#define ED_EINDEX_PAGE_LOST      ed_eindex(9)  /** Error code if a page has been lost. */
+#define ED_EINDEX_DEPTH          ed_eindex(10) /** Error code if a btree depth exceeds maximum. */
+#define ED_EINDEX_KEY_MATCH      ed_eindex(11) /** Error code if an entry key doesn't match the tree key. */
+#define ED_EINDEX_RANDOM         ed_eindex(12) /** Error code if /dev/urandom seed failed. */
+#define ED_EINDEX_RDONLY         ed_eindex(13) /** Error code if the search cursor is read-only. */
+#define ED_EINDEX_BUSY           ed_eindex(14) /** Error code if connection cannot be acquired. */
+#define ED_EINDEX_DUPKEY         ed_eindex(15) /** Error code if too many duplicate keys are added */
 
 #define ED_ESLAB_MODE            ed_eslab(0)   /** Error code when the slab file mode is invalid. */
 #define ED_ESLAB_SIZE            ed_eslab(1)   /** Error code when the slab size requested is invalid. */

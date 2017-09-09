@@ -20,6 +20,14 @@ cleanup(void)
 }
 
 static void
+copy_pgno(EdPg **pg, EdPgno *pgno, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		pgno[i] = pg[i]->no;
+	}
+}
+
+static void
 test_basic(void)
 {
 	mu_teardown = cleanup;
@@ -27,164 +35,69 @@ test_basic(void)
 	unlink(cfg.index_path);
 	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
 
-	EdPg *pages[2];
-	EdPgFree *free;
-	EdIdxTail tail;
+	EdPg *pages[8];
+	EdPgno pgno[ed_len(pages)];
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	copy_pgno(pages, pgno, ed_len(pages));
+	mu_assert_int_eq(ed_free(&idx, 0, pages, ed_len(pages)), 0);
 
-	tail.vpos = idx.hdr->tail.vpos;
-	mu_assert_int_eq(tail.pos.off, 2);
-
-	ed_free(&idx, pages, ed_len(pages));
-
-	free = ed_alloc_free_list(&idx);
-	mu_assert_int_eq(free->count, 2);
-
-	ed_idx_close(&idx);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	mu_assert_int_eq(tail.pos.off, 2);
-
-	free = ed_alloc_free_list(&idx);
-	mu_assert_int_eq(free->count, 2);
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	// This is actually guaranteed, but for the moment it does test the alloc/free
+	// interaction as expected.
+	for (size_t i = 0; i < ed_len(pages); i++) {
+		mu_assert_uint_eq(pages[i]->no, pgno[i]);
+	}
+	mu_assert_int_eq(ed_free(&idx, 0, pages, ed_len(pages)), 0);
 }
 
 static void
 test_gc(void)
 {
+	// This REALLY hacks the transaction system...don't do that! :)
 	mu_teardown = cleanup;
 
 	unlink(cfg.index_path);
 	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
+	mu_assert_int_ge(idx.conn, 0);
 
 	EdPg *pages[8];
+	EdPgno pgno[ed_len(pages)];
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 1, pages, ed_len(pages)), 0);
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	copy_pgno(pages, pgno, ed_len(pages));
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 2, pages, ed_len(pages)), 0);
+	idx.hdr->conns[idx.conn].xid = 1;
+	idx.hdr->conns[idx.conn].active = ed_time_from_unix(idx.hdr->epoch, ed_now_unix());
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 3, pages, ed_len(pages)), 0);
+	mu_assert_int_eq(ed_free(&idx, 1, pages, ed_len(pages)/2), 0);
+	mu_assert_int_eq(ed_free(&idx, 2, pages+ed_len(pages)/2, ed_len(pages)/2), 0);
+	idx.hdr->xid = 2;
 
-	mu_assert_int_eq(ed_gc_run(&idx, 3, 2), ed_len(pages) * 2);
-	mu_assert_int_eq(ed_gc_run(&idx, 3, 1), 0);
-	mu_assert_int_eq(ed_gc_run(&idx, 4, 1), ed_len(pages));
-}
-
-static void
-test_gc_merge(void)
-{
-	mu_teardown = cleanup;
-
-	unlink(cfg.index_path);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	EdPg *pages[8];
-
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 1, pages, ed_len(pages)), 0);
-
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 1, pages, ed_len(pages)), 0);
-
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 2, pages, ed_len(pages)), 0);
-
-	mu_assert_int_eq(ed_gc_run(&idx, 3, 1), ed_len(pages) * 2);
-	mu_assert_int_eq(ed_gc_run(&idx, 2, 1), 0);
-	mu_assert_int_eq(ed_gc_run(&idx, 3, 1), ed_len(pages));
-}
-
-static void
-test_gc_reopen(void)
-{
-	mu_teardown = cleanup;
-
-	unlink(cfg.index_path);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	EdPg *pages[8];
-
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 1, pages, ed_len(pages)), 0);
-
-	ed_idx_close(&idx);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put( &idx, 2, pages, ed_len(pages)), 0);
-
-	ed_idx_close(&idx);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-	mu_assert_int_eq(ed_gc_put(&idx, 3, pages, ed_len(pages)), 0);
-
-	ed_idx_close(&idx);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	mu_assert_int_eq(ed_gc_run(&idx, 3, 2), ed_len(pages) * 2);
-
-	ed_idx_close(&idx);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	mu_assert_int_eq(ed_gc_run(&idx, 3, 1), 0);
-
-	ed_idx_close(&idx);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	mu_assert_int_eq(ed_gc_run(&idx, 4, 1), ed_len(pages));
-}
-
-static void
-test_gc_large(void)
-{
-	mu_teardown = cleanup;
-
-	unlink(cfg.index_path);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	EdTxnId xid = 0;
-
-	EdPg *pages[4096];
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-
-	for (size_t i = 0; i < ed_len(pages)/2; i += 16) {
-		mu_assert_int_eq(ed_gc_put(&idx, ++xid, pages+i, 16), 0);
-	}
-
-	mu_assert_int_eq(ed_gc_run(&idx, 2, 1000), 16);
-	mu_assert_int_eq(ed_gc_run(&idx, 100, 1000), 1568);
-
-	for (size_t i = ed_len(pages)/2; i < ed_len(pages); i += 16) {
-		mu_assert_int_eq(ed_gc_put(&idx, ++xid, pages+i, 16), 0);
-	}
-
-	mu_assert_int_eq(ed_gc_run(&idx, 257, 1000), 2512);
-}
-
-static void
-test_gc_single(void)
-{
-	mu_teardown = cleanup;
-
-	unlink(cfg.index_path);
-	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-
-	EdTxnId xid = 0;
-
-	EdPg *pages[1024];
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), true), ed_len(pages));
-
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
 	for (size_t i = 0; i < ed_len(pages); i++) {
-		mu_assert_int_eq(ed_gc_put(&idx, ++xid, pages+i, 1), 0);
-		mu_assert_int_eq(ed_gc_run(&idx, xid, 2), i > 0);
+		for (size_t j = 0; j < ed_len(pages); j++) {
+			mu_assert_uint_ne(pages[i]->no, pgno[j]);
+		}
 	}
-	mu_assert_int_eq(ed_gc_run(&idx, ++xid, 2), 1);
+	mu_assert_int_eq(ed_free(&idx, 3, pages, ed_len(pages)), 0);
+	idx.hdr->xid = 3;
+
+	idx.hdr->conns[idx.conn].xid = 2;
+	idx.hdr->conns[idx.conn].active = ed_time_from_unix(idx.hdr->epoch, ed_now_unix());
+
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	for (size_t i = 0; i < ed_len(pages); i++) {
+		for (size_t j = ed_len(pages)/2; j < ed_len(pages); j++) {
+			mu_assert_uint_ne(pages[i]->no, pgno[j]);
+		}
+	}
+	for (size_t i = 0; i < ed_len(pages)/2; i++) {
+		mu_assert_uint_eq(pages[i]->no, pgno[i]);
+	}
+	mu_assert_int_eq(ed_free(&idx, 4, pages, ed_len(pages)), 0);
 }
+
 
 int
 main(void)
@@ -192,10 +105,6 @@ main(void)
 	mu_init("page");
 	mu_run(test_basic);
 	mu_run(test_gc);
-	mu_run(test_gc_merge);
-	mu_run(test_gc_reopen);
-	mu_run(test_gc_large);
-	mu_run(test_gc_single);
 	return 0;
 }
 

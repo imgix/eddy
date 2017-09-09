@@ -8,7 +8,7 @@
 // Enough entries to get to depth 3.
 // The entry size is bloated to get there in fewer ops.
 #define LARGE 22000
-#define SMALL 62
+#define SMALL 162
 #define MULTI 5000
 
 // These flags aren't terribly safe to use, but they do speed up the tests.

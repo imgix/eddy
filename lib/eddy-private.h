@@ -53,7 +53,6 @@ typedef uint32_t EdPgno;
 typedef uint64_t EdBlkno;
 
 typedef struct EdPg EdPg;
-typedef struct EdPgFree EdPgFree;
 typedef struct EdPgGc EdPgGc;
 typedef struct EdPgGcList EdPgGcList;
 typedef struct EdPgIdx EdPgIdx;
@@ -69,7 +68,7 @@ typedef struct EdTxnNode EdTxnNode;
 typedef struct EdConn EdConn;
 
 typedef struct EdIdx EdIdx;
-typedef union EdIdxTail EdIdxTail;
+typedef struct EdIdxTail EdIdxTail;
 
 typedef struct EdEntryBlock EdEntryBlock;
 typedef struct EdEntryKey EdEntryKey;
@@ -197,16 +196,12 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
  */
 
 #define ED_PG_INDEX     UINT32_C(0x58444e49)
-#define ED_PG_FREE_HEAD UINT32_C(0x44485246)
-#define ED_PG_FREE_CHLD UINT32_C(0x44435246)
 #define ED_PG_BRANCH    UINT32_C(0x48435242)
 #define ED_PG_LEAF      UINT32_C(0x4641454c)
 #define ED_PG_GC        UINT32_C(0x4c4c4347)
 
 #define ED_PG_NONE UINT32_MAX
 #define ED_BLK_NONE UINT64_MAX
-
-#define ED_PG_NFREE ((PAGESIZE - sizeof(EdPg) - sizeof(EdPgno)) / sizeof(EdPgno))
 
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
@@ -216,92 +211,59 @@ ED_LOCAL     void ed_pg_unload(EdPg **pgp);
 /**
  * @brief  Allocates a page from the underlying file
  *
- * This will first attempt a lock-free allocation from any tail pages. If there
- * are not enough pages, the continued allocation will depend on the #exclusive
- * access to the allocator.
- *
- * Without #exclusive access, the number of pages successfully acquired will be
- * returned, but no furthur allocation will take place. That is, without
- * #exclusive access, fewer than the number of pages requested may be returned.
- *
- * With #exclusive access, pages will be allocated from the free list,
- * reclaiming previously freed pages. If there are not enough free pages
- * available, the file will be expanded.
- *
- * @param  idx  Index object
- * @param  p  Array to store allocated pages into
- * @param  n  Number of pages to allocate
- * @param  exclusive  If this allocation call has exclusive access to the allocator
- * @return  >0 the number of pages allocated from the tail or free list,
- *          <0 error code
- */
-ED_LOCAL int
-ed_alloc(EdIdx *idx, EdPg **, EdPgno n, bool exclusive);
-
-/**
- * @brief  Frees disused page objects
- *
- * This will not reclaim the disk space used, however, it will become
- * available for later allocations.
+ * This call is guaranteed atomic with regards to changes within the index.
+ * That is, all requested pages will be allocated or the index will remain
+ * in its current state. The only possible side-effect from an erroring
+ * allocation is an unclaimed expansion of the underlying file. The index will
+ * remain unchanged however. Given the idempotency of growing the file, this
+ * space will simply be used for a later allocation.
  *
  * Exclusive access to allocator is assumed for this call.
  *
  * @param  idx  Index object
- * @param  p  Array of pages objects to deallocate
- * @param  n  Number of pages to deallocate
+ * @param  p  Array to store allocated pages into
+ * @param  n  Number of pages to allocate
+ * @return  >0 the number of pages allocated from the tail or free list,
+ *          <0 error code
  */
-ED_LOCAL void
-ed_free(EdIdx *idx, EdPg **p, EdPgno n);
+ED_LOCAL int
+ed_alloc(EdIdx *idx, EdPg **, EdPgno n);
 
 /**
- * @brief  Frees disused page numbers
- * @see ed_free
+ * @brief  Allocates and resets a page from the underlying file.
+ * @see  ed_alloc()
  * @param  idx  Index object
- * @param  p  Array of pages numbers to deallocate
- * @param  n  Number of pages to deallocate
+ * @param  p  Array to store allocated pages into
+ * @param  n  Number of pages to allocate
+ * @return  >0 the number of pages allocated from the tail or free list,
+ *          <0 error code
  */
-ED_LOCAL void
-ed_free_pgno(EdIdx *idx, EdPgno *pages, EdPgno n);
+ED_LOCAL int
+ed_calloc(EdIdx *idx, EdPg **, EdPgno n);
 
 /**
- * @brief  Gets the meta data space requested from #ed_alloc_new
- * @param  idx  Index object
- * @return  Object with the list of free pages
- */
-ED_LOCAL EdPgFree *
-ed_alloc_free_list(EdIdx *idx);
-
-/**
- * @brief  Pushes an array of page numbers into the garbage collector
+ * @brief  Frees disused page objects for a transaction
  *
- * This call transfers all pages to the garbage collector atomically. That is,
- * all pages are recorded, or none are. Multiple calls do not have a durability
+ * This call transfers all pages to the free list atomically. That is, all
+ * pages are recorded as free, or none are. Multiple calls do not have this
  * guarantees even within a single lock acquisition. Ownership of all pages
- * is transfered to the garbage collector, and any external pointers should be
+ * is transfered to the free list, and any external pointers should be
  * considered invalid after a successful call.
+ *
+ * The transaction id will gate the reuse of these pages until it is safe to
+ * do so. Using `0` for the transaction id implies the pages may be reclaimed
+ * immediately. This will not reclaim the disk space used, however, it will
+ * become available for later allocations.
+ *
+ * Exclusive access to allocator is assumed for this call.
  *
  * @param  idx  Index object
  * @param  xid  The transaction ID that is discarding these pages
- * @param  pg  Array of page objects
- * @param  n  Number of entries in the page number array
- * @returns  0 on success, <0 on error
+ * @param  p  Array of pages objects to deallocate
+ * @param  n  Number of pages to deallocate
  */
 ED_LOCAL int
-ed_gc_put(EdIdx *idx, EdTxnId xid, EdPg **pg, EdPgno n);
-
-/**
- * @brief  Runs the garbage collector
- *
- * This will transfer garbage pages back the free pool if their associated
- * transaction ids are less than #xid.
- *
- * @param  idx  Index object
- * @param  xid  The lowest active transaction ID
- * @param  limit  The maximum number of transaction IDs to free
- * @returns  0 on success, <0 on error
- */
-ED_LOCAL int
-ed_gc_run(EdIdx *idx, EdTxnId xid, int limit);
+ed_free(EdIdx *idx, EdTxnId xid, EdPg **p, EdPgno n);
 
 /** @} */
 
@@ -621,7 +583,6 @@ struct EdIdx {
 	int          fd;               /**< Open file discriptor for the file to allocate from */
 	int          slabfd;           /**< Open file descriptor for the slab */
 	EdLck        lck;              /**< Write lock */
-	EdPgFree *   free;             /**< Currently mapped free array page */
 	EdPgGc *     gc_head;          /**< Currently mapped head of the garbage collected pages */
 	EdPgGc *     gc_tail;          /**< Currently mapped tail of the garbage collected pages */
 	uint64_t     flags;            /**< Open flags merged with the saved flags */
@@ -632,6 +593,7 @@ struct EdIdx {
 
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg);
 ED_LOCAL     void ed_idx_close(EdIdx *);
+ED_LOCAL  EdTxnId ed_idx_xmin(EdIdx *idx, EdTime now);
 ED_LOCAL      int ed_idx_get(EdIdx *, const void *key, size_t len, EdObject *obj);
 ED_LOCAL      int ed_idx_put(EdIdx *, const void *key, size_t len, EdObject *obj);
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
@@ -872,18 +834,6 @@ struct EdPg {
 };
 
 /**
- * @brief  Page type for an array of free pages
- *
- * If the type of the page is #ED_PG_FREE_CHLD, then the first page in #pages
- * is the next #EdPgFree object.
- */
-struct EdPgFree {
-	EdPg         base;             /**< Page number and type */
-	EdPgno       count;            /**< Number of entries in #pages */
-	EdPgno       pages[ED_PG_NFREE]; /**< Array of free page numbers */
-};
-
-/**
  * @brief  Linked list of pages pending reclamation
  */
 struct EdPgGc {
@@ -920,13 +870,6 @@ struct EdConn {
 	EdTxnId      xid;              /**< Active read transaction id */
 };
 
-union EdIdxTail {
-	uint64_t     vpos;         /**< Atomic CAS value for the tail fields */
-	struct {
-		EdPgno   start;        /**< Page number for the start of the tail pages */
-		EdPgno   off;          /**< Current offset from #start */
-	} pos;                     /**< Tail allocation positionn information */
-};
 
 /**
  * @brief  Page type for the index file
@@ -939,24 +882,22 @@ struct EdPgIdx {
 	uint16_t     version;          /**< Version number */
 	uint64_t     seed;             /**< Randomized seed */
 	EdTimeUnix   epoch;            /**< Epoch adjustment in seconds */
-	uint32_t     flags;            /**< Permanent flags used when creating */
+	uint64_t     flags;            /**< Permanent flags used when creating */
 	uint32_t     size_page;        /**< Saved system page size in bytes */
-	uint8_t      size_align;       /**< Size of max alignment */
-	uint8_t      alloc_count;      /**< Verification for the page growth count */
-	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
-	EdPgno       free_list;        /**< Head page in the list of free pages */
-	EdIdxTail    tail;             /**< Available space at the end of the file */
-	EdTxnId      xid;              /**< Global transaction ID */
+	uint32_t     slab_block_size;  /**< Size of the blocks in the slab */
+	EdPgno       tail_start;       /**< Page number for the start of the tail pages */
+	EdPgno       tail_count;       /**< Number of pages available at #tail_start */
 	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
 	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
 	union {
 		uint64_t vtree;            /**< Atomic CAS value for the trees */
-		EdPgno   tree[2];          /**< Page pointer for the key and slab b+trees */
+		EdPgno   tree[4];          /**< Page pointer for the key and slab b+trees */
 	};
+	EdTxnId      xid;              /**< Global transaction ID */
 	EdBlkno      pos;              /**< Current slab write block */
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
 	uint64_t     slab_ino;         /**< Inode number of the slab */
-	char         slab_path[918];   /**< Path to the slab */
+	char         slab_path[910];   /**< Path to the slab */
 	uint16_t     nconns;           /**< Number of process connection slots */
 	EdConn       conns[1];         /**< Flexible array of active process connections */
 };

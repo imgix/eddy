@@ -36,21 +36,14 @@ task(void *data)
 {
 	EdCache *cache = data;
 	EdPg *p[pages];
-	int rc;
 
 	for (int x = 0; x < sets; x++) {
-		rc = ed_alloc(&cache->idx, p, pages, false);
-		if (rc < 0) {
-			warnx("failed to allocate page: %s", ed_strerror(rc));
-			break;
-		}
-		else if (rc < pages) {
-			ed_idx_lock(&cache->idx, ED_LCK_EX);
-			int nrc = ed_alloc(&cache->idx, p+rc, pages-rc, true);
-			if (nrc < 0) { warnx("failed to allocate page: %s", ed_strerror(nrc)); }
-			else { rc += nrc; }
-			ed_idx_lock(&cache->idx, ED_LCK_UN);
-		}
+		ed_idx_lock(&cache->idx, ED_LCK_EX);
+		int rc = ed_alloc(&cache->idx, p, pages);
+		if (rc < 0) { warnx("failed to allocate page: %s", ed_strerror(rc)); }
+		ed_idx_lock(&cache->idx, ED_LCK_UN);
+		if (rc < 0) { break; }
+
 		if (lose > 0) { 
 			if (rc < lose) {
 				lose -= rc;
@@ -64,7 +57,7 @@ task(void *data)
 		if (usec > 0) { usleep(usec); }
 		if (rc > 0) {
 			ed_idx_lock(&cache->idx, ED_LCK_EX);
-			ed_free(&cache->idx, p, rc);
+			ed_free(&cache->idx, 0, p, rc);
 			ed_idx_lock(&cache->idx, ED_LCK_UN);
 		}
 	}
