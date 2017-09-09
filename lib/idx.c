@@ -412,6 +412,25 @@ ed_idx_lock(EdIdx *idx, EdLckType type)
 	return ed_lck(&idx->lck, idx->fd, type, idx->flags);
 }
 
+EdTxnId
+ed_idx_acquire_xid(EdIdx *idx)
+{
+	EdConn *conn = &idx->hdr->conns[idx->conn];
+	conn->xid = idx->hdr->xid;
+	conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
+	return conn->xid;
+}
+
+void
+ed_idx_release_xid(EdIdx *idx)
+{
+	EdConn *conn = &idx->hdr->conns[idx->conn];
+	if (conn->xid > 0) {
+		conn->xid = 0;
+		conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
+	}
+}
+
 // Tests and sets a page number in the bit vector.
 static int
 verify_mark(uint8_t *vec, EdPgno no)

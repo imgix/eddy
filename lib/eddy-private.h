@@ -596,6 +596,8 @@ ED_LOCAL  EdTxnId ed_idx_xmin(EdIdx *idx, EdTime now);
 ED_LOCAL      int ed_idx_get(EdIdx *, const void *key, size_t len, EdObject *obj);
 ED_LOCAL      int ed_idx_put(EdIdx *, const void *key, size_t len, EdObject *obj);
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
+ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);
+ED_LOCAL     void ed_idx_release_xid(EdIdx *);
 ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
 
 /** @} */

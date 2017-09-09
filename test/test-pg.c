@@ -67,12 +67,14 @@ test_gc(void)
 	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
 	copy_pgno(pages, pgno, ed_len(pages));
 
-	idx.hdr->conns[idx.conn].xid = 1;
-	idx.hdr->conns[idx.conn].active = ed_time_from_unix(idx.hdr->epoch, ed_now_unix());
+	idx.hdr->xid = 1;
+	ed_idx_acquire_xid(&idx);
 
 	mu_assert_int_eq(ed_free(&idx, 1, pages, ed_len(pages)/2), 0);
 	mu_assert_int_eq(ed_free(&idx, 2, pages+ed_len(pages)/2, ed_len(pages)/2), 0);
+
 	idx.hdr->xid = 2;
+	ed_idx_acquire_xid(&idx);
 
 	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
 	for (size_t i = 0; i < ed_len(pages); i++) {
@@ -82,9 +84,6 @@ test_gc(void)
 	}
 	mu_assert_int_eq(ed_free(&idx, 3, pages, ed_len(pages)), 0);
 	idx.hdr->xid = 3;
-
-	idx.hdr->conns[idx.conn].xid = 2;
-	idx.hdr->conns[idx.conn].active = ed_time_from_unix(idx.hdr->epoch, ed_now_unix());
 
 	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
 	for (size_t i = 0; i < ed_len(pages); i++) {

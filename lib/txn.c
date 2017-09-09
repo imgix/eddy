@@ -121,9 +121,7 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 	if (txn == NULL || txn->isopen) { return ed_esys(EINVAL); }
 	bool rdonly = flags & ED_FRDONLY;
 	if (rdonly) {
-		EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
-		conn->xid = txn->idx->hdr->xid;
-		conn->active = ed_time_from_unix(txn->idx->hdr->epoch, ed_now_unix());
+		ed_idx_acquire_xid(txn->idx);
 	}
 	else {
 		int rc = ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_EX, flags);
@@ -190,14 +188,8 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	flags = ed_txn_fclose(flags, txn->cflags);
 
 	if (txn->isopen) {
-		EdTime t = ed_time_from_unix(txn->idx->hdr->epoch, ed_now_unix());
-
-		if (txn->isrdonly) {
-			EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
-			conn->xid = 0;
-			conn->active = t;
-		}
-		else {
+		ed_idx_release_xid(txn->idx);
+		if (!txn->isrdonly) {
 			ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
 			if (!(flags & ED_FNOSYNC)) {
 				fsync(txn->idx->fd);
