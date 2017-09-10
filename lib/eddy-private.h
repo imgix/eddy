@@ -884,6 +884,8 @@ struct EdConn {
 	int          pid;              /**< Process ID */
 	EdTime       active;           /**< Optional time of last activity */
 	EdTxnId      xid;              /**< Active read transaction id */
+	EdPgno       npending;         /**< Number of pages in #pending */
+	EdPgno       pending[11];      /**< Allocated pages pending reuse */
 };
 
 
@@ -900,7 +902,8 @@ struct EdPgIdx {
 	EdTimeUnix   epoch;            /**< Epoch adjustment in seconds */
 	uint64_t     flags;            /**< Permanent flags used when creating */
 	uint32_t     size_page;        /**< Saved system page size in bytes */
-	uint32_t     slab_block_size;  /**< Size of the blocks in the slab */
+	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
+	uint16_t     nconns;           /**< Number of process connection slots */
 	EdPgno       tail_start;       /**< Page number for the start of the tail pages */
 	EdPgno       tail_count;       /**< Number of pages available at #tail_start */
 	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
@@ -913,8 +916,9 @@ struct EdPgIdx {
 	EdBlkno      pos;              /**< Current slab write block */
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
 	uint64_t     slab_ino;         /**< Inode number of the slab */
-	char         slab_path[910];   /**< Path to the slab */
-	uint16_t     nconns;           /**< Number of process connection slots */
+	char         slab_path[912];   /**< Path to the slab */
+	EdPgno       nactive;          /**< Number of pages in #active */
+	EdPgno       active[255];      /**< Allocated pages in the active transaction */
 	EdConn       conns[1];         /**< Flexible array of active process connections */
 };
 

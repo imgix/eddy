@@ -126,7 +126,50 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 	else {
 		int rc = ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_EX, flags);
 		if (rc < 0) { return rc; }
-		txn->xid = txn->idx->hdr->xid + 1;
+
+		EdPgIdx *hdr = txn->idx->hdr;
+		txn->xid = hdr->xid + 1;
+
+		// Any active pages at this point are a result from an abandoned transaction.
+		// These could be reused right away, but for simlicity they are moved into
+		// the free list. These pages MUST NOT be allowed in both the free list AND
+		// the active list at the same time. It is preferrable to risk leaking pages.
+		EdPgno nactive = hdr->nactive;
+		if (nactive > 0) {
+			hdr->nactive = 0;
+			rc = ed_free_pgno(txn->idx, 0, hdr->active, nactive);
+			if (rc < 0) {
+				hdr->nactive = nactive;
+				ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
+				return rc;
+			}
+			memset(hdr->active, 0xff, nactive * sizeof(hdr->active[0]));
+		}
+
+		// Split pending pages into active and inactive groups. Active pages are the
+		// pages mapped into the transaction page cache. Inactive pages need to be
+		// returned to the free list, and active pages get recorded in the active list.
+		EdConn *conn = &hdr->conns[txn->idx->conn];
+		EdPgno inactive[ed_len(conn->pending)], ninactive = 0;
+		EdPgno npg = txn->npg, npending = conn->npending;
+		for (EdPgno i = 0, j; i < npending; i++) {
+			EdPgno no = conn->pending[i];
+			for (j = 0; j < npg && no == txn->pg[j]->no; j++) {
+				if (no == txn->pg[j]->no) { break; }
+			}
+			if (j == npg) { inactive[ninactive++] = no; }
+		}
+		if (npending > 0) {
+			conn->npending = 0;
+			memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
+		}
+		ed_free_pgno(txn->idx, 0, inactive, ninactive);
+		if (npg > 0) {
+			for (EdPgno i = 0; i < npg; i++) {
+				hdr->active[i] = txn->pg[i]->no;
+			}
+			hdr->nactive = npg;
+		}
 	}
 	txn->cflags = flags & ED_TXN_FCRIT;
 	txn->isrdonly = rdonly;
@@ -140,16 +183,21 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	EdTxn *txn = *txnp;
 	int rc = 0;
 
-	if (txn == NULL || !txn->isopen || txn->isrdonly || txn->error < 0) {
-		rc = ed_esys(EINVAL);
+	if (txn == NULL || !txn->isopen || txn->isrdonly) {
+		rc = ED_EINDEX_RDONLY;
 		goto close;
 	}
-	else {
-		// Pass all replaced pages to be reused. This must be the last step that
-		// might error.
-		rc = ed_free(txn->idx, txn->xid, txn->gc, txn->ngcused);
-		if (rc < 0) { goto close; }
-		txn->ngcused = 0;
+
+	EdPgIdx *hdr = txn->idx->hdr;
+
+	// Unmark all active pages. This will leak pages until the close completes.
+	EdPgno nactive = hdr->nactive;
+	hdr->nactive = 0;
+	memset(hdr->active, 0xff, nactive * sizeof(hdr->active[0]));
+
+	if (txn->error < 0) {
+		rc = ED_EINDEX_RDONLY;
+		goto close;
 	}
 
 	// Shift over any unused pages to the start of the array. When closed, these
@@ -159,21 +207,22 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	txn->npg -= txn->npgused;
 	txn->npgused = 0;
 
-	union {
-		uint64_t vtree;
-		EdPgno   tree[2];
-	} update;
-
+	// Collect tree root page updates.
+	union { uint64_t vtree; EdPgno tree[2]; } update;
 	for (unsigned i = 0; i < ed_len(txn->db); i++) {
 		EdNode *head = txn->db[i].head;
 		update.tree[i] = head && head->page ? head->page->no : ED_PG_NONE;
 	}
 
-	txn->idx->hdr->vtree = update.vtree;
-
 	// Updating the tree pages first means a reader could hold an xid that is
-	// older than the committed tree pages. This is still a valid state, however.
-	txn->idx->hdr->xid = txn->xid;
+	// older than the committed tree pages. This is still a valid state, however,
+	// the opposite is not.
+	hdr->vtree = update.vtree;
+	hdr->xid = txn->xid;
+
+	// Pass all replaced pages to be reused. If this fails they are leaked.
+	ed_free(txn->idx, txn->xid, txn->gc, txn->ngcused);
+	txn->ngcused = 0;
 
 close:
 	ed_txn_close(txnp, flags);
@@ -188,13 +237,13 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	flags = ed_txn_fclose(flags, txn->cflags);
 
 	if (txn->isopen) {
-		ed_idx_release_xid(txn->idx);
 		if (!txn->isrdonly) {
 			ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
 			if (!(flags & ED_FNOSYNC)) {
 				fsync(txn->idx->fd);
 			}
 		}
+		ed_idx_release_xid(txn->idx);
 	}
 
 	// If reseting for reuse, stash the mapped heads so they don't get unmapped.
@@ -212,6 +261,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 
+	// Unmap all node pages, and free extra node lists.
 	EdTxnNode *node = txn->nodes;
 	do {
 		for (int i = (int)node->nused-1; i >= 0; i--) {
@@ -229,6 +279,29 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		free(node);
 		node = next;
 	} while(1);
+
+	// Mark all pages saved for a subsequent transaction as pending. This list is
+	// limited in size, so extra pages must be freed. If we aren't reseting, free
+	// all the pages.
+	EdPg **pg = txn->pg;
+	EdPgno npg = txn->npg;
+	EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
+	if (flags & ED_FRESET) {
+		EdPgno keep = ed_len(conn->pending);
+		if (keep > npg) { keep = npg; }
+		for (EdPgno i = 0; i < keep; i++) {
+			conn->pending[i] = pg[i]->no;
+		}
+		conn->npending = keep;
+		pg += keep;
+		npg -= keep;
+		txn->npg = keep;
+	}
+	else {
+		conn->npending = 0;
+		memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
+	}
+	ed_free(txn->idx, 0, pg, npg);
 
 	if (flags & ED_FRESET) {
 		txn->npgused = 0;
@@ -251,7 +324,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 	else {
-		ed_free(txn->idx, 0, txn->pg, txn->npg);
+		// TODO reset pending
 		free(txn->pg);
 		free(txn->gc);
 		free(txn);
@@ -295,8 +368,23 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 			txn->pg = pg;
 			txn->npgslot = npgslot;
 		}
-		int rc = ed_alloc(txn->idx, txn->pg+npg, txn->npgslot-npg);
+
+		EdPgIdx *hdr = txn->idx->hdr;
+
+		unsigned nalloc = txn->npgslot - npg;
+		int rc = ed_alloc(txn->idx, txn->pg+npg, nalloc);
 		if (rc < 0) { return (txn->error = rc); }
+
+		if (hdr->nactive + nalloc > ed_len(hdr->active)) {
+			nalloc = ed_len(hdr->active) - hdr->nactive;
+		}
+
+		// Mark as many pages as active that will fit. If the transaction is
+		// abandoned, excess pages can only be recovered during a repair.
+		for (unsigned i = 0; i < nalloc; i++) {
+			hdr->active[hdr->nactive] = txn->pg[npg+i]->no;
+			hdr->nactive++;
+		}
 		txn->npg = txn->npgslot;
 	}
 
