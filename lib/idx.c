@@ -285,7 +285,6 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 			gc->base.no = PG_ROOT_GC;
 			gc->base.type = ED_PG_GC;
 			gc->next = ED_PG_NONE;
-			gc->remain = sizeof(gc->data);
 			if (!(cfg->flags & ED_FNOSYNC)) {
 				fsync(fd);
 			}

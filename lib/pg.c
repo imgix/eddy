@@ -139,6 +139,17 @@ map_end_pages(EdIdx *idx, EdPg **p, EdPgno n)
 	return rc;
 }
 
+static uint16_t
+gc_list_remain(EdPgGc *pgc, EdPgGcList *list)
+{
+	ssize_t remain = (ssize_t)sizeof(pgc->data)
+		- (ssize_t)pgc->state.tail
+		- (ssize_t)offsetof(EdPgGcList, pages)
+		- (ssize_t)sizeof(list->pages[0]) * list->npages;
+	assert(remain >= 0 && remain <= (ssize_t)sizeof(pgc->data));
+	return remain;
+}
+
 /**
  * @brief  Calculates the maximum page count of a new list for a given size
  * @param  size  Number of bytes available
@@ -161,10 +172,11 @@ static EdPgno
 gc_list_npages_for(EdPgGc *pgc, EdTxnId xid)
 {
 	if (pgc == NULL) { return 0; }
-	EdPgGcList *list = (EdPgGcList *)(pgc->data + pgc->tail);
-	if (xid <= list->xid) { return pgc->remain / GC_LIST_PAGE_SIZE; }
+	EdPgGcList *list = (EdPgGcList *)(pgc->data + pgc->state.tail);
+	uint16_t remain = gc_list_remain(pgc, list);
+	if (xid <= list->xid) { return remain / GC_LIST_PAGE_SIZE; }
 
-	ssize_t tail = ed_align_type((ssize_t)sizeof(pgc->data) - pgc->remain, EdPgGcList);
+	ssize_t tail = ed_align_type((ssize_t)sizeof(pgc->data) - remain, EdPgGcList);
 	return gc_list_npages(sizeof(pgc->data) - tail);
 }
 
@@ -191,25 +203,29 @@ gc_list_next(EdPgGc *pgc, EdTxnId xid)
 	// If NULL, a new pages is always needed.
 	if (pgc == NULL) { return NULL; }
 
-	EdPgGcList *list = (EdPgGcList *)(pgc->data + pgc->tail);
+	EdPgGcList *list = (EdPgGcList *)(pgc->data + pgc->state.tail);
+	uint16_t nlists = pgc->state.nlists;
+	uint16_t remain = gc_list_remain(pgc, list);
 
 	// Older xid pages can be merged into a new xid.
-	if (pgc->nlists > 0 && xid <= list->xid) {
-		return pgc->remain < GC_LIST_PAGE_SIZE ? NULL : list;
+	if (nlists > 0 && xid <= list->xid) {
+		return remain < GC_LIST_PAGE_SIZE ? NULL : list;
 	}
 
-	ssize_t tail = ed_align_type((ssize_t)sizeof(pgc->data) - pgc->remain, EdPgGcList);
-	ssize_t remain = (ssize_t)sizeof(pgc->data) - tail - offsetof(EdPgGcList, pages);
-
 	// If the page is full, return NULL.
-	if (remain < (ssize_t)sizeof(list->pages[0])) {
+	if (remain < sizeof(*list)) {
 		return NULL;
 	}
 
+	uint16_t tail = nlists ? pgc->state.tail + gc_list_size(list->npages) : 0;
+
 	// Load the next list in the current gc page.
-	pgc->tail = tail;
-	pgc->remain = remain;
-	pgc->nlists++;
+	pgc->state = (EdPgGcState) {
+		.head = pgc->state.head,
+		.tail = tail,
+		.nlists = nlists + 1,
+		.nskip = pgc->state.nskip
+	};
 	list = (EdPgGcList *)(pgc->data + tail);
 	list->xid = xid;
 	list->npages = 0;
@@ -227,11 +243,7 @@ gc_list_init(EdPgGc *pgc, EdTxnId xid)
 {
 	pgc->base.type = ED_PG_GC;
 	pgc->next = ED_PG_NONE;
-	pgc->head = 0;
-	pgc->tail = 0;
-	pgc->remain = sizeof(pgc->data);
-	pgc->nlists = 0;
-	pgc->nskip = 0;
+	pgc->state = (EdPgGcState) { 0, 0, 0, 0 };
 	memset(pgc->data, 0, sizeof(pgc->data));
 	return gc_list_next(pgc, xid);
 }
@@ -303,9 +315,9 @@ ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
 
 	int rc = 0;
 	while (gc) {
-		uint16_t head = gc->head;
-		uint16_t nlists = gc->nlists;
-		uint16_t nskip = gc->nskip;
+		uint16_t head = gc->state.head;
+		uint16_t nlists = gc->state.nlists;
+		uint16_t nskip = gc->state.nskip;
 		for (; nlists > 0; nlists--) {
 			const EdPgGcList *list = (const EdPgGcList *)(gc->data + head);
 			for (uint16_t i = nskip; i < list->npages; i++) {
@@ -347,9 +359,9 @@ ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
 	EdTxnId xid = ed_idx_xmin(idx, 0);
 
 	// Copy the fields so we can just bail on error without corrupting the gc page.
-	uint16_t head = gc->head;
-	uint16_t nlists = gc->nlists;
-	uint16_t nskip = gc->nskip;
+	uint16_t head = gc->state.head;
+	uint16_t nlists = gc->state.nlists;
+	uint16_t nskip = gc->state.nskip;
 
 	// This is temporary staging area for page numbers.
 	EdPgno pgno[npg];
@@ -382,9 +394,9 @@ ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
 			// previous values. Either the an error will occur and we bail out on all
 			// operations, or the old gc page gets recycled and these values get set
 			// in the new gc page.
-			head = gc->head;
-			nlists = gc->nlists;
-			nskip = gc->nskip;
+			head = gc->state.head;
+			nlists = gc->state.nlists;
+			nskip = gc->state.nskip;
 			if (nlists == 0) {
 				break;
 			}
@@ -429,9 +441,12 @@ ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
 		if (rc < 0) { goto error; }
 	}
 
-	gc->head = head;
-	gc->nlists = nlists;
-	gc->nskip = nskip;
+	gc->state = (EdPgGcState) {
+		.head = head,
+		.tail = gc->state.tail,
+		.nlists = nlists,
+		.nskip = nskip,
+	};
 	gc_set(&idx->gc_head, &idx->hdr->gc_head, gc);
 
 	return (int)npg;
@@ -509,13 +524,12 @@ ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *pg, EdPgno n)
 		}
 
 		// Add as many pages as possible to the list page.
-		uint16_t rem = tail->remain / sizeof(list->pages[0]);
-		if ((EdPgno)rem > n) { rem = (uint16_t)n; }
-		memcpy(list->pages + list->npages, pg, rem * sizeof(pg[0]));
-		list->npages += rem;
-		tail->remain -= rem * sizeof(list->pages[0]);
-		pg += rem;
-		n -= rem;
+		uint16_t npg = gc_list_remain(tail, list) / sizeof(list->pages[0]);
+		if ((EdPgno)npg > n) { npg = (uint16_t)n; }
+		memcpy(list->pages + list->npages, pg, npg * sizeof(pg[0]));
+		list->npages += npg;
+		pg += npg;
+		n -= npg;
 	} while (n > 0);
 
 	// All allocated pages should have been used.

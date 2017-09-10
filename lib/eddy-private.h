@@ -55,6 +55,7 @@ typedef uint64_t EdBlkno;
 typedef struct EdPg EdPg;
 typedef struct EdPgGc EdPgGc;
 typedef struct EdPgGcList EdPgGcList;
+typedef struct EdPgGcState EdPgGcState;
 typedef struct EdPgIdx EdPgIdx;
 
 typedef struct EdNode EdNode;
@@ -845,19 +846,22 @@ struct EdPg {
 	uint32_t     type;             /**< Type marker for the page */
 };
 
+struct EdPgGcState {
+	uint16_t     head;             /**< Data offset for the first active list object */
+	uint16_t     tail;             /**< Data offset for the last list object */
+	uint16_t     nlists;           /**< Number of list objects in this page */
+	uint16_t     nskip;            /**< Number of pages to skip from the start of the head list */
+};
+
 /**
  * @brief  Linked list of pages pending reclamation
  */
 struct EdPgGc {
 	EdPg         base;             /**< Page number and type */
+	EdPgGcState  state;            /**< State information for the first active list object */
 	EdPgno       next;             /**< Linked list of furthur gc pages */
-	uint16_t     head;             /**< Data offset for the first active list object */
-	uint16_t     tail;             /**< Data offset for the last list object */
-	uint16_t     remain;           /**< Data space after the last list object */
-	uint16_t     nlists;           /**< Number of list objects in this page */
-	uint16_t     nskip;            /**< Number of pages to skip from the start of the head list */
-	uint8_t      _pad[2];
-#define ED_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgno) - 12)
+	uint8_t      _pad[4];
+#define ED_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgGcState) - sizeof(EdPgno) - 4)
 	uint8_t      data[ED_GC_DATA]; /**< Array for #EdPgGcList values */
 };
 
