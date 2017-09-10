@@ -324,15 +324,16 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 			gc->base.no = PG_ROOT_GC;
 			gc->base.type = ED_PG_GC;
 			gc->next = ED_PG_NONE;
+
+			idx->conn = rc = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0);
+			if (rc < 0) { break; }
+
 			if (!(cfg->flags & ED_FNOSYNC)) {
 				fsync(fd);
 			}
 		} while (0);
 		ed_flck(fd, ED_LCK_UN, ED_IDX_LCK_OPEN_OFF, ED_IDX_LCK_OPEN_LEN, cfg->flags);
 	}
-	if (rc < 0) { goto error; }
-
-	idx->conn = rc = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0);
 	if (rc < 0) { goto error; }
 
 	rc = ed_txn_new(&idx->txn, idx);

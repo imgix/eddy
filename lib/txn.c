@@ -236,15 +236,6 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (txn == NULL) { return; }
 	flags = ed_txn_fclose(flags, txn->cflags);
 
-	if (txn->isopen) {
-		if (!txn->isrdonly) {
-			ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
-			if (!(flags & ED_FNOSYNC)) {
-				fsync(txn->idx->fd);
-			}
-		}
-		ed_idx_release_xid(txn->idx);
-	}
 
 	// If reseting for reuse, stash the mapped heads so they don't get unmapped.
 	EdPg *heads[ED_TXN_MAX_REF];
@@ -285,23 +276,45 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	// all the pages.
 	EdPg **pg = txn->pg;
 	EdPgno npg = txn->npg;
-	EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
-	if (flags & ED_FRESET) {
-		EdPgno keep = ed_len(conn->pending);
-		if (keep > npg) { keep = npg; }
-		for (EdPgno i = 0; i < keep; i++) {
-			conn->pending[i] = pg[i]->no;
+	bool locked = false;
+
+	if (txn->isopen && !txn->isrdonly) {
+		locked = true;
+	}
+	else if (npg > 0) {
+		if (ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_EX, flags) == 0) {
+			locked = true;
 		}
-		conn->npending = keep;
-		pg += keep;
-		npg -= keep;
-		txn->npg = keep;
 	}
-	else {
-		conn->npending = 0;
-		memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
+
+	if (locked) {
+		EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
+		if (flags & ED_FRESET) {
+			EdPgno keep = ed_len(conn->pending);
+			if (keep > npg) { keep = npg; }
+			for (EdPgno i = 0; i < keep; i++) {
+				conn->pending[i] = pg[i]->no;
+			}
+			conn->npending = keep;
+			pg += keep;
+			npg -= keep;
+			txn->npg = keep;
+		}
+		else {
+			conn->npending = 0;
+			memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
+		}
+		ed_free(txn->idx, 0, pg, npg);
+
+		ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
+		if (!(flags & ED_FNOSYNC)) {
+			fsync(txn->idx->fd);
+		}
 	}
-	ed_free(txn->idx, 0, pg, npg);
+
+	if (txn->isopen) {
+		ed_idx_release_xid(txn->idx);
+	}
 
 	if (flags & ED_FRESET) {
 		txn->npgused = 0;
