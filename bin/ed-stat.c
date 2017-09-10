@@ -25,12 +25,11 @@ main(int argc, char **argv)
 {
 	EdConfig cfg = ed_config_make();
 	EdCache *cache = NULL;
-	int flags = 0;
 
 	int ch;
 	while ((ch = getopt(argc, argv, ":hn")) != -1) {
 		switch (ch) {
-		case 'n': flags |= ED_FNOBLOCK; break;
+		case 'n': cfg.flags |= ED_FNOBLOCK; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
 		case ':': errx(1, "missing argument for option: -%c", optopt);
@@ -47,8 +46,8 @@ main(int argc, char **argv)
 	rc = ed_cache_open(&cache, &cfg);
 	if (rc < 0) { errx(1, "failed to open: %s", ed_strerror(rc)); }
 
-	rc = ed_cache_stat(cache, stdout, flags);
-	if (rc < 0) { errx(1, "failed to verify: %s", ed_strerror(rc)); }
+	rc = ed_cache_stat(cache, stdout, cfg.flags);
+	if (rc < 0) { errx(1, "failed to stat: %s", ed_strerror(rc)); }
 
 	ed_cache_close(&cache);
 #if ED_MMAP_DEBUG

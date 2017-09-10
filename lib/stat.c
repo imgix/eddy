@@ -28,7 +28,7 @@ ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags)
 	if (fstat(idx->fd, &sbuf) < 0) { return ED_ERRNO; }
 
 	int rc = ed_lck(&idx->lck, idx->fd, ED_LCK_EX, flags);
-	if (rc < 0) { return 0; }
+	if (rc < 0) { return rc; }
 
 	EdBpt *tree[2] = { NULL, NULL };
 
