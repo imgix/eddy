@@ -48,6 +48,7 @@ LIBSRC:= lib/cache.c \
 	lib/txn.c \
 	lib/bpt.c \
 	lib/idx.c \
+	lib/stat.c \
 	lib/mkfile.c \
 	lib/time.c
 BINSRC:= bin/ed-new.c bin/ed-stat.c bin/ed-get.c bin/ed-set.c

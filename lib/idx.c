@@ -9,17 +9,9 @@ _Static_assert(sizeof(EdBpt) + ED_ENTRY_BLOCK_COUNT*sizeof(EdEntryBlock) <= PAGE
 _Static_assert(sizeof(EdBpt) + ED_ENTRY_KEY_COUNT*sizeof(EdEntryKey) <= PAGESIZE,
 		"ED_ENTRY_KEY_COUNT is too high");
 
-#define BITMASK(b) (1 << ((b) % 8))
-#define BITSLOT(b) ((b) / 8)
-#define BITSET(a, b) ((a)[BITSLOT(b)] |= BITMASK(b))
-#define BITCLEAR(a, b) ((a)[BITSLOT(b)] &= ~BITMASK(b))
-#define BITTEST(a, b) ((a)[BITSLOT(b)] & BITMASK(b))
-#define BITNSLOTS(nb) ((nb + 8 - 1) / 8)
-
 #define PG_ROOT_GC 1
-#define PG_NHDR(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)
 #define PG_NEXTRA 1
-#define PG_NINIT(nconns) (PG_NHDR(nconns) + PG_NEXTRA)
+#define PG_NINIT(nconns) (ED_IDX_PAGES(nconns) + PG_NEXTRA)
 
 #define ed_idx_flags(f) ((f) & ~ED_FRESET)
 
@@ -373,7 +365,7 @@ ed_idx_close(EdIdx *idx)
 		ed_pg_unmap(idx->gc_head, 1);
 	}
 	if (idx->hdr && idx->hdr != MAP_FAILED) {
-		ed_pg_unmap(idx->hdr, PG_NHDR(idx->nconns));
+		ed_pg_unmap(idx->hdr, ED_IDX_PAGES(idx->nconns));
 	}
 	if (idx->fd > -1) { close(idx->fd); }
 	if (idx->slabfd > -1) { close(idx->slabfd); }
@@ -477,116 +469,14 @@ ed_idx_release_xid(EdIdx *idx)
 	}
 }
 
-// Tests and sets a page number in the bit vector.
-static int
-verify_mark(uint8_t *vec, EdPgno no)
-{
-	if (BITTEST(vec, no)) {
-		fprintf(stderr, "%s: %u\n", ed_strerror(ED_EINDEX_PAGE_REF), no);
-		return ED_EINDEX_PAGE_REF;
-	}
-	BITSET(vec, no);
-	return 0;
-}
-
-static int
-stat_pages(uint8_t *vec, EdPgno pgno, EdPgno *pages, EdPgno cnt, FILE *out)
-{
-	fprintf(out,
-		"    - page: %u\n"
-		"      size: %u\n"
-		"      pages: [",
-		pgno, cnt);
-
-	if (cnt == 0) {
-		fprintf(out, "]\n");
-		return 0;
-	}
-	for (EdPgno i = 0; i < cnt; i++) {
-		int rc = verify_mark(vec, pages[i]);
-		if (rc < 0) { return rc; }
-		if (i % 16 == 0) { fprintf(out, "\n       "); }
-		fprintf(out, " %5u", pages[i]);
-		if (i < cnt-1) { fprintf(out, ","); }
-	}
-	fprintf(out, "\n      ]\n");
-	return 0;
-}
-
-static int
-stat_tail(EdIdx *idx, uint8_t *vec, FILE *out)
-{
-	EdPgno start = idx->hdr->tail_start;
-	EdPgno count = idx->hdr->tail_count;
-	EdPgno buf[count];
-	for (EdPgno i = 0; i < count; i++) {
-		buf[i] = start + i;
-	}
-	return stat_pages(vec, start, buf, count, out);
-}
-
 int
-ed_idx_stat(EdIdx *idx, FILE *out, int flags)
+ed_idx_stat(EdIdx *idx, FILE *out, uint64_t flags)
 {
-	struct stat s;
-	if (fstat(idx->fd, &s) < 0) { return ED_ERRNO; }
-
-	int rc = 0;
-	EdPgno pgno = s.st_size / PAGESIZE;
-
-	if (out == NULL) { out = stdout; }
-	flockfile(out);
-
-	fprintf(out,
-		"index:\n"
-		"  size: %zu\n"
-		"  pages:\n"
-		"    count: %zu\n"
-		"    header: %zu\n"
-		"    dynamic: %zu\n",
-		(size_t)s.st_size,
-		(size_t)pgno,
-		(size_t)PG_NHDR(idx->hdr->nconns),
-		(size_t)(pgno - PG_NHDR(idx->hdr->nconns))
-	);
-
-	if (flags & ED_FSTAT_EXTEND) {
-		uint8_t vec[(pgno/8)+1];
-		memset(vec, 0, (pgno/8)+1);
-
-		for (EdPgno i = 0; i < PG_NHDR(idx->hdr->nconns); i++) {
-			BITSET(vec, i);
-		}
-
-		fprintf(out, "    free:\n");
-		stat_tail(idx, vec, out);
-
-		rc = ed_idx_lock(idx, ED_LCK_SH);
-		if (rc < 0) { goto done; }
-		
-		// TODO: verify gc list
-
-		ed_idx_lock(idx, ED_LCK_UN);
-		if (rc < 0) { goto done; }
-
-		fprintf(out, "    lost: [");
-		bool first = true;
-		for (EdPgno i = 0; i < pgno; i++) {
-			if (!BITTEST(vec, i)) {
-				if (first) {
-					fprintf(out, "%u", i);
-					first = false;
-				}
-				else {
-					fprintf(out, ", %u", i);
-				}
-			}
-		}
-		fprintf(out, "]\n");
-	}
-
-done:
-	funlockfile(out);
-	return rc;
+	EdStat *stat;
+	int rc = ed_stat_new(&stat, idx, flags);
+	if (rc < 0) { return rc; }
+	ed_stat_print(stat, out);
+	ed_stat_free(&stat);
+	return 0;
 }
 

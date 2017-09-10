@@ -644,6 +644,41 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 	return 1;
 }
 
+static int
+bpt_mark_children(EdIdx *idx, EdStat *stat, EdBpt *brch, int depth, int *max)
+{
+	EdPgno *ptr = (EdPgno *)brch->data;
+	for (uint32_t i = 0; i <= brch->nkeys; i++, ptr = BRANCH_NEXT(ptr)) {
+		EdPgno no = ed_fetch32(ptr);
+		int rc = ed_stat_mark(stat, no);
+		if (rc < 0) { return rc; }
+		if (depth < *max) {
+			EdBpt *chld = ed_pg_map(idx->fd, no, 1);
+			if (chld == MAP_FAILED) { return ED_ERRNO; }
+			if (chld->base.type == ED_PG_LEAF) {
+				*max = depth;
+			}
+			else {
+				rc = bpt_mark_children(idx, stat, chld, depth+1, max);
+			}
+			ed_pg_unmap(chld, 1);
+			if (rc < 0) { return rc; }
+		}
+	}
+	return 0;
+}
+
+int
+ed_bpt_mark(EdIdx *idx, EdStat *stat, EdBpt *bpt)
+{
+	int rc = ed_stat_mark(stat, bpt->base.no);
+	if (rc < 0 || bpt->base.type == ED_PG_LEAF) {
+		return rc;
+	}
+	int max = 8;
+	return bpt_mark_children(idx, stat, bpt, 1, &max);
+}
+
 
 
 #define HBAR "╌"

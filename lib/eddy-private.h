@@ -69,6 +69,7 @@ typedef struct EdTxnNode EdTxnNode;
 typedef struct EdIdx EdIdx;
 typedef struct EdConn EdConn;
 
+typedef struct EdStat EdStat;
 
 typedef struct EdEntryBlock EdEntryBlock;
 typedef struct EdEntryKey EdEntryKey;
@@ -207,6 +208,7 @@ ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
 ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
 ED_LOCAL     void ed_pg_unload(EdPg **pgp);
+ED_LOCAL      int ed_pg_mark_gc(EdIdx *idx, EdStat *stat);
 
 /**
  * @brief  Allocates a page from the underlying file
@@ -357,6 +359,7 @@ ED_LOCAL      int ed_bpt_next(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_loop(const EdTxn *txn, unsigned db);
 ED_LOCAL      int ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace);
 ED_LOCAL      int ed_bpt_del(EdTxn *txn, unsigned db);
+ED_LOCAL      int ed_bpt_mark(EdIdx *, EdStat *, EdBpt *);
 ED_LOCAL     void ed_bpt_print(EdBpt *, int fd, size_t esize, FILE *, EdBptPrint);
 ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
 
@@ -602,6 +605,8 @@ struct EdIdx {
 	int          nconns;           /**< Number of available connections */
 };
 
+#define ED_IDX_PAGES(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)
+
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL  EdTxnId ed_idx_xmin(EdIdx *idx, EdTime now);
@@ -610,10 +615,43 @@ ED_LOCAL      int ed_idx_put(EdIdx *, const void *key, size_t len, EdObject *obj
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
 ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);
 ED_LOCAL     void ed_idx_release_xid(EdIdx *);
-ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, int flags);
+ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, uint64_t flags);
 
 /** @} */
 
+
+/**
+ * @defgroup  stat  Index Status Module
+ *
+ * @{
+ */
+
+struct EdStat {
+	struct stat  stat;
+	EdPgno *     mult;
+	size_t       nmultused;
+	size_t       nmultslots;
+	size_t       npending;
+	size_t       nactive;
+	size_t       ngc;
+	size_t       nbpt;
+	size_t *     mark;
+	EdPgno       header;
+	EdPgno       tail_start;       /**< Page number for the start of the tail pages */
+	EdPgno       tail_count;       /**< Number of pages available at #tail_start */
+	EdPgno       no;               /**< Number of pages in the index */
+	uint8_t      vec[1];           /**< Bit vector of referenced pages */
+};
+
+ED_LOCAL      int ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags);
+ED_LOCAL     void ed_stat_free(EdStat **statp);
+ED_LOCAL      int ed_stat_mark(EdStat *stat, EdPgno no);
+ED_LOCAL     bool ed_stat_leaked(EdStat *stat, EdPgno no);
+ED_LOCAL const EdPgno *
+ed_stat_multi_ref(EdStat *stat, size_t *count);
+ED_LOCAL     void ed_stat_print(EdStat *stat, FILE *out);
+
+/** @} */
 
 
 /**

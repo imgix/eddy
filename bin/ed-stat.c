@@ -9,13 +9,13 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-e] PATH\n"
+			"usage: %s [-n] PATH\n"
 			"\n"
 			"about:\n"
 			"  Reports on the status of the cache. Outputs information in YAML.\n"
 			"\n"
 			"options:\n"
-			"  -e        perform extended stat (requires briefly locking the index)\n"
+			"  -n        don't block trying to read the index\n"
 			,
 			name);
 }
@@ -28,9 +28,9 @@ main(int argc, char **argv)
 	int flags = 0;
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":he")) != -1) {
+	while ((ch = getopt(argc, argv, ":hn")) != -1) {
 		switch (ch) {
-		case 'e': flags |= ED_FSTAT_EXTEND; break;
+		case 'n': flags |= ED_FNOBLOCK; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
 		case ':': errx(1, "missing argument for option: -%c", optopt);

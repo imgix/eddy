@@ -42,7 +42,7 @@ ed_cache_close(EdCache **cachep)
 }
 
 int
-ed_cache_stat(EdCache *cache, FILE *out, int flags)
+ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 {
 	if (out == NULL) { out = stdout; }
 

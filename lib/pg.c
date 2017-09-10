@@ -313,7 +313,8 @@ ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
 	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head);
 	if (gc == MAP_FAILED) { return ED_ERRNO; }
 
-	int rc = 0;
+	int rc = ed_stat_mark(stat, gc->base.no);
+	if (rc < 0) { return rc; }
 	while (gc) {
 		uint16_t head = gc->state.head;
 		uint16_t nlists = gc->state.nlists;

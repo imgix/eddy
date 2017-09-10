@@ -28,8 +28,6 @@
 #define ED_FRDONLY       UINT64_C(0x0000200000000000) /** The operation does not need to write. */
 #define ED_FNOVACUUM     UINT64_C(0x0000400000000000) /** Disable fair vacuum for writers. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /** Reset the transaction when closing. */
-
-#define ED_FSTAT_EXTEND  (1<<0) /** Perform an extended status check. */
 /* @} */
 
 /** @brief  Seconds in UNIX time */
@@ -73,7 +71,7 @@ ED_EXPORT EdCache *
 ed_cache_ref(EdCache *cache);
 
 ED_EXPORT int
-ed_cache_stat(EdCache *cache, FILE *out, int flags);
+ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags);
 
 
 
