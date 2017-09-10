@@ -264,6 +264,17 @@ ed_calloc(EdIdx *idx, EdPg **, EdPgno n);
 ED_LOCAL int
 ed_free(EdIdx *idx, EdTxnId xid, EdPg **p, EdPgno n);
 
+/**
+ * @brief  Frees disused page numbers
+ * @see ed_free
+ * @param  idx  Index object
+ * @param  xid  The transaction ID that is discarding these pages
+ * @param  p  Array of pages numbers to deallocate
+ * @param  n  Number of pages to deallocate
+ */
+ED_LOCAL int
+ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *p, EdPgno n);
+
 /** @} */
 
 

@@ -264,7 +264,7 @@ pg_cmp(const void *a, const void *b)
 
 #if 0
 static void
-gc_check(EdPgGc *gc, EdPg **p, EdPgno n)
+gc_check(EdPgGc *gc, EdPgno *p, EdPgno n)
 {
 	uint16_t head = gc->head;
 	uint16_t nskip = gc->nskip;
@@ -272,8 +272,8 @@ gc_check(EdPgGc *gc, EdPg **p, EdPgno n)
 		const EdPgGcList *list = (const EdPgGcList *)(gc->data + head);
 		for (EdPgno i = 0; i < n; i++) {
 			for (uint16_t j = nskip; j < list->npages; j++) {
-				if (p[i]->no == list->pages[j]) {
-					fprintf(stderr, "*** duplicate page %u\n", p[i]->no);
+				if (p[i] == list->pages[j]) {
+					fprintf(stderr, "*** duplicate page %u\n", p[i]);
 					ed_backtrace_print(NULL, 4, stderr);
 					abort();
 				}
@@ -287,16 +287,64 @@ gc_check(EdPgGc *gc, EdPg **p, EdPgno n)
 # define gc_check(gc, p, n)
 #endif
 
+static void
+gc_unmap(EdIdx *idx, EdPgGc *gc)
+{
+	if (gc != idx->gc_head && gc != idx->gc_tail) {
+		ed_pg_unmap(gc, 1);
+	}
+}
+
+int
+ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
+{
+	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head);
+	if (gc == MAP_FAILED) { return ED_ERRNO; }
+
+	int rc = 0;
+	while (gc) {
+		uint16_t head = gc->head;
+		uint16_t nlists = gc->nlists;
+		uint16_t nskip = gc->nskip;
+		for (; nlists > 0; nlists--) {
+			const EdPgGcList *list = (const EdPgGcList *)(gc->data + head);
+			for (uint16_t i = nskip; i < list->npages; i++) {
+				rc = ed_stat_mark(stat, list->pages[i]);
+				if (rc < 0) { break; }
+			}
+			head += (uint16_t)gc_list_size(list->npages);
+			nskip = 0;
+		}
+
+		EdPgGc *next = NULL;
+		if (gc->next != ED_PG_NONE) {
+			next = ed_pg_map(idx->fd, gc->next, 1);
+			if (next == MAP_FAILED) {
+				rc = ED_ERRNO;
+				break;
+			}
+			gc_unmap(idx, gc);
+			gc = next;
+		}
+		else {
+			break;
+		}
+	}
+	gc_unmap(idx, gc);
+	return 0;
+}
+
 int
 ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
 {
 	if (npg == 0) { return 0; }
 	if (npg > 1024) { return ed_esys(EINVAL); }
 
+	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head);
+	if (gc == MAP_FAILED) { return ED_ERRNO; }
+
 	int rc = 0;
 	EdTxnId xid = ed_idx_xmin(idx, 0);
-
-	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head);
 
 	// Copy the fields so we can just bail on error without corrupting the gc page.
 	uint16_t head = gc->head;
@@ -401,7 +449,28 @@ ed_free(EdIdx *idx, EdTxnId xid, EdPg **pg, EdPgno n)
 {
 	if (n < 1) { return 0; }
 
+	EdPgno pgno[n];
+	for (EdPgno i = 0; i < n; i++) {
+		pgno[i] = pg[i]->no;
+	}
+
+	int rc = ed_free_pgno(idx, xid, pgno, n);
+	if (rc == 0) {
+		for (EdPgno i = 0; i < n; i++) {
+			ed_pg_unmap(pg[i], 1);
+			pg[i] = NULL;
+		}
+	}
+	return rc;
+}
+
+int
+ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *pg, EdPgno n)
+{
+	if (n < 1) { return 0; }
+
 	EdPgGc *tail = ed_pg_load(idx->fd, (EdPg **)&idx->gc_tail, idx->hdr->gc_tail);
+	if (tail == MAP_FAILED) { return ED_ERRNO; }
 	gc_check(tail, pg, n);
 
 	// Determine how many pages can be discarded into the current gc page.
@@ -442,11 +511,7 @@ ed_free(EdIdx *idx, EdTxnId xid, EdPg **pg, EdPgno n)
 		// Add as many pages as possible to the list page.
 		uint16_t rem = tail->remain / sizeof(list->pages[0]);
 		if ((EdPgno)rem > n) { rem = (uint16_t)n; }
-		for (uint16_t i = 0, off = list->npages; i < rem; i++) {
-			list->pages[i+off] = pg[i]->no;
-			ed_pg_unmap(pg[i], 1);
-			pg[i] = NULL;
-		}
+		memcpy(list->pages + list->npages, pg, rem * sizeof(pg[0]));
 		list->npages += rem;
 		tail->remain -= rem * sizeof(list->pages[0]);
 		pg += rem;
