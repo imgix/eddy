@@ -86,6 +86,8 @@ typedef struct EdObjectHdr EdObjectHdr;
  *
  * @{
  */
+#define ED_FAULT_NOPRINT UINT16_C(1<<0)
+
 #if ED_FAULT
 
 #define ED_FAULT_MAP(XX) \
@@ -103,18 +105,20 @@ typedef enum {
 #undef XX
 } EdFault;
 
-#define ed_fault_enable(f, count) ed_fault__enable(ED_FAULT_##f, UINT32_C(count), __FILE__, __LINE__)
-#define ed_fault_trigger(f) ed_fault__trigger(ED_FAULT_##f, __FILE__, __LINE__)
-
 ED_LOCAL void
-ed_fault__enable(EdFault f, uint32_t count, const char *file, int line);
+ed_fault__enable(EdFault f, uint32_t count, uint16_t flags, const char *file, int line);
 
 ED_LOCAL void
 ed_fault__trigger(EdFault f, const char *file, int line);
 
+#define ed_fault_enable(f, count, flags) \
+	ed_fault__enable(ED_FAULT_##f, UINT32_C(count), flags, __FILE__, __LINE__)
+#define ed_fault_trigger(f) \
+	ed_fault__trigger(ED_FAULT_##f, __FILE__, __LINE__)
+
 #else
 
-#define ed_fault_enable(f, count)
+#define ed_fault_enable(f, count, flags)
 #define ed_fault_trigger(f)
 
 #endif
