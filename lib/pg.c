@@ -99,8 +99,8 @@ map_sorted_pages(EdIdx *idx, EdPgno *no, EdPg **p, EdPgno n)
 
 	int rc;
 	EdPgno mapped = 0;
-	for (EdPgno i = 1, prev = no[0]; i <= n; prev = no[i++]) {
-		if (i == n || no[i] != prev + 1) {
+	for (EdPgno i = 1; i <= n; i++) {
+		if (i == n || no[i] != no[i-1] + 1) {
 			uint8_t *pages = ed_pg_map(idx->fd, no[mapped], i - mapped);
 			if (pages == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 			for (; mapped < i; mapped++, pages += PAGESIZE) {
@@ -344,7 +344,7 @@ ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
 		}
 	}
 	gc_unmap(idx, gc);
-	return 0;
+	return rc;
 }
 
 int

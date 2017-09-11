@@ -46,6 +46,7 @@ static EdNode *
 node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 {
 	assert(txn != NULL);
+	assert(txn->nodes != NULL);
 	assert(txn->nodes->nused < txn->nodes->nslot);
 	assert(pg != NULL);
 
@@ -416,7 +417,8 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 		txn->npg = txn->npgslot;
 	}
 
-	if (txn->nodes == NULL || txn->nodes->nused == txn->nodes->nslot) {
+	assert(txn->nodes != NULL);
+	if (txn->nodes->nused == txn->nodes->nslot) {
 		int rc = node_alloc(&txn->nodes, txn->nodes ? txn->nodes->nslot + 1 : npg);
 		if (rc < 0) { return (txn->error = rc); }
 	}
@@ -430,9 +432,10 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 int
 ed_txn_calloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 {
-	EdNode *node;
+	EdNode *node = NULL;
 	int rc = ed_txn_alloc(txn, par, pidx, &node);
 	if (rc == 0) {
+		assert(node != NULL);
 		node->tree->next = ED_PG_NONE;
 		node->tree->nkeys = 0;
 		memset(node->tree->data, 0, sizeof(node->tree->data));
