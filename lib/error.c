@@ -22,6 +22,7 @@ static const char *const eindex[] = {
 	[ed_ecode(ED_EINDEX_RDONLY)]         = "the search cursor is read-only",
 	[ed_ecode(ED_EINDEX_BUSY)]           = "no connection could be acquired",
 	[ed_ecode(ED_EINDEX_DUPKEY)]         = "too many duplicate key",
+	[ed_ecode(ED_EINDEX_FORK)]           = "the index must be re-opened after a fork",
 };
 
 static const char *const ekey[] = {

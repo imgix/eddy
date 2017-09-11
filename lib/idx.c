@@ -177,10 +177,11 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
  * @param  hdr  Memmory mapped index header
  * @param  fd  An open file descriptor to the file containing #hdr
  * @param  xmin  Attempt lock recovery if holding a transaction id less than this id
+ * @param  pid  Current process id
  * @return >=0 the connection index, <0 on error
  */
 static int
-conn_acquire(EdPgIdx *hdr, int fd, EdTxnId xmin)
+conn_acquire(EdPgIdx *hdr, int fd, EdTxnId xmin, int pid)
 {
 	int nconns = (int)hdr->nconns;
 	int rc = ed_esys(EAGAIN);
@@ -193,7 +194,7 @@ conn_acquire(EdPgIdx *hdr, int fd, EdTxnId xmin)
 					offsetof(EdPgIdx, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
 					ED_FNOBLOCK);
 			if (rc == 0) {
-				c->pid = getpid();
+				c->pid = pid;
 				c->xid = 0;
 				return i;
 			}
@@ -244,7 +245,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 
 	EdPgIdx *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
-	int fd = -1, sfd = -1, rc = 0;
+	int fd = -1, sfd = -1, rc = 0, pid = getpid();
 	uint64_t flags = cfg->flags;
 	unsigned nconns = cfg->max_conns;
 	if (nconns == 0) { nconns = hdrnew.nconns; }
@@ -325,7 +326,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 			gc->base.type = ED_PG_GC;
 			gc->next = ED_PG_NONE;
 
-			idx->conn = rc = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0);
+			idx->conn = rc = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0, pid);
 			if (rc < 0) { break; }
 
 			if (!(cfg->flags & ED_FNOSYNC)) {
@@ -340,6 +341,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	if (rc < 0) { goto error; }
 
 	idx->flags = ed_idx_flags(hdr->flags | ed_fopen(flags));
+	idx->pid = pid;
 
 	return 0;
 
@@ -356,9 +358,13 @@ ed_idx_close(EdIdx *idx)
 	// mapped pages have not yet been allocated in the underlying file.
 
 	if (idx == NULL) { return; }
-
-	conn_release(idx->hdr, idx->conn, idx->fd);
-	ed_txn_close(&idx->txn, idx->flags);
+	if (idx->pid == getpid()) {
+		conn_release(idx->hdr, idx->conn, idx->fd);
+		ed_txn_close(&idx->txn, idx->flags);
+		if (idx->fd > -1) { close(idx->fd); }
+		if (idx->slabfd > -1) { close(idx->slabfd); }
+		ed_lck_final(&idx->lck);
+	}
 	if (idx->gc_tail && idx->gc_tail != MAP_FAILED && idx->gc_tail != idx->gc_head) {
 		ed_pg_unmap(idx->gc_tail, 1);
 	}
@@ -368,9 +374,6 @@ ed_idx_close(EdIdx *idx)
 	if (idx->hdr && idx->hdr != MAP_FAILED) {
 		ed_pg_unmap(idx->hdr, ED_IDX_PAGES(idx->nconns));
 	}
-	if (idx->fd > -1) { close(idx->fd); }
-	if (idx->slabfd > -1) { close(idx->slabfd); }
-	ed_lck_final(&idx->lck);
 	ed_idx_clear(idx);
 }
 
@@ -418,6 +421,8 @@ idx_set_obj(EdObject *obj, EdObjectHdr *hdr)
 int
 ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 {
+	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
+
 	uint64_t h = ed_hash(k, klen, idx->hdr->seed);
 	EdTimeUnix now = ed_now_unix();
 
@@ -448,12 +453,14 @@ ed_idx_get(EdIdx *idx, const void *k, size_t klen, EdObject *obj)
 int
 ed_idx_lock(EdIdx *idx, EdLckType type)
 {
+	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
 	return ed_lck(&idx->lck, idx->fd, type, idx->flags);
 }
 
 EdTxnId
 ed_idx_acquire_xid(EdIdx *idx)
 {
+	if (idx->pid != getpid()) { return 0; }
 	EdConn *conn = &idx->hdr->conns[idx->conn];
 	conn->xid = idx->hdr->xid;
 	conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
@@ -463,6 +470,7 @@ ed_idx_acquire_xid(EdIdx *idx)
 void
 ed_idx_release_xid(EdIdx *idx)
 {
+	if (idx->pid != getpid()) { return; }
 	EdConn *conn = &idx->hdr->conns[idx->conn];
 	if (conn->xid > 0) {
 		conn->xid = 0;
@@ -473,6 +481,7 @@ ed_idx_release_xid(EdIdx *idx)
 int
 ed_idx_acquire_snapshot(EdIdx *idx, EdBpt **trees)
 {
+	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
 	ed_idx_acquire_xid(idx);
 	for (int i = 0; i < ED_NDB; i++) {
 		if (ed_pg_load(idx->fd, (EdPg **)&trees[i], idx->hdr->tree[i]) == MAP_FAILED) {
@@ -502,6 +511,7 @@ ed_idx_release_snapshot(EdIdx *idx, EdBpt **trees)
 int
 ed_idx_stat(EdIdx *idx, FILE *out, uint64_t flags)
 {
+	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
 	EdStat *stat;
 	int rc = ed_stat_new(&stat, idx, flags);
 	if (rc < 0) { return rc; }

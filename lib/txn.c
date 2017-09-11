@@ -119,6 +119,7 @@ int
 ed_txn_open(EdTxn *txn, uint64_t flags)
 {
 	if (txn == NULL || txn->isopen) { return ed_esys(EINVAL); }
+	if (txn->idx->pid != getpid()) { return ED_EINDEX_FORK; }
 	bool rdonly = flags & ED_FRDONLY;
 	int rc = 0;
 

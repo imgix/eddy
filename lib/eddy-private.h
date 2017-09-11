@@ -649,6 +649,7 @@ struct EdIdx {
 	EdTxn *      txn;              /**< Cached transaction object */
 	int          conn;             /**< Connection index */
 	int          nconns;           /**< Number of available connections */
+	int          pid;              /**< Process ID that opened the index */
 };
 
 #define ED_IDX_PAGES(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)
