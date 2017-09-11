@@ -67,6 +67,10 @@ ifeq ($(DEBUG_MMAP),yes)
     LDFLAGS+= -lexecinfo -ldl
   endif
 endif
+ifeq ($(DEBUG_FAULT),yes)
+  LIBSRC+= lib/fault.c
+  CFLAGS+= -DED_FAULT=1
+endif
 ifeq ($(BUILD_DEV),yes)
   BINSRC+= bin/ed-alloc.c bin/ed-exec.c
 endif

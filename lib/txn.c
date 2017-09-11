@@ -199,6 +199,8 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 		goto close;
 	}
 
+	ed_fault_trigger(COMMIT_BEGIN);
+
 	EdPgIdx *hdr = txn->idx->hdr;
 
 	// Unmark all active pages. This will leak pages until the close completes.
@@ -229,6 +231,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	// older than the committed tree pages. This is still a valid state, however,
 	// the opposite is not.
 	hdr->vtree = update.vtree;
+	ed_fault_trigger(UPDATE_TREE);
 	hdr->xid = txn->xid;
 
 	// Pass all replaced pages to be reused. If this fails they are leaked.
@@ -247,6 +250,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (txn == NULL) { return; }
 	flags = ed_txn_fclose(flags, txn->cflags);
 
+	ed_fault_trigger(CLOSE_BEGIN);
 
 	// Stash the mapped heads back into the roots array.
 	for (unsigned i = 0; i < ed_len(txn->db); i++) {

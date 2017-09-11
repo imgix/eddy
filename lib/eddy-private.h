@@ -79,6 +79,47 @@ typedef struct EdObjectHdr EdObjectHdr;
 
 
 /**
+ * @defgroup  fault  Debugging Fault Mechanism
+ *
+ * When enabled, allows tests to schedule faults in various critical parts of
+ * the transaction system.
+ *
+ * @{
+ */
+#if ED_FAULT
+
+#define ED_FAULT_MAP(XX) \
+	XX(NONE) \
+	XX(COMMIT_BEGIN) \
+	XX(CLOSE_BEGIN) \
+	XX(UPDATE_TREE) \
+
+typedef enum {
+#define XX(f) ED_FAULT_##f,
+	ED_FAULT_MAP(XX)
+#undef XX
+} EdFault;
+
+#define ed_fault_enable(f, count) ed_fault__enable(ED_FAULT_##f, UINT32_C(count), __FILE__, __LINE__)
+#define ed_fault_trigger(f) ed_fault__trigger(ED_FAULT_##f, __FILE__, __LINE__)
+
+ED_LOCAL void
+ed_fault__enable(EdFault f, uint32_t count, const char *file, int line);
+
+ED_LOCAL void
+ed_fault__trigger(EdFault f, const char *file, int line);
+
+#else
+
+#define ed_fault_enable(f, count)
+#define ed_fault_trigger(f)
+
+#endif
+/** @} */
+
+
+
+/**
  * @defgroup  lck  Lock Module
  *
  * A combined thread and file lock with shared and exclusive locking modes.
