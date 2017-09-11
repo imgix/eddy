@@ -41,6 +41,7 @@
 
 #define ED_DB_KEYS 0
 #define ED_DB_BLOCKS 1
+#define ED_NDB 2
 
 
 
@@ -431,7 +432,8 @@ struct EdTxn {
 	int          error;            /**< Error code during transaction */
 	bool         isrdonly;         /**< Was #ed_txn_open() called with #ED_FRDONLY */
 	bool         isopen;           /**< Has #ed_txn_open() been called */
-	EdTxnDb      db[2];            /**< State information for each b+tree */
+	EdBpt *      roots[ED_NDB];    /**< Cached root pages */
+	EdTxnDb      db[ED_NDB];       /**< State information for each b+tree */
 };
 
 /**
@@ -615,6 +617,8 @@ ED_LOCAL      int ed_idx_put(EdIdx *, const void *key, size_t len, EdObject *obj
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
 ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);
 ED_LOCAL     void ed_idx_release_xid(EdIdx *);
+ED_LOCAL      int ed_idx_acquire_snapshot(EdIdx *, EdBpt **trees);
+ED_LOCAL     void ed_idx_release_snapshot(EdIdx *, EdBpt **trees);
 ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, uint64_t flags);
 
 /** @} */

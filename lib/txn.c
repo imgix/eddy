@@ -120,13 +120,23 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 {
 	if (txn == NULL || txn->isopen) { return ed_esys(EINVAL); }
 	bool rdonly = flags & ED_FRDONLY;
-	if (rdonly) {
-		ed_idx_acquire_xid(txn->idx);
-	}
-	else {
-		int rc = ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_EX, flags);
-		if (rc < 0) { return rc; }
+	int rc = 0;
 
+	if (!rdonly) {
+		rc = ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_EX, flags);
+		if (rc < 0) { return rc; }
+	}
+
+	rc = ed_idx_acquire_snapshot(txn->idx, txn->roots);
+	if (rc < 0) { return rc; };
+
+	for (int i = 0; i < ED_NDB; i++) {
+		txn->db[i].tail = txn->db[i].head = txn->roots[i] ?
+			node_wrap(txn, (EdPg *)txn->roots[i], NULL, 0) : NULL;
+		txn->roots[i] = NULL;
+	}
+
+	if (!rdonly) {
 		EdPgIdx *hdr = txn->idx->hdr;
 		txn->xid = hdr->xid + 1;
 
@@ -171,6 +181,7 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 			hdr->nactive = npg;
 		}
 	}
+
 	txn->cflags = flags & ED_TXN_FCRIT;
 	txn->isrdonly = rdonly;
 	txn->isopen = true;
@@ -237,18 +248,11 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	flags = ed_txn_fclose(flags, txn->cflags);
 
 
-	// If reseting for reuse, stash the mapped heads so they don't get unmapped.
-	EdPg *heads[ED_TXN_MAX_REF];
-	if (flags & ED_FRESET) {
-		for (unsigned i = 0; i < ed_len(txn->db); i++) {
-			EdTxnDb *dbp = &txn->db[i];
-			if (node_is_live(txn, dbp->head)) {
-				heads[i] = dbp->head->page;
-				dbp->head->page = NULL;
-			}
-			else {
-				heads[i] = NULL;
-			}
+	// Stash the mapped heads back into the roots array.
+	for (unsigned i = 0; i < ed_len(txn->db); i++) {
+		if (node_is_live(txn, txn->db[i].head)) {
+			txn->roots[i] = txn->db[i].head->tree;
+			txn->db[i].head->tree = NULL;
 		}
 	}
 
@@ -287,6 +291,15 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 
+	if (flags & ED_FRESET) {
+		if (txn->isopen) {
+			ed_idx_release_xid(txn->idx);
+		}
+	}
+	else {
+		ed_idx_release_snapshot(txn->idx, txn->roots);
+	}
+
 	if (locked) {
 		EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
 		if (flags & ED_FRESET) {
@@ -312,10 +325,6 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 
-	if (txn->isopen) {
-		ed_idx_release_xid(txn->idx);
-	}
-
 	if (flags & ED_FRESET) {
 		txn->npgused = 0;
 		txn->ngcused = 0;
@@ -323,10 +332,9 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		memset(txn->nodes->nodes, 0, txn->nodes->nslot*sizeof(txn->nodes->nodes[0]));
 		txn->error = 0;
 		txn->isopen = false;
-		for (unsigned i = 0; i < ed_len(txn->db); i++) {
+		for (int i = 0; i < ED_NDB; i++) {
 			EdTxnDb *dbp = &txn->db[i];
-			// Restore the stashed mapped head page.
-			dbp->tail = dbp->head = heads[i] ? node_wrap(txn, heads[i], NULL, 0) : NULL;
+			dbp->tail = dbp->head = NULL;
 			dbp->key = 0;
 			dbp->start = NULL;
 			dbp->entry = NULL;
@@ -337,7 +345,6 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		}
 	}
 	else {
-		// TODO reset pending
 		free(txn->pg);
 		free(txn->gc);
 		free(txn);

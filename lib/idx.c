@@ -471,6 +471,35 @@ ed_idx_release_xid(EdIdx *idx)
 }
 
 int
+ed_idx_acquire_snapshot(EdIdx *idx, EdBpt **trees)
+{
+	ed_idx_acquire_xid(idx);
+	for (int i = 0; i < ED_NDB; i++) {
+		if (ed_pg_load(idx->fd, (EdPg **)&trees[i], idx->hdr->tree[i]) == MAP_FAILED) {
+			int rc = ED_ERRNO;
+			for (; i >= 0; i--) {
+				if (trees[i]) { ed_pg_unmap(trees[i], 1); }
+			}
+			ed_idx_release_xid(idx);
+			return rc;
+		}
+	}
+	return 0;
+}
+
+void
+ed_idx_release_snapshot(EdIdx *idx, EdBpt **trees)
+{
+	for (size_t i = 0; i < ED_NDB; i++) {
+		if (trees[i]) {
+			ed_pg_unmap(trees[i], 1);
+			trees[i] = NULL;
+		}
+	}
+	ed_idx_release_xid(idx);
+}
+
+int
 ed_idx_stat(EdIdx *idx, FILE *out, uint64_t flags)
 {
 	EdStat *stat;

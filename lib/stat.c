@@ -30,10 +30,7 @@ ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags)
 	int rc = ed_lck(&idx->lck, idx->fd, ED_LCK_EX, flags);
 	if (rc < 0) { return rc; }
 
-	EdBpt *tree[2] = { NULL, NULL };
-
-	ed_idx_acquire_xid(idx);
-
+	EdBpt *trees[ED_NDB] = { NULL };
 	EdPgno tail_start = idx->hdr->tail_start;
 	EdPgno tail_count = idx->hdr->tail_count;
 	EdPgno no = tail_start + tail_count;
@@ -57,43 +54,37 @@ ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags)
 			ED_BIT_SET(stat->vec, p);
 		}
 
-		EdConn *conn = idx->hdr->conns;
-		stat->mark = &stat->npending;
-		for (int i = 0; i < idx->nconns; i++, conn++) {
-			for (EdPgno n = 0; n < conn->npending; n++) {
-				ed_stat_mark(stat, conn->pending[n]);
+		rc = ed_idx_acquire_snapshot(idx, trees);
+
+		if (rc == 0) {
+			EdConn *conn = idx->hdr->conns;
+			stat->mark = &stat->npending;
+			for (int i = 0; i < idx->nconns; i++, conn++) {
+				for (EdPgno n = 0; n < conn->npending; n++) {
+					ed_stat_mark(stat, conn->pending[n]);
+				}
 			}
-		}
 
-		stat->mark = &stat->nactive;
-		for (EdPgno n = 0; n < idx->hdr->nactive; n++) {
-			ed_stat_mark(stat, idx->hdr->active[n]);
-		}
-
-		stat->mark = &stat->ngc;
-		rc = ed_pg_mark_gc(idx, stat);
-
-		for (size_t i = 0; rc >= 0 && i < ed_len(tree); i++) {
-			if (ed_pg_load(idx->fd, (EdPg **)&tree[i], idx->hdr->tree[i]) == MAP_FAILED) {
-				rc = ED_ERRNO;
+			stat->mark = &stat->nactive;
+			for (EdPgno n = 0; n < idx->hdr->nactive; n++) {
+				ed_stat_mark(stat, idx->hdr->active[n]);
 			}
+
+			stat->mark = &stat->ngc;
+			rc = ed_pg_mark_gc(idx, stat);
 		}
 	}
 
 	ed_lck(&idx->lck, idx->fd, ED_LCK_UN, flags);
 
 	stat->mark = &stat->nbpt;
-	for (size_t i = 0; rc >= 0 && i < ed_len(tree); i++) {
-		if (tree[i]) {
-			rc = ed_bpt_mark(idx, stat, tree[i]);
+	for (size_t i = 0; rc >= 0 && i < ed_len(trees); i++) {
+		if (trees[i]) {
+			rc = ed_bpt_mark(idx, stat, trees[i]);
 		}
 	}
 
-	for (size_t i = 0; i < ed_len(tree); i++) {
-		if (tree[i]) { ed_pg_unmap(tree[i], 1); }
-	}
-
-	ed_idx_release_xid(idx);
+	ed_idx_release_snapshot(idx, trees);
 
 	if (rc < 0) { free(stat); }
 	else { *statp = stat; }
@@ -147,18 +138,18 @@ ed_stat_print(EdStat *stat, FILE *out)
 		"  pages:\n"
 		"    total: %zu\n"
 		"    header: %zu\n"
+		"    btree: %zu\n"
 		"    active: %zu\n"
 		"    pending: %zu\n"
-		"    btree: %zu\n"
 		"    gc: %zu\n"
 		"    tail: %zu\n"
 		,
 		(size_t)stat->stat.st_size,
 		(size_t)stat->no,
 		(size_t)stat->header,
+		(size_t)stat->nbpt,
 		(size_t)stat->nactive,
 		(size_t)stat->npending,
-		(size_t)stat->nbpt,
 		(size_t)stat->ngc,
 		(size_t)stat->tail_count);
 
