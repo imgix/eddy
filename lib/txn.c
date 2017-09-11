@@ -97,11 +97,11 @@ ed_txn_new(EdTxn **txnp, EdIdx *idx)
 	for (unsigned i = 0; i < ed_len(txn->db); i++) {
 		EdPgno *no = &idx->hdr->tree[i];
 		if (*no != ED_PG_NONE) {
-			rc = ed_txn_map(txn, *no, NULL, 0, &txn->db[i].head);
+			rc = ed_txn_map(txn, *no, NULL, 0, &txn->db[i].root);
 			if (rc < 0) { break; }
-			assert(txn->db[i].head != NULL && txn->db[i].head->page != NULL &&
-				(txn->db[i].head->page->type == ED_PG_BRANCH || txn->db[i].head->page->type == ED_PG_LEAF));
-			txn->db[i].tail = txn->db[i].head;
+			assert(txn->db[i].root != NULL && txn->db[i].root->page != NULL &&
+				(txn->db[i].root->page->type == ED_PG_BRANCH || txn->db[i].root->page->type == ED_PG_LEAF));
+			txn->db[i].find = txn->db[i].root;
 		}
 		txn->db[i].no = no;
 	}
@@ -131,7 +131,7 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 	if (rc < 0) { return rc; };
 
 	for (int i = 0; i < ED_NDB; i++) {
-		txn->db[i].tail = txn->db[i].head = txn->roots[i] ?
+		txn->db[i].find = txn->db[i].root = txn->roots[i] ?
 			node_wrap(txn, (EdPg *)txn->roots[i], NULL, 0) : NULL;
 		txn->roots[i] = NULL;
 	}
@@ -223,8 +223,8 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	// Collect tree root page updates.
 	union { uint64_t vtree; EdPgno tree[2]; } update;
 	for (unsigned i = 0; i < ed_len(txn->db); i++) {
-		EdNode *head = txn->db[i].head;
-		update.tree[i] = head && head->page ? head->page->no : ED_PG_NONE;
+		EdNode *root = txn->db[i].root;
+		update.tree[i] = root && root->page ? root->page->no : ED_PG_NONE;
 	}
 
 	// Updating the tree pages first means a reader could hold an xid that is
@@ -254,9 +254,9 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 
 	// Stash the mapped heads back into the roots array.
 	for (unsigned i = 0; i < ed_len(txn->db); i++) {
-		if (node_is_live(txn, txn->db[i].head)) {
-			txn->roots[i] = txn->db[i].head->tree;
-			txn->db[i].head->tree = NULL;
+		if (node_is_live(txn, txn->db[i].root)) {
+			txn->roots[i] = txn->db[i].root->tree;
+			txn->db[i].root->tree = NULL;
 		}
 	}
 
@@ -338,7 +338,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		txn->isopen = false;
 		for (int i = 0; i < ED_NDB; i++) {
 			EdTxnDb *dbp = &txn->db[i];
-			dbp->tail = dbp->head = NULL;
+			dbp->find = dbp->root = NULL;
 			dbp->key = 0;
 			dbp->start = NULL;
 			dbp->entry = NULL;
@@ -481,7 +481,7 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset)
 	assert(db < ed_len(txn->db));
 	EdTxnDb *dbp = &txn->db[db];
 	if (reset) {
-		dbp->tail = dbp->head;
+		dbp->find = dbp->root;
 		dbp->entry = NULL;
 		dbp->entry_index = 0;
 		dbp->nsplits = 0;

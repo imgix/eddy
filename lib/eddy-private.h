@@ -435,8 +435,8 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
  * Additionally, it acts as a cursor for iterating through records in the tree.
  */
 struct EdTxnDb {
-	EdNode *     head;             /**< First node searched */
-	EdNode *     tail;             /**< Current tail node */
+	EdNode *     root;             /**< First node searched */
+	EdNode *     find;             /**< Current find result */
 	EdPgno *     no;               /**< Pointer to page number of root node */
 	uint64_t     key;              /**< Key searched for */
 	void *       start;            /**< Pointer to the first entry */

@@ -116,7 +116,7 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 	uint32_t i = 0, n = 0;
 	uint8_t *data = NULL;
 	size_t esize = dbp->entry_size;
-	EdNode *node = dbp->head;
+	EdNode *node = dbp->root;
 	if (node == NULL) {
 		dbp->nsplits = 1;
 		goto done;
@@ -136,7 +136,7 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 		rc = ed_txn_map(txn, no, node, bidx, &next);
 		if (rc < 0) { goto done; }
 		node = next;
-		dbp->tail = node;
+		dbp->find = node;
 	}
 	if (IS_LEAF_FULL(node->tree, esize)) { dbp->nsplits++; }
 	else { dbp->nsplits = 0; }
@@ -183,7 +183,7 @@ move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 		if (rc < 0) { goto done; }
 		from = next;
 	}
-	dbp->tail = from;
+	dbp->find = from;
 
 done:
 	dbp->match = rc;
@@ -192,7 +192,7 @@ done:
 }
 
 /**
- * @brief  Moves the db tail to a right sibling node
+ * @brief  Moves the db find to a right sibling node
  * @param  txn  Transaction object
  * @param  dbp  Transaction database object
  * @param  from  Node to move from
@@ -228,9 +228,9 @@ ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
 
-	int rc = move_first(txn, dbp, dbp->head);
+	int rc = move_first(txn, dbp, dbp->root);
 	if (rc == 0) {
-		void *data = dbp->tail->tree->data;
+		void *data = dbp->find->tree->data;
 		dbp->entry = dbp->start = data;
 		dbp->entry_index = 0;
 		dbp->nloops = 0;
@@ -244,7 +244,7 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
 	int rc = 0;
-	EdNode *node = dbp->tail;
+	EdNode *node = dbp->find;
 	EdBpt *leaf = node->tree;
 	uint8_t *p = dbp->entry;
 	uint32_t i = dbp->entry_index;
@@ -258,9 +258,9 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 		else {
 			rc = ed_txn_map(txn, next, node, 0, &node);
 			if (rc < 0) { goto error; }
-			dbp->tail = node;
+			dbp->find = node;
 		}
-		p = dbp->tail->tree->data;
+		p = dbp->find->tree->data;
 		i = 0;
 	}
 	else {
@@ -304,7 +304,7 @@ set_node(EdTxn *txn, EdTxnDb *dbp, EdNode *node)
 {
 	EdNode *parent = node->parent;
 	if (parent == NULL) {
-		dbp->head = node;
+		dbp->root = node;
 		return 0;
 	}
 	assert(parent->page->type == ED_PG_BRANCH);
@@ -495,7 +495,7 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, int mid)
 
 	// The new entry goes on the left-side leaf.
 	if (eidx < (uint16_t)mid) {
-		dbp->tail = left;
+		dbp->find = left;
 		// Copy entries after the mid point to new right leaf.
 		memcpy(right->tree->data, leaf->tree->data+off, sizeof(leaf->tree->data) - off);
 		// If left is a newly cloned node, copy the entries left of the new index.
@@ -520,9 +520,9 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, int mid)
 				leaf->tree->data + off + eidx*esize,
 				(right->tree->nkeys - eidx) * esize);
 		dbp->entry_index = eidx;
-		dbp->tail = right;
+		dbp->find = right;
 	}
-	dbp->entry = dbp->tail->tree->data + eidx*esize;
+	dbp->entry = dbp->find->tree->data + eidx*esize;
 
 	return insert_into_parent(txn, dbp, left, right, rkey);
 }
@@ -530,7 +530,7 @@ split_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, int mid)
 static int
 insert_into_leaf(EdTxn *txn, EdTxnDb *dbp, const void *ent, bool replace)
 {
-	EdNode *leaf = dbp->tail;
+	EdNode *leaf = dbp->find;
 	size_t esize = dbp->entry_size;
 	uint32_t eidx = dbp->entry_index;
 
@@ -543,7 +543,7 @@ insert_into_leaf(EdTxn *txn, EdTxnDb *dbp, const void *ent, bool replace)
 		leaf->tree->nkeys = 1;
 		dbp->entry = leaf->tree->data;
 		dbp->entry_index = 0;
-		dbp->tail = leaf;
+		dbp->find = leaf;
 	}
 	// If the leaf is full, it needs to be split.
 	else if (!replace && IS_LEAF_FULL(leaf->tree, esize)) {
@@ -551,7 +551,7 @@ insert_into_leaf(EdTxn *txn, EdTxnDb *dbp, const void *ent, bool replace)
 		if (mid < 0) { return mid; }
 		int rc = split_leaf(txn, dbp, leaf, mid);
 		if (rc < 0) { return rc; }
-		leaf = dbp->tail;
+		leaf = dbp->find;
 		leaf->tree->nkeys++;
 	}
 	// Otherwie we expand the current node.
@@ -563,7 +563,7 @@ insert_into_leaf(EdTxn *txn, EdTxnDb *dbp, const void *ent, bool replace)
 		if (src->tree->xid < txn->xid) {
 			int rc = ed_txn_clone(txn, src, &leaf);
 			if (rc < 0) { return rc; }
-			dbp->tail = leaf;
+			dbp->find = leaf;
 			dbp->entry = leaf->tree->data + eidx*esize;
 			// When replacing, copy the full data. Otherwise only copy left of then new
 			// insertion index. The following memmove will copy the right side.
@@ -616,7 +616,7 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
 	if (dbp->match < 1) { return 0; }
 
-	EdNode *leaf = dbp->tail;
+	EdNode *leaf = dbp->find;
 	size_t esize = dbp->entry_size;
 	uint32_t eidx = dbp->entry_index;
 

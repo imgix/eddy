@@ -134,7 +134,7 @@ test_basic(void)
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		}
-		mu_assert_uint_eq(txn->db[0].head->tree->xid, txn->xid);
+		mu_assert_uint_eq(txn->db[0].root->tree->xid, txn->xid);
 		{
 			Entry ent = { .key = i+1 };
 			snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
@@ -256,7 +256,7 @@ test_large(void)
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		}
-		mu_assert_uint_eq(txn->db[0].head->tree->xid, txn->xid);
+		mu_assert_uint_eq(txn->db[0].root->tree->xid, txn->xid);
 		{
 			Entry ent = { .key = rand_r(&seed) };
 			snprintf(ent.name, sizeof(ent.name), "a%u", i+1);
