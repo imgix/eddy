@@ -207,6 +207,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	EdPgno nactive = hdr->nactive;
 	hdr->nactive = 0;
 	memset(hdr->active, 0xff, nactive * sizeof(hdr->active[0]));
+	ed_fault_trigger(ACTIVE_CLEARED);
 
 	if (txn->error < 0) {
 		rc = ED_EINDEX_RDONLY;
@@ -306,6 +307,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 
 	if (locked) {
 		EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
+		ed_fault_trigger(PENDING_BEGIN);
 		if (flags & ED_FRESET) {
 			EdPgno keep = ed_len(conn->pending);
 			if (keep > npg) { keep = npg; }
@@ -321,6 +323,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			conn->npending = 0;
 			memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
 		}
+		ed_fault_trigger(PENDING_FINISH);
 		ed_free(txn->idx, 0, pg, npg);
 
 		ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);

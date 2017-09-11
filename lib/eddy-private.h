@@ -91,8 +91,11 @@ typedef struct EdObjectHdr EdObjectHdr;
 #define ED_FAULT_MAP(XX) \
 	XX(NONE) \
 	XX(COMMIT_BEGIN) \
-	XX(CLOSE_BEGIN) \
+	XX(ACTIVE_CLEARED) \
 	XX(UPDATE_TREE) \
+	XX(CLOSE_BEGIN) \
+	XX(PENDING_BEGIN) \
+	XX(PENDING_FINISH) \
 
 typedef enum {
 #define XX(f) ED_FAULT_##f,
