@@ -60,6 +60,13 @@ static void (*mu_teardown)(void) = mu_noop;
 #define MU_STR2(n) #n
 #define MU_STR(n) MU_STR2(n)
 
+#define mu_fail(...) do { \
+	__sync_fetch_and_add (&mu_counts->asserts, 1); \
+	__sync_fetch_and_add (&mu_counts->failures, 1); \
+	fprintf (stderr, __FILE__ ":" MU_STR(__LINE__) " " __VA_ARGS__); \
+	exit (0); \
+} while (0);
+
 #define mu_assert_msg(exp, ...) do { \
 	__sync_fetch_and_add (&mu_counts->asserts, 1); \
 	if (!(exp)) { \
