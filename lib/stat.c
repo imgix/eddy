@@ -1,5 +1,8 @@
 #include "eddy-private.h"
 
+_Static_assert(offsetof(EdStat, vec) % 8 == 0,
+		"EdStat vec member must be 8-byte aligned");
+
 #define ED_BIT_MASK(b) (1 << ((b) % 8))
 #define ED_BIT_SLOT(b) ((b) / 8)
 #define ED_BIT_SET(a, b) ((a)[ED_BIT_SLOT(b)] |= ED_BIT_MASK(b))
@@ -24,8 +27,8 @@ push_double_page(EdStat *stat, EdPgno no)
 int
 ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags)
 {
-	struct stat sbuf;
-	if (fstat(idx->fd, &sbuf) < 0) { return ED_ERRNO; }
+	struct stat index;
+	if (fstat(idx->fd, &index) < 0) { return ED_ERRNO; }
 
 	int rc = ed_lck(&idx->lck, idx->fd, ED_LCK_EX, flags);
 	if (rc < 0) { return rc; }
@@ -40,7 +43,8 @@ ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags)
 		rc = ED_ERRNO;
 	}
 	else {
-		stat->stat = sbuf;
+		stat->index = index;
+		stat->index_path = idx->path ? strdup(idx->path) : NULL;
 		stat->header = ED_IDX_PAGES(idx->hdr->nconns);
 		stat->tail_start = tail_start;
 		stat->tail_count = tail_count;
@@ -97,6 +101,7 @@ ed_stat_free(EdStat **statp)
 	EdStat *stat = *statp;
 	if (stat == NULL) { return; }
 	*statp = NULL;
+	free(stat->index_path);
 	free(stat->mult);
 	free(stat);
 }
@@ -114,9 +119,21 @@ ed_stat_mark(EdStat *stat, EdPgno no)
 }
 
 bool
-ed_stat_leaked(EdStat *stat, EdPgno no)
+ed_stat_has_leaks(const EdStat *stat)
 {
-	return !ED_BIT_TEST(stat->vec, no);
+	const uint8_t *v = stat->vec, *ve = v + stat->no / 8;
+	for (; ve - v >= 8; v += 8) {
+		if (*(uint64_t *)v != UINT64_C(-1)) { return true; }
+	}
+	for (; v < ve; v++) { if (*v != 0xff) { return true; } }
+	EdPgno last = stat->no - (stat->no / 8 * 8);
+	return last && *v != 0xff >> (8 - last);
+}
+
+bool
+ed_stat_has_leak(EdStat *stat, EdPgno no)
+{
+	return no < stat->no && !ED_BIT_TEST(stat->vec, no);
 }
 
 const EdPgno *
@@ -130,10 +147,11 @@ void
 ed_stat_print(EdStat *stat, FILE *out)
 {
 	if (out == NULL) { out = stdout; }
-	flockfile(out);
 
 	fprintf(out,
 		"index:\n"
+		"  path: %s\n"
+		"  inode: %llu\n"
 		"  size: %zu\n"
 		"  pages:\n"
 		"    total: %zu\n"
@@ -144,7 +162,9 @@ ed_stat_print(EdStat *stat, FILE *out)
 		"    gc: %zu\n"
 		"    tail: %zu\n"
 		,
-		(size_t)stat->stat.st_size,
+		stat->index_path,
+		stat->index.st_ino,
+		(size_t)stat->index.st_size,
 		(size_t)stat->no,
 		(size_t)stat->header,
 		(size_t)stat->nbpt,
@@ -178,7 +198,5 @@ ed_stat_print(EdStat *stat, FILE *out)
 		}
 	}
 	fprintf(out, "]\n");
-
-	funlockfile(out);
 }
 

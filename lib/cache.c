@@ -46,8 +46,12 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 {
 	if (out == NULL) { out = stdout; }
 
-	int rc = ed_idx_stat(&cache->idx, out, flags);
+	EdStat *stat;
+	int rc = ed_stat_new(&stat, &cache->idx, flags);
 	if (rc < 0) { return rc; }
+
+	flockfile(out);
+	ed_stat_print(stat, out);
 	fprintf(out,
 		"slab:\n"
 		"  path: %s\n"
@@ -71,6 +75,9 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 		(size_t)cache->idx.hdr->slab_block_count,
 		(size_t)cache->idx.hdr->pos
 	);
+
+	funlockfile(out);
+	ed_stat_free(&stat);
 	return 0;
 }
 

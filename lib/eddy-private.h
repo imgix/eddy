@@ -644,6 +644,7 @@ ed_txn_db(EdTxn *txn, unsigned db, bool reset);
 
 struct EdIdx {
 	EdPgIdx *    hdr;              /**< Index header reference */
+	char *       path;             /**< Path copied when opening */
 	int          fd;               /**< Open file discriptor for the file to allocate from */
 	int          slabfd;           /**< Open file descriptor for the slab */
 	EdLck        lck;              /**< Write lock */
@@ -668,7 +669,6 @@ ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);
 ED_LOCAL     void ed_idx_release_xid(EdIdx *);
 ED_LOCAL      int ed_idx_acquire_snapshot(EdIdx *, EdBpt **trees);
 ED_LOCAL     void ed_idx_release_snapshot(EdIdx *, EdBpt **trees);
-ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, uint64_t flags);
 
 /** @} */
 
@@ -680,7 +680,8 @@ ED_LOCAL      int ed_idx_stat(EdIdx *, FILE *, uint64_t flags);
  */
 
 struct EdStat {
-	struct stat  stat;
+	struct stat  index;
+	char *       index_path;
 	EdPgno *     mult;
 	size_t       nmultused;
 	size_t       nmultslots;
@@ -699,7 +700,8 @@ struct EdStat {
 ED_LOCAL      int ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags);
 ED_LOCAL     void ed_stat_free(EdStat **statp);
 ED_LOCAL      int ed_stat_mark(EdStat *stat, EdPgno no);
-ED_LOCAL     bool ed_stat_leaked(EdStat *stat, EdPgno no);
+ED_LOCAL     bool ed_stat_has_leaks(const EdStat *stat);
+ED_LOCAL     bool ed_stat_has_leak(EdStat *stat, EdPgno no);
 ED_LOCAL const EdPgno *
 ed_stat_multi_ref(EdStat *stat, size_t *count);
 ED_LOCAL     void ed_stat_print(EdStat *stat, FILE *out);

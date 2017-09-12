@@ -227,6 +227,7 @@ static void
 ed_idx_clear(EdIdx *idx)
 {
 	idx->hdr = NULL;
+	idx->path = NULL;
 	idx->fd = -1;
 	idx->slabfd = -1;
 	idx->gc_head = NULL;
@@ -342,6 +343,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 
 	idx->flags = ed_idx_flags(hdr->flags | ed_fopen(flags));
 	idx->pid = pid;
+	idx->path = strdup(cfg->index_path);
 
 	return 0;
 
@@ -374,6 +376,7 @@ ed_idx_close(EdIdx *idx)
 	if (idx->hdr && idx->hdr != MAP_FAILED) {
 		ed_pg_unmap(idx->hdr, ED_IDX_PAGES(idx->nconns));
 	}
+	free(idx->path);
 	ed_idx_clear(idx);
 }
 
@@ -506,17 +509,5 @@ ed_idx_release_snapshot(EdIdx *idx, EdBpt **trees)
 		}
 	}
 	ed_idx_release_xid(idx);
-}
-
-int
-ed_idx_stat(EdIdx *idx, FILE *out, uint64_t flags)
-{
-	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
-	EdStat *stat;
-	int rc = ed_stat_new(&stat, idx, flags);
-	if (rc < 0) { return rc; }
-	ed_stat_print(stat, out);
-	ed_stat_free(&stat);
-	return 0;
 }
 
