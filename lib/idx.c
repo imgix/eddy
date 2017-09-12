@@ -511,3 +511,35 @@ ed_idx_release_snapshot(EdIdx *idx, EdBpt **trees)
 	ed_idx_release_xid(idx);
 }
 
+int
+ed_idx_repair_leaks(EdIdx *idx, EdStat *stat, uint64_t flags)
+{
+	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
+	flags = flags | idx->flags;
+
+	bool locked = false;
+	EdPgno leaks[64];
+	EdPgno npg = stat->no, nleaks = 0;
+	int rc;
+
+	for (EdPgno no = 0; no <= npg; no++) {
+		if (ed_stat_has_leak(stat, no)) {
+			leaks[nleaks++] = no;
+		}
+		if (nleaks == ed_len(leaks) || (nleaks > 0 && no == npg)) {
+			if (!locked) {
+				rc = ed_lck(&idx->lck, idx->fd, ED_LCK_EX, flags);
+				if (rc < 0) { break; }
+				locked = true;
+			}
+			rc = ed_free_pgno(idx, 0, leaks, nleaks);
+			if (rc < 0) { break; }
+		}
+	}
+
+	if (locked) {
+		ed_lck(&idx->lck, idx->fd, ED_LCK_UN, flags);
+	}
+	return rc;
+}
+

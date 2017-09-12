@@ -669,6 +669,7 @@ ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);
 ED_LOCAL     void ed_idx_release_xid(EdIdx *);
 ED_LOCAL      int ed_idx_acquire_snapshot(EdIdx *, EdBpt **trees);
 ED_LOCAL     void ed_idx_release_snapshot(EdIdx *, EdBpt **trees);
+ED_LOCAL      int ed_idx_repair_leaks(EdIdx *, EdStat *, uint64_t flags);
 
 /** @} */
 
