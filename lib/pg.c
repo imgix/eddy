@@ -489,15 +489,35 @@ ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *pg, EdPgno n)
 	if (tail == MAP_FAILED) { return ED_ERRNO; }
 	gc_check(tail, pg, n);
 
-	// Determine how many pages can be discarded into the current gc page.
-	EdPgno avail = gc_list_npages_for(tail, xid);
-	EdPgno remain = avail > n ? 0 : n - avail;
+	size_t used_pages = 0, alloc_pages = 0;
+	do {
+		// Determine how many pages can be discarded into the current gc page.
+		EdPgno avail = gc_list_npages_for(tail, xid);
+		EdPgno remain = avail > n ? 0 : n - avail;
 
-	// Allocate all new pages in a single allocation if needed.
-	size_t used_pages = 0;
-	size_t alloc_pages = ED_COUNT_SIZE(remain, ED_GC_LIST_MAX);
-	EdPgGc *new[alloc_pages];
+		// Allocate all new pages in a single allocation if needed.
+		alloc_pages = ED_COUNT_SIZE(remain, ED_GC_LIST_MAX);
+
+		// If we can safely move the list without leaking pages, move them and retry.
+		// Currently, we are checking if the gc list is using no more than half the
+		// available space. Technically, we can move it any time there is enough
+		// space before state.head to copy the entirety of the gc lists.
+		if (alloc_pages == 1 && tail->state.head >= sizeof(tail->data)/2) {
+			EdPgGcState state = tail->state;
+			memcpy(tail->data, tail->data + state.head, sizeof(tail->data) - state.head);
+			state.tail -= state.head;
+			state.head = 0;
+			tail->state = state;
+		}
+		else {
+			break;
+		}
+	} while (1);
+
+	EdPgGc **new = NULL;
 	if (alloc_pages > 0) {
+		new = alloca(sizeof(*new) * alloc_pages);
+		if (new == NULL) { return ED_ERRNO; }
 		int rc = ed_alloc(idx, (EdPg **)new, alloc_pages);
 		if (rc < 0) { return rc; }
 	}
