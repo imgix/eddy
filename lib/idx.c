@@ -520,7 +520,7 @@ ed_idx_repair_leaks(EdIdx *idx, EdStat *stat, uint64_t flags)
 	bool locked = false;
 	EdPgno leaks[64];
 	EdPgno npg = stat->no, nleaks = 0;
-	int rc;
+	int rc = 0;
 
 	for (EdPgno no = 0; no <= npg; no++) {
 		if (ed_stat_has_leak(stat, no)) {
