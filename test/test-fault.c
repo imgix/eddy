@@ -129,7 +129,7 @@ test_commit_begin(void)
 		build_tree();
 		return;
 	}
-	mu_assert_call(waitpid(pid, NULL, 0));
+	while (waitpid(pid, NULL, 0) == -1 && errno == EINTR) {}
 
 	mu_teardown = cleanup;
 
@@ -155,6 +155,64 @@ test_commit_begin(void)
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 0);
 
+	EdStat *stat;
+	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
+	mu_assert(!ed_stat_has_leaks(stat));
+	ed_stat_free(&stat);
+
+	finish(&txn);
+}
+
+static void
+test_active_cleared(void)
+{
+	unlink(cfg.index_path);
+
+	pid_t pid = fork();
+	if (pid < 0) {
+		mu_fail("fork failed '%s'\n", strerror(errno));
+	}
+	if (pid == 0) {
+		ed_fault_enable(ACTIVE_CLEARED, 100, ED_FAULT_NOPRINT);
+		build_tree();
+		return;
+	}
+	while (waitpid(pid, NULL, 0) == -1 && errno == EINTR) {}
+
+	mu_teardown = cleanup;
+
+	Entry *ent;
+	EdTxn *txn;
+	setup(&txn);
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	unsigned seed = 0, i = 0;
+	for (; i < 198; i++) {
+		int key = rand_r(&seed);
+		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
+		char name[64];
+		snprintf(name, sizeof(name), "a%u", i);
+		mu_assert_int_eq(ent->key, key);
+		mu_assert_str_eq(ent->name, name);
+		ed_txn_close(&txn, FRESET);
+	}
+
+	int key = rand_r(&seed);
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 0);
+
+	EdStat *stat;
+	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
+	mu_assert(ed_stat_has_leaks(stat));
+	mu_assert_int_eq(ed_idx_repair_leaks(&idx, stat, 0), 0);
+	ed_stat_free(&stat);
+
+	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
+	mu_assert(!ed_stat_has_leaks(stat));
+	ed_stat_free(&stat);
+
 	finish(&txn);
 }
 
@@ -172,5 +230,6 @@ main(void)
 	close(fd);
 
 	mu_run(test_commit_begin);
+	mu_run(test_active_cleared);
 }
 
