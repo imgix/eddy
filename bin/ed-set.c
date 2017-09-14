@@ -34,7 +34,7 @@ main(int argc, char **argv)
 	EdObjectAttr attr = { .ttl = -1 };
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hem")) != -1) {
+	while ((ch = getopt(argc, argv, ":hem:")) != -1) {
 		switch (ch) {
 		case 'e':
 			attr.ttl = strtol(optarg, &end, 10);
