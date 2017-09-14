@@ -367,6 +367,8 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 	for (EdTxnNode *node = txn->nodes; node != NULL; node = node->next) {
 		for (int i = (int)node->nused-1; i >= 0; i--) {
 			if (node->nodes[i].page->no == no) {
+				node->nodes[i].parent = par;
+				node->nodes[i].pindex = pidx;
 				*out = &node->nodes[i];
 				return 0;
 			}
