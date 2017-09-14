@@ -614,7 +614,6 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 	if (txn->error < 0 || txn->isrdonly) { return ED_EINDEX_RDONLY; }
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
-	if (dbp->match < 1) { return 0; }
 
 	EdNode *leaf = dbp->find;
 	size_t esize = dbp->entry_size;
@@ -628,6 +627,7 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 		rc = set_node(txn, dbp, leaf);
 		if (rc < 0) { return rc; }
 		dbp->entry = leaf->tree->data + esize*eidx;
+		dbp->find = leaf;
 	}
 
 	memmove(dbp->entry, (uint8_t *)dbp->entry + esize,
@@ -640,6 +640,18 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 		if (leaf->parent && eidx == 0) {
 			branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(dbp->entry));
 		}
+	}
+	if (leaf->tree->nkeys == 0 || dbp->entry_index == leaf->tree->nkeys) {
+		int rc = move_right(txn, dbp, leaf);
+		if (rc >= 0) {
+			dbp->entry = dbp->find->tree->data;
+			dbp->entry_index = 0;
+		}
+	}
+	uint64_t key = ed_fetch64(dbp->entry);
+	if (key != dbp->key) {
+		dbp->nmatches = 0;
+		dbp->key = key;
 	}
 	return 1;
 }

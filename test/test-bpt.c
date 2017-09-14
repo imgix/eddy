@@ -861,6 +861,55 @@ test_iter(void)
 	finish(&txn);
 }
 
+static void
+test_iter_del(void)
+{
+	mu_teardown = cleanup;
+	unlink(cfg.index_path);
+
+	EdTxn *txn;
+
+	setup(&txn);
+
+	for (unsigned seed = 0, i = 0; i < 200; i++) {
+		Entry ent = { .key = rand_r(&seed) };
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	Entry *ent;
+	uint64_t keys[4];
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 1002898451, (void **)&ent), 1);
+
+	keys[0] = txn->db[0].key;
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	keys[1] = txn->db[0].key;
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	keys[2] = txn->db[0].key;
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	keys[3] = txn->db[0].key;
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[0], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[1], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[2], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[3], (void **)&ent), 0);
+
+	finish(&txn);
+}
+
 int
 main(void)
 {
@@ -880,6 +929,7 @@ main(void)
 	mu_run(test_remove_large);
 	mu_run(test_multi);
 	mu_run(test_iter);
+	mu_run(test_iter_del);
 	return 0;
 }
 
