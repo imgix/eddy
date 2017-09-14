@@ -906,6 +906,33 @@ test_iter_del(void)
 	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[1], (void **)&ent), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[2], (void **)&ent), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[3], (void **)&ent), 0);
+	ed_txn_close(&txn, FRESET);
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_first(txn, 0, (void **)&ent), 0);
+	keys[0] = ent->key;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	keys[1] = ent->key;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	keys[2] = ent->key;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	keys[3] = ent->key;
+	mu_assert_int_eq(ed_bpt_first(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[0], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[1], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[2], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[3], (void **)&ent), 0);
+	ed_txn_close(&txn, FRESET);
 
 	finish(&txn);
 }
