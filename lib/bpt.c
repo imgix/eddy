@@ -643,9 +643,13 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 		return rc;
 	}
 
+	dbp->key = key;
 	dbp->kmax = key;
 	dbp->nsplits = 0;
 	dbp->match = 1;
+	dbp->nmatches = 1;
+	dbp->nloops = 0;
+	dbp->haskey = true;
 	return 0;
 }
 
