@@ -4,6 +4,7 @@
  */
 #include "../lib/eddy-private.h"
 #include "mu.h"
+#include "rnd.c"
 
 // Enough entries to get to depth 3.
 // The entry size is bloated to get there in fewer ops.
@@ -251,14 +252,14 @@ test_large(void)
 	for (unsigned seed = 0, i = 0; i < LARGE; i += 2) {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		{
-			Entry ent = { .key = rand_r(&seed) };
+			Entry ent = { .key = get_random(&seed) };
 			snprintf(ent.name, sizeof(ent.name), "a%u", i);
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		}
 		mu_assert_uint_eq(txn->db[0].root->tree->xid, txn->xid);
 		{
-			Entry ent = { .key = rand_r(&seed) };
+			Entry ent = { .key = get_random(&seed) };
 			snprintf(ent.name, sizeof(ent.name), "a%u", i+1);
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -270,7 +271,7 @@ test_large(void)
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry *ent;
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -640,7 +641,7 @@ test_remove_small(void)
 	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
-		Entry ent = { .key = rand_r(&seed) };
+		Entry ent = { .key = get_random(&seed) };
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
@@ -652,7 +653,7 @@ test_remove_small(void)
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
 		Entry *ent;
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -666,14 +667,14 @@ test_remove_small(void)
 	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], false), 0);
 
 	for (unsigned seed = 0, i = 0; i < SMALL; i++) {
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, NULL), 0);
 		ed_txn_close(&txn, FRESET);
 	}
 
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
-		Entry ent = { .key = rand_r(&seed) };
+		Entry ent = { .key = get_random(&seed) };
 		snprintf(ent.name, sizeof(ent.name), "b%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
@@ -685,7 +686,7 @@ test_remove_small(void)
 
 	for (unsigned seed = 1, i = 0; i < SMALL; i++) {
 		Entry *ent;
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -709,7 +710,7 @@ test_remove_large(void)
 	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
-		Entry ent = { .key = rand_r(&seed) };
+		Entry ent = { .key = get_random(&seed) };
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
@@ -721,7 +722,7 @@ test_remove_large(void)
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
 		Entry *ent;
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -735,14 +736,14 @@ test_remove_large(void)
 	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, NULL), 0);
 		ed_txn_close(&txn, FRESET);
 	}
 
 	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
-		Entry ent = { .key = rand_r(&seed) };
+		Entry ent = { .key = get_random(&seed) };
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
@@ -754,7 +755,7 @@ test_remove_large(void)
 
 	for (unsigned seed = 1, i = 0; i < LARGE; i++) {
 		Entry *ent;
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -778,12 +779,12 @@ test_multi(void)
 	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < MULTI; i++) {
-		Entry ent = { .key = rand_r(&seed) };
+		Entry ent = { .key = get_random(&seed) };
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 		if (i % 3 == 0) {
-			Entry ent2 = { .key = rand_r(&seed) };
+			Entry ent2 = { .key = get_random(&seed) };
 			snprintf(ent2.name, sizeof(ent2.name), "b%u", i);
 			mu_assert_int_eq(ed_bpt_find(txn, 1, ent2.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 1, &ent2, false), 0);
@@ -797,7 +798,7 @@ test_multi(void)
 
 	for (unsigned seed = 0, i = 0; i < MULTI; i++) {
 		Entry *ent;
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -805,7 +806,7 @@ test_multi(void)
 		mu_assert_int_eq(ent->key, key);
 		mu_assert_str_eq(ent->name, name);
 		if (i % 3 == 0) {
-			int key2 = rand_r(&seed);
+			int key2 = get_random(&seed);
 			mu_assert_int_eq(ed_bpt_find(txn, 1, key2, (void **)&ent), 1);
 			char name2[64];
 			snprintf(name2, sizeof(name2), "b%u", i);
@@ -830,7 +831,7 @@ test_iter(void)
 	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
-		Entry ent = { .key = rand_r(&seed) };
+		Entry ent = { .key = get_random(&seed) };
 		if (i == LARGE/3) { start = ent.key; }
 		else if (ent.key > end) { end = ent.key; }
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
@@ -872,7 +873,7 @@ test_iter_del(void)
 	setup(&txn);
 
 	for (unsigned seed = 0, i = 0; i < 200; i++) {
-		Entry ent = { .key = rand_r(&seed) };
+		Entry ent = { .key = get_random(&seed) };
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
@@ -962,7 +963,7 @@ test_key_range(void)
 
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 	for (unsigned seed = 0, i = 0; i < 200; i++) {
-		Entry ent = { .key = rand_r(&seed) % 1000000 };
+		Entry ent = { .key = get_random(&seed) % 1000000 };
 		snprintf(ent.name, sizeof(ent.name), "a%u", i);
 		keys[i] = ent.key;
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);

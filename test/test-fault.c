@@ -1,5 +1,6 @@
 #include "../lib/eddy-private.h"
 #include "mu.h"
+#include "rnd.h"
 
 // These flags aren't terribly safe to use, but they do speed up the tests.
 #define FOPEN (ED_FNOTLCK|ED_FNOSYNC)
@@ -97,14 +98,14 @@ build_tree(void)
 	for (unsigned seed = 0, i = 0; i < 500; i += 2) {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		{
-			Entry ent = { .key = rand_r(&seed) };
+			Entry ent = { .key = get_random(&seed) };
 			snprintf(ent.name, sizeof(ent.name), "a%u", i);
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		}
 		mu_assert_uint_eq(txn->db[0].root->tree->xid, txn->xid);
 		{
-			Entry ent = { .key = rand_r(&seed) };
+			Entry ent = { .key = get_random(&seed) };
 			snprintf(ent.name, sizeof(ent.name), "a%u", i+1);
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -141,7 +142,7 @@ test_commit_begin(void)
 
 	unsigned seed = 0, i = 0;
 	for (; i < 198; i++) {
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -151,7 +152,7 @@ test_commit_begin(void)
 		ed_txn_close(&txn, FRESET);
 	}
 
-	int key = rand_r(&seed);
+	int key = get_random(&seed);
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 0);
 
@@ -189,7 +190,7 @@ test_active_cleared(void)
 
 	unsigned seed = 0, i = 0;
 	for (; i < 198; i++) {
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -199,7 +200,7 @@ test_active_cleared(void)
 		ed_txn_close(&txn, FRESET);
 	}
 
-	int key = rand_r(&seed);
+	int key = get_random(&seed);
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 0);
 
@@ -242,7 +243,7 @@ test_update_tree(void)
 
 	unsigned seed = 0, i = 0;
 	for (; i < 200; i++) {
-		int key = rand_r(&seed);
+		int key = get_random(&seed);
 		mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 1);
 		char name[64];
@@ -252,7 +253,7 @@ test_update_tree(void)
 		ed_txn_close(&txn, FRESET);
 	}
 
-	int key = rand_r(&seed);
+	int key = get_random(&seed);
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, key, (void **)&ent), 0);
 
