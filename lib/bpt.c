@@ -172,6 +172,7 @@ done:
 		dbp->nmatches = rc;
 		dbp->nloops = 0;
 		dbp->haskey = true;
+		dbp->hasfind = true;
 		if (ent) { *ent = data; }
 	}
 	dbp->match = rc;
@@ -268,6 +269,7 @@ ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
 		dbp->entry = dbp->start = data;
 		dbp->entry_index = 0;
 		dbp->nloops = 0;
+		dbp->hasfind = true;
 		if (ent) { *ent = data; }
 	}
 	return rc;
@@ -277,6 +279,8 @@ int
 ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
+	if (!dbp->hasfind) { return ED_EINDEX_KEY_MATCH; }
+
 	int rc = 0;
 	EdNode *node = dbp->find;
 	EdBpt *leaf = node->tree;
@@ -626,11 +630,13 @@ insert_into_leaf(EdTxn *txn, EdTxnDb *dbp, const void *ent, bool replace)
 int
 ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 {
-	if (txn->error < 0 || txn->isrdonly) { return ED_EINDEX_RDONLY; }
+	if (ed_txn_isrdonly(txn)) { return ED_EINDEX_RDONLY; }
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
 	uint64_t key = ed_fetch64(ent);
-	if (key < dbp->kmin || key > dbp->kmax) { return ED_EINDEX_KEY_MATCH; }
+	if (!dbp->hasfind || key < dbp->kmin || key > dbp->kmax) {
+		return ED_EINDEX_KEY_MATCH;
+	}
 
 	int rc = insert_into_leaf(txn, dbp, ent, replace && dbp->match == 1);
 	if (rc < 0) {
@@ -652,9 +658,10 @@ int
 ed_bpt_del(EdTxn *txn, unsigned db)
 {
 	// FIXME: this function is terrible
-	if (txn->error < 0 || txn->isrdonly) { return ED_EINDEX_RDONLY; }
+	if (ed_txn_isrdonly(txn)) { return ED_EINDEX_RDONLY; }
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
+	if (!dbp->hasfind) { return ED_EINDEX_RDONLY; }
 
 	EdNode *leaf = dbp->find;
 	size_t esize = dbp->entry_size;

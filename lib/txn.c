@@ -345,12 +345,17 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			EdTxnDb *dbp = &txn->db[i];
 			dbp->find = dbp->root = NULL;
 			dbp->key = 0;
+			dbp->kmin = 0;
+			dbp->kmax = 0;
 			dbp->start = NULL;
 			dbp->entry = NULL;
 			dbp->entry_index = 0;
 			dbp->nsplits = 0;
 			dbp->match = 0;
 			dbp->nmatches = 0;
+			dbp->nloops = 0;
+			dbp->haskey = false;
+			dbp->hasfind = false;
 		}
 	}
 	else {
@@ -359,6 +364,12 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		free(txn);
 		*txnp = NULL;
 	}
+}
+
+bool
+ed_txn_isrdonly(const EdTxn *txn)
+{
+	return txn->error < 0 || txn->isrdonly;
 }
 
 int

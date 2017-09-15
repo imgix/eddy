@@ -457,6 +457,7 @@ struct EdTxnDb {
 	int          nmatches;         /**< Number of matched keys so far */
 	int          nloops;           /**< Number of full iterations */
 	bool         haskey;           /**< Mark if the cursor started with a find key */
+	bool         hasfind;          /**< Mark if the cursor has moved into an entry position */
 };
 
 /**
@@ -566,6 +567,18 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags);
  */
 ED_LOCAL void
 ed_txn_close(EdTxn **txnp, uint64_t flags);
+
+/**
+ * @brief  Checks if a transaction is in read-only mode
+ *
+ * A transaction is read-only when opened with the #ED_FRDONLY flag set or once
+ * error has occurred during a modifcation.
+ *
+ * @param  txn  Transaction object
+ * @return  Read-only state
+ */
+ED_LOCAL bool
+ed_txn_isrdonly(const EdTxn *txn);
 
 /**
  * @brief  Maps a page wrapped into a node
