@@ -1,6 +1,6 @@
 #include "../lib/eddy-private.h"
 #include "mu.h"
-#include "rnd.h"
+#include "rnd.c"
 
 // These flags aren't terribly safe to use, but they do speed up the tests.
 #define FOPEN (ED_FNOTLCK|ED_FNOSYNC)

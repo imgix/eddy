@@ -457,7 +457,6 @@ struct EdTxnDb {
 	int          nmatches;         /**< Number of matched keys so far */
 	int          nloops;           /**< Number of full iterations */
 	bool         haskey;           /**< Mark if the cursor started with a find key */
-	bool         caninsert;        /**< Mark if the cursor either started as, or has become, read-only */
 };
 
 /**

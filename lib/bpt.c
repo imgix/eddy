@@ -172,7 +172,6 @@ done:
 		dbp->nmatches = rc;
 		dbp->nloops = 0;
 		dbp->haskey = true;
-		dbp->caninsert = !txn->isrdonly;
 		if (ent) { *ent = data; }
 	}
 	dbp->match = rc;
@@ -182,9 +181,6 @@ done:
 static int
 move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from, uint64_t kmin, uint64_t kmax)
 {
-	dbp->haskey = false;
-	dbp->caninsert = false;
-
 	int rc = 0;
 	if (from == NULL) { goto done; }
 
@@ -319,7 +315,6 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 		}
 		else {
 			dbp->haskey = false;
-			dbp->caninsert = false;
 		}
 	}
 
@@ -635,7 +630,7 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
 	uint64_t key = ed_fetch64(ent);
-	if (!dbp->haskey || key != dbp->key) { return ED_EINDEX_KEY_MATCH; }
+	if (key < dbp->kmin || key > dbp->kmax) { return ED_EINDEX_KEY_MATCH; }
 
 	int rc = insert_into_leaf(txn, dbp, ent, replace && dbp->match == 1);
 	if (rc < 0) {
