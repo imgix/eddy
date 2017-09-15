@@ -685,19 +685,20 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 		}
 #endif
 	}
-	if (leaf->tree->nkeys == 0 || dbp->entry_index == leaf->tree->nkeys) {
+	if (leaf->tree->nkeys == 0) {
 		int rc = move_right(txn, dbp, leaf);
 		if (rc >= 0) {
 			dbp->entry = dbp->find->tree->data;
 			dbp->entry_index = 0;
 		}
 	}
-	uint64_t key = ed_fetch64(dbp->entry);
-	if (key != dbp->key) {
-		dbp->nmatches = 0;
-		dbp->key = key;
-		dbp->kmax = key;
+	else if (dbp->entry_index == leaf->tree->nkeys) {
+		dbp->kmax = find_kmax(leaf);
 	}
+	else {
+		dbp->kmax = ed_fetch64(dbp->entry);
+	}
+	dbp->nmatches = 0;
 	return 1;
 }
 
