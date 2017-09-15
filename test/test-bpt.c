@@ -937,6 +937,71 @@ test_iter_del(void)
 	finish(&txn);
 }
 
+static int
+compare_key(const void *a, const void *b)
+{
+	if (*(uint64_t *)a < *(uint64_t *)b) {
+		return -1;
+	}
+	if (*(uint64_t *)a > *(uint64_t *)b) {
+		return 1;
+	}
+	return 0;
+}
+
+static void
+test_key_range(void)
+{
+	mu_teardown = cleanup;
+	unlink(cfg.index_path);
+
+	EdTxn *txn;
+	setup(&txn);
+
+	uint64_t keys[200], kmin = 0;
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+	for (unsigned seed = 0, i = 0; i < 200; i++) {
+		Entry ent = { .key = rand_r(&seed) % 1000000 };
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+		keys[i] = ent.key;
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+	}
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	qsort(keys, ed_len(keys), sizeof(keys[0]), compare_key);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	for (unsigned i = 0; i < ed_len(keys); i++) {
+		uint64_t kmax = keys[i];
+		mu_assert_int_eq(ed_bpt_find(txn, 0, keys[i], NULL), 1);
+		mu_assert_uint_ge(txn->db[0].kmin, kmin);
+		mu_assert_uint_le(txn->db[0].kmin, keys[i]);
+		mu_assert_uint_eq(txn->db[0].kmax, kmax);
+		kmin = kmax;
+	}
+	ed_txn_close(&txn, FRESET);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_first(txn, 0, NULL), 0);
+	kmin = 0;
+	for (unsigned i = 0; i < ed_len(keys); i++) {
+		mu_assert_uint_eq(ed_bpt_loop(txn, 0), 0);
+		uint64_t kmax = keys[i];
+		mu_assert_uint_ge(txn->db[0].kmin, kmin);
+		mu_assert_uint_le(txn->db[0].kmin, keys[i]);
+		mu_assert_uint_eq(txn->db[0].kmax, kmax);
+		kmin = kmax;
+		mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
+	}
+	ed_txn_close(&txn, FRESET);
+
+	finish(&txn);
+}
+
 int
 main(void)
 {
@@ -957,6 +1022,7 @@ main(void)
 	mu_run(test_multi);
 	mu_run(test_iter);
 	mu_run(test_iter_del);
+	mu_run(test_key_range);
 	return 0;
 }
 

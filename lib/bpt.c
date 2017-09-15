@@ -109,13 +109,12 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 	}
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, true);
-	dbp->key = key;
-	dbp->haskey = true;
 
 	int rc = 0;
 	uint32_t i = 0, n = 0;
 	uint8_t *data = NULL;
 	size_t esize = dbp->entry_size;
+	uint64_t kmin = 0, kmax = UINT64_MAX;
 	EdNode *node = dbp->root;
 	if (node == NULL) {
 		dbp->nsplits = 1;
@@ -135,6 +134,12 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 		EdNode *next;
 		rc = ed_txn_map(txn, no, node, bidx, &next);
 		if (rc < 0) { goto done; }
+		if (bidx > 0) {
+			kmin = branch_key(node->tree, bidx);
+		}
+		if (bidx < node->tree->nkeys) {
+			kmax = branch_key(node->tree, bidx + 1) - 1;
+		}
 		node = next;
 		dbp->find = node;
 	}
@@ -146,20 +151,27 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 	for (i = 0, n = node->tree->nkeys; i < n; i++, data += esize) {
 		uint64_t cmp = ed_fetch64(data);
 		if (key == cmp) {
+			kmax = cmp;
 			rc = 1;
 			break;
 		}
 		else if (key < cmp) {
+			kmax = cmp;
 			break;
 		}
+		kmin = cmp;
 	}
 
 done:
 	if (rc >= 0) {
+		dbp->key = key;
+		dbp->kmin = kmin;
+		dbp->kmax = kmax;
 		dbp->entry = dbp->start = data;
 		dbp->entry_index = i;
 		dbp->nmatches = rc;
 		dbp->nloops = 0;
+		dbp->haskey = true;
 		dbp->caninsert = !txn->isrdonly;
 		if (ent) { *ent = data; }
 	}
@@ -168,7 +180,7 @@ done:
 }
 
 static int
-move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
+move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from, uint64_t kmin, uint64_t kmax)
 {
 	dbp->haskey = false;
 	dbp->caninsert = false;
@@ -181,14 +193,34 @@ move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 		EdNode *next;
 		rc = ed_txn_map(txn, no, from, 0, &next);
 		if (rc < 0) { goto done; }
+		kmax = branch_key(from->tree, 1) - 1;
 		from = next;
 	}
 	dbp->find = from;
+	if (from->tree->nkeys > 0) {
+		kmax = ed_fetch64(from->tree->data);
+	}
 
 done:
+	if (rc >= 0) {
+		dbp->kmin = kmin;
+		dbp->kmax = kmax;
+	}
 	dbp->match = rc;
 	dbp->nmatches = 0;
 	return rc;
+}
+
+static uint64_t
+find_kmax(EdNode *node)
+{
+	if (node->parent == NULL) {
+		return UINT64_MAX;
+	}
+	if (node->pindex < node->parent->tree->nkeys) {
+		return branch_key(node->parent->tree, node->pindex+1) - 1;
+	}
+	return find_kmax(node->parent);
 }
 
 /**
@@ -203,10 +235,14 @@ move_right(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 {
 	assert(from->page->type == ED_PG_LEAF);
 
+	uint64_t kmin, kmax;
+
 	// Traverse up the nearest node that isn't the last key of its parent.
 	do {
 		// When at the root, wrapping is the only option.
 		if (from->parent == NULL) {
+			kmin = 0;
+			kmax = UINT64_MAX;
 			break;
 		}
 		// If a child node is not the last key, load the sibling.
@@ -214,13 +250,15 @@ move_right(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 			EdPgno no = branch_ptr(from->parent, from->pindex+1);
 			int rc = ed_txn_map(txn, no, from->parent, from->pindex+1, &from);
 			if (rc < 0) { return rc; }
+			kmin = branch_key(from->parent->tree, from->pindex);
+			kmax = find_kmax(from);
 			break;
 		}
 		from = from->parent;
 	} while (1);
 
 	// Traverse down to the left-most leaf.
-	return move_first(txn, dbp, from);
+	return move_first(txn, dbp, from, kmin, kmax);
 }
 
 int
@@ -228,7 +266,7 @@ ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
 
-	int rc = move_first(txn, dbp, dbp->root);
+	int rc = move_first(txn, dbp, dbp->root, 0, UINT64_MAX);
 	if (rc == 0) {
 		void *data = dbp->find->tree->data;
 		dbp->entry = dbp->start = data;
@@ -266,6 +304,8 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 	else {
 		p += dbp->entry_size;
 		i++;
+		dbp->kmin = dbp->kmax + 1;
+		dbp->kmax = ed_fetch64(p);
 	}
 
 	dbp->entry = p;
@@ -594,7 +634,8 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 	if (txn->error < 0 || txn->isrdonly) { return ED_EINDEX_RDONLY; }
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
-	if (!dbp->haskey || ed_fetch64(ent) != dbp->key) { return ED_EINDEX_KEY_MATCH; }
+	uint64_t key = ed_fetch64(ent);
+	if (!dbp->haskey || key != dbp->key) { return ED_EINDEX_KEY_MATCH; }
 
 	int rc = insert_into_leaf(txn, dbp, ent, replace && dbp->match == 1);
 	if (rc < 0) {
@@ -602,6 +643,7 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 		return rc;
 	}
 
+	dbp->kmax = key;
 	dbp->nsplits = 0;
 	dbp->match = 1;
 	return 0;
@@ -654,6 +696,7 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 	if (key != dbp->key) {
 		dbp->nmatches = 0;
 		dbp->key = key;
+		dbp->kmax = key;
 	}
 	return 1;
 }
@@ -959,6 +1002,7 @@ ed_bpt_print(EdBpt *t, int fd, size_t esize, FILE *out, EdBptPrint print)
 int
 ed_bpt_verify(EdBpt *t, int fd, size_t esize, FILE *out)
 {
+	if (t == NULL) { return 0; }
 	return verify_node(fd, esize, t, out, 0, UINT64_MAX);
 }
 

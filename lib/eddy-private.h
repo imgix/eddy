@@ -446,6 +446,8 @@ struct EdTxnDb {
 	EdNode *     find;             /**< Current find result */
 	EdPgno *     no;               /**< Pointer to page number of root node */
 	uint64_t     key;              /**< Key searched for */
+	uint64_t     kmin;             /**< Minimum key value that may be inserted at the current position */
+	uint64_t     kmax;             /**< Maximum key value that may be inserted at the current position */
 	void *       start;            /**< Pointer to the first entry */
 	void *       entry;            /**< Pointer to the entry in the leaf */
 	size_t       entry_size;       /**< Size in bytes of the entry */
