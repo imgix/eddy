@@ -637,9 +637,11 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 	}
 	else {
 		leaf->tree->nkeys--;
+#if 0
 		if (leaf->parent && eidx == 0) {
 			branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(dbp->entry));
 		}
+#endif
 	}
 	if (leaf->tree->nkeys == 0 || dbp->entry_index == leaf->tree->nkeys) {
 		int rc = move_right(txn, dbp, leaf);
