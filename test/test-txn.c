@@ -57,7 +57,7 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 static void
 cleanup(void)
 {
-	//unlink(cfg.index_path);
+	unlink(cfg.index_path);
 #if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pg_check(), 0);
 #endif
@@ -68,14 +68,6 @@ setup(EdTxn **txn)
 {
 	int rc;
 	EdTxn *x;
-
-	int fd = open(cfg.slab_path, O_CREAT|O_RDWR, 0640);
-	mu_assert_msg(fd >= 0, "failed to open slab: %s\n", strerror(errno));
-
-	rc = ed_mkfile(fd, cfg.slab_size);
-	mu_assert_msg(rc >= 0, "failed to create slab: %s\n", ed_strerror(rc));
-
-	close(fd);
 
 	rc = ed_idx_open(&idx, &cfg);
 	mu_assert_msg(rc >= 0, "failed to open index: %s\n", ed_strerror(rc));
@@ -183,6 +175,14 @@ int
 main(void)
 {
 	mu_init("txn");
+
+	int fd = open(cfg.slab_path, O_CREAT|O_RDWR, 0640);
+	mu_assert_msg(fd >= 0, "failed to open slab: %s\n", strerror(errno));
+
+	int rc = ed_mkfile(fd, cfg.slab_size);
+	mu_assert_msg(rc >= 0, "failed to create slab: %s\n", ed_strerror(rc));
+
+	close(fd);
 
 	mu_run(test_basic);
 	mu_run(test_no_key);

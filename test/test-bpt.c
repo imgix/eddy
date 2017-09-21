@@ -79,14 +79,6 @@ setup(EdTxn **txn)
 	int rc;
 	EdTxn *x;
 
-	int fd = open(cfg.slab_path, O_CREAT|O_RDWR, 0640);
-	mu_assert_msg(fd >= 0, "failed to open slab: %s\n", strerror(errno));
-
-	rc = ed_mkfile(fd, cfg.slab_size);
-	mu_assert_msg(rc >= 0, "failed to create slab: %s\n", ed_strerror(rc));
-
-	close(fd);
-
 	rc = ed_idx_open(&idx, &cfg);
 	mu_assert_msg(rc >= 0, "failed to open index: %s\n", ed_strerror(rc));
 
@@ -1174,6 +1166,15 @@ int
 main(void)
 {
 	mu_init("b+tree");
+
+	int fd = open(cfg.slab_path, O_CREAT|O_RDWR, 0640);
+	mu_assert_msg(fd >= 0, "failed to open slab: %s\n", strerror(errno));
+
+	int rc = ed_mkfile(fd, cfg.slab_size);
+	mu_assert_msg(rc >= 0, "failed to create slab: %s\n", ed_strerror(rc));
+
+	close(fd);
+
 	mu_run(test_capacity);
 	mu_run(test_basic);
 	mu_run(test_repeat);
