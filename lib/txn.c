@@ -57,20 +57,6 @@ node_wrap(EdTxn *txn, EdPg *pg, EdNode *par, uint16_t pidx)
 	return n;
 }
 
-/**
- * @brief  Checks if a node is valid for a transaction
- *
- * If the transaction is valid, then all nodes within the transaction are valid.
- * However, in an erroring transaction, only nodes from prior transactions can
- * be considered valid.
- */
-static bool
-node_is_live(EdTxn *txn, EdNode *node)
-{
-	return node && node->tree && !node->gc &&
-		(txn->error == 0 || node->tree->xid < txn->xid);
-}
-
 int
 ed_txn_new(EdTxn **txnp, EdIdx *idx)
 {
@@ -119,7 +105,7 @@ error:
 int
 ed_txn_open(EdTxn *txn, uint64_t flags)
 {
-	if (txn == NULL || txn->isopen) { return ed_esys(EINVAL); }
+	if (txn == NULL || txn->state != ED_TXN_CLOSED) { return ed_esys(EINVAL); }
 	if (txn->idx->pid != getpid()) { return ED_EINDEX_FORK; }
 	bool rdonly = flags & ED_FRDONLY;
 	int rc = 0;
@@ -186,8 +172,17 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 
 	txn->cflags = flags & ED_TXN_FCRIT;
 	txn->isrdonly = rdonly;
-	txn->isopen = true;
+	txn->state = ED_TXN_OPEN;
 	return 0;
+}
+
+static void
+flush_active(EdPgIdx *hdr)
+{
+	if (hdr->nactive) {
+		hdr->nactive = 0;
+		memset(hdr->active, 0xff, sizeof(hdr->active));
+	}
 }
 
 int
@@ -196,7 +191,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	EdTxn *txn = *txnp;
 	int rc = 0;
 
-	if (txn == NULL || !txn->isopen || txn->isrdonly) {
+	if (txn == NULL || txn->state != ED_TXN_OPEN || txn->error < 0 || txn->isrdonly) {
 		rc = ED_EINDEX_RDONLY;
 		goto close;
 	}
@@ -205,16 +200,10 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 
 	EdPgIdx *hdr = txn->idx->hdr;
 
-	// Unmark all active pages. This will leak pages until the close completes.
-	EdPgno nactive = hdr->nactive;
-	hdr->nactive = 0;
-	memset(hdr->active, 0xff, nactive * sizeof(hdr->active[0]));
+	// Unmark all the active pages. This will leave them unreferenced until the
+	// close completes. A crash/kill during this period necessitates a repair.
+	flush_active(hdr);
 	ed_fault_trigger(ACTIVE_CLEARED);
-
-	if (txn->error < 0) {
-		rc = ED_EINDEX_RDONLY;
-		goto close;
-	}
 
 	// Shift over any unused pages to the start of the array. When closed, these
 	// will either be used for the next transaction or discarded.
@@ -238,8 +227,9 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	hdr->xid = txn->xid;
 
 	// Pass all replaced pages to be reused. If this fails they are leaked.
-	ed_free(txn->idx, txn->xid, txn->gc, txn->ngcused);
+	ed_free_pgno(txn->idx, txn->xid, txn->gc, txn->ngcused);
 	txn->ngcused = 0;
+	txn->state = ED_TXN_COMMITTED;
 
 close:
 	ed_txn_close(txnp, flags);
@@ -253,33 +243,41 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (txn == NULL) { return; }
 	flags = ed_txn_fclose(flags, txn->cflags);
 
+	EdTxnId xid = txn->xid;
+	EdTxnState state = txn->state;
+	if (state == ED_TXN_OPEN) {
+		txn->state = state = ED_TXN_CANCELLED;
+	}
+
 	ed_fault_trigger(CLOSE_BEGIN);
 
-	// Stash the mapped heads back into the roots array.
+	// Stash the mapped heads back into the roots array if they are still active.
 	for (unsigned i = 0; i < ed_len(txn->db); i++) {
-		if (node_is_live(txn, txn->db[i].root)) {
+		EdNode *node = txn->db[i].root;
+		if (node && (state == ED_TXN_COMMITTED || node->tree->xid != xid)) {
 			txn->roots[i] = txn->db[i].root->tree;
 			txn->db[i].root->tree = NULL;
 		}
 	}
 
-	// Unmap all node pages, and free extra node lists.
-	EdTxnNode *node = txn->nodes;
+	// Unmap all live node pages, and free extra node lists.
+	EdTxnNode *nodes = txn->nodes;
 	do {
-		for (int i = (int)node->nused-1; i >= 0; i--) {
-			if (node_is_live(txn, &node->nodes[i])) {
-				ed_pg_unmap(node->nodes[i].page, 1);
-				node->nodes[i].page = NULL;
+		for (int i = (int)nodes->nused-1; i >= 0; i--) {
+			EdNode *node = &nodes->nodes[i];
+			if (node->page && (state == ED_TXN_COMMITTED || node->tree->xid != xid)) {
+				ed_pg_unmap(node->page, 1);
 			}
+			node->page = NULL;
 		}
-		EdTxnNode *next = node->next;
+		EdTxnNode *next = nodes->next;
 		if (next == NULL) {
 			// The first node array is allocated with the txn, so don't free.
-			txn->nodes = node;
+			txn->nodes = nodes;
 			break;
 		}
-		free(node);
-		node = next;
+		free(nodes);
+		nodes = next;
 	} while(1);
 
 	// Mark all pages saved for a subsequent transaction as pending. This list is
@@ -289,7 +287,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	EdPgno npg = txn->npg;
 	bool locked = false;
 
-	if (txn->isopen && !txn->isrdonly) {
+	if (txn->state >= ED_TXN_OPEN && !txn->isrdonly) {
 		locked = true;
 	}
 	else if (npg > 0) {
@@ -299,7 +297,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	}
 
 	if (flags & ED_FRESET) {
-		if (txn->isopen) {
+		if (txn->state ) {
 			ed_idx_release_xid(txn->idx);
 		}
 	}
@@ -308,6 +306,8 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	}
 
 	if (locked) {
+		flush_active(txn->idx->hdr);
+
 		EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
 		ed_fault_trigger(PENDING_BEGIN);
 		if (flags & ED_FRESET) {
@@ -316,15 +316,15 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			for (EdPgno i = 0; i < keep; i++) {
 				conn->pending[i] = pg[i]->no;
 			}
-			conn->npending = keep;
+			conn->npending = txn->npg = keep;
 			pg += keep;
 			npg -= keep;
-			txn->npg = keep;
 		}
 		else {
 			conn->npending = 0;
 			memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
 		}
+
 		ed_fault_trigger(PENDING_FINISH);
 		ed_free(txn->idx, 0, pg, npg);
 
@@ -339,8 +339,9 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		txn->ngcused = 0;
 		txn->nodes->nused = 0;
 		memset(txn->nodes->nodes, 0, txn->nodes->nslot*sizeof(txn->nodes->nodes[0]));
+		txn->xid = 0;
+		txn->state = ED_TXN_CLOSED;
 		txn->error = 0;
-		txn->isopen = false;
 		for (int i = 0; i < ED_NDB; i++) {
 			EdTxnDb *dbp = &txn->db[i];
 			dbp->find = dbp->root = NULL;
@@ -484,12 +485,12 @@ ed_txn_discard(EdTxn *txn, EdNode *node)
 		unsigned ngcslot = txn->ngcslot;
 		if (txn->ngcused == ngcslot) {
 			ngcslot = ngcslot ? ngcslot * 2 : ed_len(txn->db)*12;
-			EdPg **gc = realloc(txn->gc, ngcslot * sizeof(*gc));
+			EdPgno *gc = realloc(txn->gc, ngcslot * sizeof(*gc));
 			if (gc == NULL) { return (txn->error = ED_ERRNO); }
 			txn->gc = gc;
 			txn->ngcslot = ngcslot;
 		}
-		txn->gc[txn->ngcused++] = node->page;
+		txn->gc[txn->ngcused++] = node->page->no;
 		node->gc = true;
 	}
 	return 0;

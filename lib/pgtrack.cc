@@ -166,7 +166,7 @@ ed_pg_check(void)
 	if (track != NULL) {
 		for (auto it = track->begin(); it != track->end(); it++) {
 			if (it->second.active) {
-				fprintf(stderr, "*** page address leaked: 0x%012" PRIxPTR "/%u\n",
+				fprintf(stderr, "*** page address left mapped: 0x%012" PRIxPTR "/%u\n",
 						it->first, it->second.no);
 				fprintf(stderr, "*** allocation stack:\n");
 				it->second.Print();

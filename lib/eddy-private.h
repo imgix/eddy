@@ -430,10 +430,17 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
  * @{
  */
 
-#define ED_TXN_MAX_REF 16
+/**
+ * @brief  State of the the transaction object
+ */
+enum EdTxnState {
+	ED_TXN_CLOSED,                 /**< Transaction is not ready for use. Call #ed_txn_open() before use. */
+	ED_TXN_OPEN,                   /**< Transaction is ready to make modifications. */
+	ED_TXN_COMMITTED,              /**< Transaction has been commited and is going to be closed. */
+	ED_TXN_CANCELLED,              /**< Transaction is closing without having been committed. */
+};
 
-#define ED_TXN_CLOSED 0
-#define ED_TXN_OPEN 1
+typedef enum EdTxnState EdTxnState;
 
 /**
  * @brief  Transaction database reference
@@ -473,15 +480,15 @@ struct EdTxn {
 	unsigned     npg;              /**< Number of pages allocated */
 	unsigned     npgused;          /**< Number of pages used */
 	unsigned     npgslot;          /**< Number of page slots in the #pg array */
-	EdPg **      gc;               /**< Array to hold discarded pages */
+	EdPgno *     gc;               /**< Array to hold discarded page numbers */
 	unsigned     ngcused;          /**< Number of pages discarded */
 	unsigned     ngcslot;          /**< Number of page slots in the #gc array */
 	EdTxnNode *  nodes;            /**< Linked list of node arrays */
 	EdTxnId      xid;              /**< Transaction ID or 0 for read-only */
 	uint64_t     cflags;           /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
+	EdTxnState   state;            /**< Current transaction state */
 	int          error;            /**< Error code during transaction */
 	bool         isrdonly;         /**< Was #ed_txn_open() called with #ED_FRDONLY */
-	bool         isopen;           /**< Has #ed_txn_open() been called */
 	EdBpt *      roots[ED_NDB];    /**< Cached root pages */
 	EdTxnDb      db[ED_NDB];       /**< State information for each b+tree */
 };

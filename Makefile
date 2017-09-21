@@ -90,7 +90,7 @@ ifeq ($(DEBUG),yes)
   CFLAGS+= -g
   LDFLAGS+= -g
 endif
-CFLAGS+= -Ilib -fvisibility=hidden -pthread -D_GNU_SOURCE -D_BSD_SOURCE -DPAGESIZE=$(PAGESIZE)
+CFLAGS+= -Ilib -march=native -fvisibility=hidden -pthread -D_GNU_SOURCE -D_BSD_SOURCE -DPAGESIZE=$(PAGESIZE)
 ifeq ($(LTO),yes)
   LDFLAGS+= -flto
 endif

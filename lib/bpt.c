@@ -103,7 +103,7 @@ search_branch(EdBpt *node, uint64_t key)
 int
 ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 {
-	if (!txn->isopen) {
+	if (txn->state != ED_TXN_OPEN) {
 		// FIXME: return proper error code
 		return ed_esys(EINVAL);
 	}

@@ -159,6 +159,7 @@ test_commit_begin(void)
 	EdStat *stat;
 	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
 	mu_assert(!ed_stat_has_leaks(stat));
+	mu_assert_uint_eq(stat->nmultused, 0);
 	ed_stat_free(&stat);
 
 	finish(&txn);
@@ -207,11 +208,13 @@ test_active_cleared(void)
 	EdStat *stat;
 	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
 	mu_assert(ed_stat_has_leaks(stat));
+	mu_assert_uint_eq(stat->nmultused, 0);
 	mu_assert_int_eq(ed_idx_repair_leaks(&idx, stat, 0), 0);
 	ed_stat_free(&stat);
 
 	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
 	mu_assert(!ed_stat_has_leaks(stat));
+	mu_assert_uint_eq(stat->nmultused, 0);
 	ed_stat_free(&stat);
 
 	finish(&txn);
@@ -260,11 +263,51 @@ test_update_tree(void)
 	EdStat *stat;
 	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
 	mu_assert(ed_stat_has_leaks(stat));
+	mu_assert_uint_eq(stat->nmultused, 0);
 	mu_assert_int_eq(ed_idx_repair_leaks(&idx, stat, 0), 0);
 	ed_stat_free(&stat);
 
 	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
 	mu_assert(!ed_stat_has_leaks(stat));
+	mu_assert_uint_eq(stat->nmultused, 0);
+	ed_stat_free(&stat);
+
+	finish(&txn);
+}
+
+static void
+test_close_begin(void)
+{
+	unlink(cfg.index_path);
+
+	pid_t pid = fork();
+	if (pid < 0) {
+		mu_fail("fork failed '%s'\n", strerror(errno));
+	}
+	if (pid == 0) {
+		ed_fault_enable(CLOSE_BEGIN, 1, ED_FAULT_NOPRINT);
+		EdTxn *txn;
+		setup(&txn);
+
+		Entry ent = { .key = 100, .name = "a0" };
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+
+		finish(&txn);
+		return;
+	}
+	while (waitpid(pid, NULL, 0) == -1 && errno == EINTR) {}
+
+	mu_teardown = cleanup;
+
+	EdTxn *txn;
+	setup(&txn);
+
+	EdStat *stat;
+	mu_assert_int_eq(ed_stat_new(&stat, &idx, 0), 0);
+	mu_assert(!ed_stat_has_leaks(stat));
+	mu_assert_uint_eq(stat->nmultused, 0);
 	ed_stat_free(&stat);
 
 	finish(&txn);
@@ -286,5 +329,6 @@ main(void)
 	mu_run(test_commit_begin);
 	mu_run(test_active_cleared);
 	mu_run(test_update_tree);
+	mu_run(test_close_begin);
 }
 
