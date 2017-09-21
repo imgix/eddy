@@ -59,7 +59,7 @@ test_gc(void)
 
 	unlink(cfg.index_path);
 	mu_assert_int_eq(ed_idx_open(&idx, &cfg), 0);
-	mu_assert_int_ge(idx.conn, 0);
+	mu_assert_ptr_ne(idx.conn, NULL);
 
 	EdPg *pages[8];
 	EdPgno pgno[ed_len(pages)];

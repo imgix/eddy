@@ -147,7 +147,7 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 		// Split pending pages into active and inactive groups. Active pages are the
 		// pages mapped into the transaction page cache. Inactive pages need to be
 		// returned to the free list, and active pages get recorded in the active list.
-		EdConn *conn = &hdr->conns[txn->idx->conn];
+		EdConn *conn = txn->idx->conn;
 		EdPgno inactive[ed_len(conn->pending)], ninactive = 0;
 		EdPgno npg = txn->npg, npending = conn->npending;
 		for (EdPgno i = 0, j; i < npending; i++) {
@@ -308,7 +308,7 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 	if (locked) {
 		flush_active(txn->idx->hdr);
 
-		EdConn *conn = &txn->idx->hdr->conns[txn->idx->conn];
+		EdConn *conn = txn->idx->conn;
 		ed_fault_trigger(PENDING_BEGIN);
 		if (flags & ED_FRESET) {
 			EdPgno keep = ed_len(conn->pending);

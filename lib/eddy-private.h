@@ -673,7 +673,7 @@ struct EdIdx {
 	EdPgGc *     gc_tail;          /**< Currently mapped tail of the garbage collected pages */
 	uint64_t     flags;            /**< Open flags merged with the saved flags */
 	EdTxn *      txn;              /**< Cached transaction object */
-	int          conn;             /**< Connection index */
+	EdConn *     conn;             /**< Current connection or NULL */
 	int          nconns;           /**< Number of available connections */
 	int          pid;              /**< Process ID that opened the index */
 };

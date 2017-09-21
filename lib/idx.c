@@ -175,13 +175,14 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
  * closed slot.
  *
  * @param  hdr  Memmory mapped index header
+ * @param  connp  Target connection reference
  * @param  fd  An open file descriptor to the file containing #hdr
  * @param  xmin  Attempt lock recovery if holding a transaction id less than this id
  * @param  pid  Current process id
  * @return >=0 the connection index, <0 on error
  */
 static int
-conn_acquire(EdPgIdx *hdr, int fd, EdTxnId xmin, int pid)
+conn_acquire(EdPgIdx *hdr, EdConn **connp, int fd, EdTxnId xmin, int pid)
 {
 	int nconns = (int)hdr->nconns;
 	int rc = ed_esys(EAGAIN);
@@ -196,7 +197,8 @@ conn_acquire(EdPgIdx *hdr, int fd, EdTxnId xmin, int pid)
 			if (rc == 0) {
 				c->pid = pid;
 				c->xid = 0;
-				return i;
+				*connp = c;
+				return 0;
 			}
 			if (rc != ed_esys(EAGAIN)) {
 				return rc;
@@ -210,17 +212,20 @@ conn_acquire(EdPgIdx *hdr, int fd, EdTxnId xmin, int pid)
 /**
  * @brief  Unmarks and unlocks the process connection
  * @param  hdr  Memmory mapped index header
- * @param  idx  The index into the connection array
+ * @param  connp  Current connection reference
  * @param  fd  An open file descriptor to the file containing #hdr
  */
 static void
-conn_release(EdPgIdx *hdr, int i, int fd)
+conn_release(EdPgIdx *hdr, EdConn **connp, int fd)
 {
-	if (i < 0) { return; }
-	memset(&hdr->conns[i], 0, offsetof(EdConn, pending));
-	ed_flck(fd, ED_LCK_UN,
-			offsetof(EdPgIdx, conns) + i*sizeof(*hdr->conns), sizeof(*hdr->conns),
-			ED_FNOBLOCK);
+	EdConn *conn = *connp;
+	if (conn == NULL) { return; }
+	*connp = NULL;
+	conn->pid = 0;
+	conn->active = 0;
+	conn->xid = 0;
+	assert(conn->npending <= ed_len(conn->pending));
+	ed_flck(fd, ED_LCK_UN, (uint8_t *)conn - (uint8_t *)hdr, sizeof(*conn), ED_FNOBLOCK);
 }
 
 static void
@@ -234,7 +239,7 @@ ed_idx_clear(EdIdx *idx)
 	idx->gc_tail = NULL;
 	idx->flags = 0;
 	idx->txn = NULL;
-	idx->conn = -1;
+	idx->conn = NULL;
 	idx->nconns = 0;
 }
 
@@ -327,13 +332,13 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 			gc->base.type = ED_PG_GC;
 			gc->next = ED_PG_NONE;
 
-			idx->conn = rc = conn_acquire(hdr, fd, hdr->xid > 16 ? hdr->xid - 16 : 0, pid);
-			if (rc < 0) { break; }
-
 			if (!(cfg->flags & ED_FNOSYNC)) {
 				fsync(fd);
 			}
 		} while (0);
+
+		rc = conn_acquire(hdr, &idx->conn, fd, hdr->xid > 16 ? hdr->xid - 16 : 0, pid);
+
 		ed_flck(fd, ED_LCK_UN, ED_IDX_LCK_OPEN_OFF, ED_IDX_LCK_OPEN_LEN, cfg->flags);
 	}
 	if (rc < 0) { goto error; }
@@ -355,14 +360,14 @@ error:
 void
 ed_idx_close(EdIdx *idx)
 {
-	// DO NOT READ OR WRITE INTO ANY MAPPED PAGES (hdr, gc_head, gc_tail, etc.)
+	// DO NOT READ OR WRITE INTO ANY MAPPED PAGES UNLESS THE PID MATCHES.
 	// This is used when cleaning up from failures when opening. That may mean
 	// mapped pages have not yet been allocated in the underlying file.
 
 	if (idx == NULL) { return; }
 	if (idx->pid == getpid()) {
-		conn_release(idx->hdr, idx->conn, idx->fd);
 		ed_txn_close(&idx->txn, idx->flags);
+		conn_release(idx->hdr, &idx->conn, idx->fd);
 		if (idx->fd > -1) { close(idx->fd); }
 		if (idx->slabfd > -1) { close(idx->slabfd); }
 		ed_lck_final(&idx->lck);
@@ -390,13 +395,12 @@ ed_idx_xmin(EdIdx *idx, EdTime now)
 	EdTxnId xid = idx->hdr->xid - 1;
 	EdTxnId xmin = xid > 16 ? xid - 16 : 0;
 	EdTime tmin = now - 10;
-	EdConn *c = idx->hdr->conns;
+	EdConn *c = idx->hdr->conns, *conn = idx->conn;
 	int nconns = idx->nconns;
-	int conn = idx->conn;
 
 	for (int i = 0; i < nconns; i++, c++) {
 		if (c->pid == 0 || c->xid == 0) { continue; }
-		if (i != conn && (c->xid < xmin || (tmin > 0 && c->active > 0 && tmin < c->active))) {
+		if (c != conn && (c->xid < xmin || (tmin > 0 && c->active > 0 && tmin < c->active))) {
 			off_t pos = offsetof(EdPgIdx, conns) + i*sizeof(*c);
 			if (ed_flck(idx->fd, ED_LCK_EX, pos, sizeof(*c), ED_FNOBLOCK) == 0) {
 				memset(c, 0, sizeof(*c));
@@ -464,7 +468,7 @@ EdTxnId
 ed_idx_acquire_xid(EdIdx *idx)
 {
 	if (idx->pid != getpid()) { return 0; }
-	EdConn *conn = &idx->hdr->conns[idx->conn];
+	EdConn *conn = idx->conn;
 	conn->xid = idx->hdr->xid;
 	conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
 	return conn->xid;
@@ -474,7 +478,7 @@ void
 ed_idx_release_xid(EdIdx *idx)
 {
 	if (idx->pid != getpid()) { return; }
-	EdConn *conn = &idx->hdr->conns[idx->conn];
+	EdConn *conn = idx->conn;
 	if (conn->xid > 0) {
 		conn->xid = 0;
 		conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
