@@ -254,8 +254,10 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 	if (mu_run != NULL && !mu__match (mu_run, fname)) { return; }
 	if (!mu_fork) {
 		fn ();
-		mu_teardown ();
-		mu_teardown = mu_noop;
+		if (mu_ismain()) {
+			mu_teardown ();
+			mu_teardown = mu_noop;
+		}
 	}
 	else {
 		int stat = 0, exitstat = 0, termsig = 0;
@@ -267,8 +269,10 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 		}
 		if (pid == 0) {
 			fn ();
-			mu_teardown ();
-			mu_teardown = mu_noop;
+			if (mu_ismain()) {
+				mu_teardown ();
+				mu_teardown = mu_noop;
+			}
 			exit (0);
 		}
 		else {
