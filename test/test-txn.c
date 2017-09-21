@@ -171,6 +171,75 @@ test_no_commit(void)
 	finish(&txn);
 }
 
+static void
+test_read_snapshot(void)
+{
+	mu_teardown = cleanup;
+	unlink(cfg.index_path);
+
+	EdTxn *txn;
+	setup(&txn);
+
+	Entry ent;
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+
+	ent.key = 10;
+	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+
+	ent.key = 20;
+	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+
+	pid_t pid = fork();
+	if (pid < 0) {
+		mu_fail("fork failed '%s'\n", strerror(errno));
+	}
+	if (pid == 0) {
+		EdTxn *ftxn;
+		setup(&ftxn);
+
+		Entry *fent;
+
+		mu_assert_int_eq(ed_txn_open(ftxn, ED_FRDONLY|FOPEN), 0);
+
+		sleep(2);
+
+		mu_assert_int_eq(ed_bpt_find(ftxn, 0, 10, (void **)&fent), 1);
+		mu_assert_str_eq(fent->name, "a10");
+		mu_assert_int_eq(ed_bpt_find(ftxn, 0, 20, (void **)&fent), 0);
+		ed_txn_close(&ftxn, ED_FRESET|FCLOSE);
+
+		mu_assert_int_eq(ed_txn_open(ftxn, ED_FRDONLY|FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(ftxn, 0, 10, (void **)&fent), 1);
+		mu_assert_str_eq(fent->name, "a10");
+		mu_assert_int_eq(ed_bpt_find(ftxn, 0, 20, (void **)&fent), 1);
+		mu_assert_str_eq(fent->name, "a20");
+		ed_txn_close(&ftxn, ED_FRESET|FCLOSE);
+
+		finish(&ftxn);
+		mu_assert_int_eq(ed_pg_check(), 0);
+	}
+	else {
+		sleep(1);
+
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+		int status;
+		mu_assert_call(waitpid(pid, &status, 0));
+		mu_assert_int_eq(WEXITSTATUS(status), 0);
+		mu_assert_int_eq(WTERMSIG(status), 0);
+
+		finish(&txn);
+	}
+}
+
 int
 main(void)
 {
@@ -188,4 +257,5 @@ main(void)
 	mu_run(test_no_key);
 	mu_run(test_close);
 	mu_run(test_no_commit);
+	mu_run(test_read_snapshot);
 }
