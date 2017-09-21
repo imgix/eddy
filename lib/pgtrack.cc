@@ -27,6 +27,7 @@ typedef std::map<uintptr_t, EdPgState> EdPgtrack;
 static pthread_rwlock_t track_lock = PTHREAD_RWLOCK_INITIALIZER;
 static EdPgtrack *track = NULL;
 static int track_errors = 0;
+static int track_pid = 0;
 
 void 
 ed_pg_track(EdPgno no, uint8_t *pg, EdPgno count)
@@ -39,7 +40,10 @@ ed_pg_track(EdPgno no, uint8_t *pg, EdPgno count)
 	}
 
 	try {
-		if (track == NULL) { track = new EdPgtrack(); }
+		if (track_pid != getpid()) {
+			track = new EdPgtrack();
+			track_pid = getpid();
+		}
 
 		auto stack = std::make_shared<EdBacktrace>();
 		stack->Load();
