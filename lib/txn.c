@@ -141,13 +141,14 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 				ed_lck(&txn->idx->lck, txn->idx->fd, ED_LCK_UN, flags);
 				return rc;
 			}
-			memset(hdr->active, 0xff, nactive * sizeof(hdr->active[0]));
+			memset(hdr->active, 0xff, sizeof(hdr->active));
 		}
 
 		// Split pending pages into active and inactive groups. Active pages are the
 		// pages mapped into the transaction page cache. Inactive pages need to be
 		// returned to the free list, and active pages get recorded in the active list.
 		EdConn *conn = txn->idx->conn;
+		assert(conn->npending <= ed_len(conn->pending));
 		EdPgno inactive[ed_len(conn->pending)], ninactive = 0;
 		EdPgno npg = txn->npg, npending = conn->npending;
 		for (EdPgno i = 0, j; i < npending; i++) {
@@ -159,13 +160,14 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 		}
 		if (npending > 0) {
 			conn->npending = 0;
-			memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
+			memset(conn->pending, 0xff, sizeof(conn->pending));
 		}
 		ed_free_pgno(txn->idx, 0, inactive, ninactive);
 		if (npg > 0) {
 			for (EdPgno i = 0; i < npg; i++) {
 				hdr->active[i] = txn->pg[i]->no;
 			}
+			assert(npg <= ed_len(hdr->active));
 			hdr->nactive = npg;
 		}
 	}
@@ -316,13 +318,14 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 			for (EdPgno i = 0; i < keep; i++) {
 				conn->pending[i] = pg[i]->no;
 			}
+			assert(keep <= ed_len(conn->pending));
 			conn->npending = txn->npg = keep;
 			pg += keep;
 			npg -= keep;
 		}
 		else {
 			conn->npending = 0;
-			memset(conn->pending, 0xff, ed_len(conn->pending) * sizeof(conn->pending[0]));
+			memset(conn->pending, 0xff, sizeof(conn->pending));
 		}
 
 		ed_fault_trigger(PENDING_FINISH);
@@ -413,22 +416,24 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 		}
 
 		EdPgIdx *hdr = txn->idx->hdr;
+		EdPgno nactive = hdr->nactive;
 
 		unsigned nalloc = txn->npgslot - npg;
 		int rc = ed_alloc(txn->idx, txn->pg+npg, nalloc);
 		if (rc < 0) { return (txn->error = rc); }
 
-		if (hdr->nactive + nalloc > ed_len(hdr->active)) {
-			nalloc = ed_len(hdr->active) - hdr->nactive;
+		if (nactive + nalloc > ed_len(hdr->active)) {
+			nalloc = ed_len(hdr->active) - nactive;
 		}
 
 		// Mark as many pages as active that will fit. If the transaction is
 		// abandoned, excess pages can only be recovered during a repair.
 		for (unsigned i = 0; i < nalloc; i++) {
-			hdr->active[hdr->nactive] = txn->pg[npg+i]->no;
-			hdr->nactive++;
+			hdr->active[nactive++] = txn->pg[npg+i]->no;
 		}
 		txn->npg = txn->npgslot;
+		assert(nactive <= ed_len(hdr->active));
+		hdr->nactive = nactive;
 	}
 
 	assert(txn->nodes != NULL);

@@ -484,6 +484,11 @@ int
 ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *pg, EdPgno n)
 {
 	if (n < 1) { return 0; }
+#ifndef NDEBUG
+	for (EdPgno x = 0; x < n; x++) {
+		assert(pg[x] != ED_PG_NONE);
+	}
+#endif
 
 	EdPgGc *tail = ed_pg_load(idx->fd, (EdPg **)&idx->gc_tail, idx->hdr->gc_tail);
 	if (tail == MAP_FAILED) { return ED_ERRNO; }
