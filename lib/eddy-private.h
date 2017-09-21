@@ -996,9 +996,9 @@ struct EdPgGcList {
  * @brief  Connection handle for each active process
  */
 struct EdConn {
-	int          pid;              /**< Process ID */
-	EdTime       active;           /**< Optional time of last activity */
-	EdTxnId      xid;              /**< Active read transaction id */
+	volatile int     pid;          /**< Process ID */
+	volatile EdTime  active;       /**< Optional time of last activity */
+	volatile EdTxnId xid;          /**< Active read transaction id */
 	EdPgno       npending;         /**< Number of pages in #pending */
 	EdPgno       pending[11];      /**< Allocated pages pending reuse */
 };
