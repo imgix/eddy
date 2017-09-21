@@ -62,6 +62,7 @@ ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags)
 
 		if (rc == 0) {
 			EdConn *conn = idx->hdr->conns;
+			stat->xid = conn->xid;
 			stat->mark = &stat->npending;
 			for (int i = 0; i < idx->nconns; i++, conn++) {
 				for (EdPgno n = 0; n < conn->npending; n++) {

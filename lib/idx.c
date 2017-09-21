@@ -517,6 +517,8 @@ ed_idx_repair_leaks(EdIdx *idx, EdStat *stat, uint64_t flags)
 	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
 	flags = flags | idx->flags;
 
+	// TODO check connections against stat->xid with FNOBLOCK support
+
 	bool locked = false;
 	EdPgno leaks[64];
 	EdPgno npg = stat->no, nleaks = 0;
