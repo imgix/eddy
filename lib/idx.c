@@ -179,7 +179,7 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
  * @param  fd  An open file descriptor to the file containing #hdr
  * @param  xmin  Attempt lock recovery if holding a transaction id less than this id
  * @param  pid  Current process id
- * @return >=0 the connection index, <0 on error
+ * @return 0 on success, <0 on error
  */
 static int
 conn_acquire(EdPgIdx *hdr, EdConn **connp, int fd, EdTxnId xmin, int pid)
