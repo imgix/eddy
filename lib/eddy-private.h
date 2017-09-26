@@ -889,6 +889,17 @@ ed_mkfile(int fd, off_t size);
 ED_LOCAL uint64_t
 ed_hash(const uint8_t *val, size_t len, uint64_t seed);
 
+/**
+ * @brief  CRC-32c
+ *
+ * @param  crc  Checksum to resume from or 0
+ * @param  bytes  Bytes to check
+ * @param  len  Number of bytes to check
+ * @return  32-bit checksum
+ */
+ED_LOCAL uint32_t
+ed_crc32c(uint32_t crc, const void *bytes, size_t len);
+
 static inline uint32_t __attribute__((unused))
 ed_fetch32(const void *p)
 {
