@@ -269,10 +269,8 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 		}
 		if (pid == 0) {
 			fn ();
-			if (mu_ismain()) {
-				mu_teardown ();
-				mu_teardown = mu_noop;
-			}
+			mu_teardown ();
+			mu_teardown = mu_noop;
 			exit (0);
 		}
 		else {
