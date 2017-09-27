@@ -302,29 +302,27 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 	int rc = 0;
 	EdNode *node = dbp->find;
 	EdBpt *leaf = node->tree;
-	uint8_t *p = dbp->entry;
 	uint32_t i = dbp->entry_index;
 	if (dbp->hasentry) { i++; }
 
 	if (i >= leaf->nkeys) {
 		rc = move_right(txn, dbp, node);
 		if (rc < 0) { goto error; }
-		p = dbp->find->tree->data;
-		i = 0;
 	}
 	else {
-		if (dbp->hasentry) { p += dbp->entry_size; }
-		else { dbp->hasentry = true; }
-		dbp->kmin = dbp->kmax + 1;
-		dbp->kmax = ed_fetch64(p);
-		dbp->entry = p;
-		dbp->entry_index = i;
+		if (dbp->hasentry) {
+			dbp->entry = (uint8_t *)dbp->entry + dbp->entry_size;
+			dbp->entry_index++;
+			dbp->kmin = dbp->kmax + 1;
+			dbp->kmax = ed_fetch64(dbp->entry);
+		}
+		else {
+			dbp->hasentry = true;
+		}
 	}
 
-	if (ent) { *ent = p; }
-
 	if (dbp->haskey) {
-		if (dbp->key == ed_fetch64(p)) {
+		if (dbp->key == ed_fetch64(dbp->entry)) {
 			dbp->nmatches++;
 			rc = 1;
 		}
@@ -333,6 +331,7 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 		}
 	}
 
+	if (ent) { *ent = dbp->entry; }
 	if (dbp->entry == dbp->start) { dbp->nloops++; }
 	dbp->match = rc;
 	return rc;
