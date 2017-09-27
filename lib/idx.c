@@ -336,7 +336,10 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 			}
 		} while (0);
 
-		rc = conn_acquire(hdr, &idx->conn, fd, hdr->xid > 16 ? hdr->xid - 16 : 0, pid);
+		if (rc >= 0) {
+			EdTxnId xmin = hdr->xid > 16 ? hdr->xid - 16 : 0;
+			rc = conn_acquire(hdr, &idx->conn, fd, xmin, pid);
+		}
 
 		ed_flck(fd, ED_LCK_UN, ED_IDX_LCK_OPEN_OFF, ED_IDX_LCK_OPEN_LEN, cfg->flags);
 	}
