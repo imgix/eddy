@@ -486,6 +486,7 @@ struct EdTxn {
 	unsigned     ngcslot;          /**< Number of page slots in the #gc array */
 	EdTxnNode *  nodes;            /**< Linked list of node arrays */
 	EdTxnId      xid;              /**< Transaction ID or 0 for read-only */
+	EdBlkno      pos;              /**< Current slab write block */
 	uint64_t     cflags;           /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
 	EdTxnState   state;            /**< Current transaction state */
 	int          error;            /**< Error code during transaction */
@@ -575,6 +576,23 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags);
  */
 ED_LOCAL void
 ed_txn_close(EdTxn **txnp, uint64_t flags);
+
+/**
+ * @brief  Gets the current slab position
+ * @param  txn  Transaction object
+ * @return  slab block number
+ */
+ED_LOCAL EdBlkno
+ed_txn_block(const EdTxn *txn);
+
+/**
+ * @brief  Sets the slab position to write on commit
+ * @param  txn  Transaction object
+ * @param  pos  New slab write position
+ * @return  0 on success <0 on error
+ */
+ED_LOCAL int
+ed_txn_set_block(EdTxn *txn, EdBlkno pos);
 
 /**
  * @brief  Checks if a transaction is in read-only mode

@@ -127,6 +127,7 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 	if (!rdonly) {
 		EdPgIdx *hdr = txn->idx->hdr;
 		txn->xid = hdr->xid + 1;
+		txn->pos = txn->idx->hdr->pos;
 
 		// Any active pages at this point are a result from an abandoned transaction.
 		// These could be reused right away, but for simlicity they are moved into
@@ -227,6 +228,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	hdr->vtree = update.vtree;
 	ed_fault_trigger(UPDATE_TREE);
 	hdr->xid = txn->xid;
+	hdr->pos = txn->pos;
 
 	// Pass all replaced pages to be reused. If this fails they are leaked.
 	ed_free_pgno(txn->idx, txn->xid, txn->gc, txn->ngcused);
@@ -368,6 +370,25 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 		free(txn);
 		*txnp = NULL;
 	}
+}
+
+EdBlkno
+ed_txn_block(const EdTxn *txn)
+{
+	if (txn->state != ED_TXN_OPEN || txn->error < 0 || txn->isrdonly) {
+		return txn->idx->hdr->pos;
+	}
+	return txn->pos;
+}
+
+int
+ed_txn_set_block(EdTxn *txn, EdBlkno pos)
+{
+	if (txn == NULL || txn->state != ED_TXN_OPEN || txn->error < 0 || txn->isrdonly) {
+		return ED_EINDEX_RDONLY;
+	}
+	txn->pos = pos;
+	return 0;
 }
 
 bool
