@@ -171,9 +171,16 @@ done:
 		dbp->entry_index = i;
 		dbp->nmatches = rc;
 		dbp->nloops = 0;
-		dbp->haskey = true;
 		dbp->hasfind = true;
-		if (ent) { *ent = data; }
+		dbp->haskey = true;
+		if (rc == 1) {
+			dbp->hasentry = true;
+			if (ent) { *ent = data; }
+		}
+		else {
+			dbp->hasentry = false;
+			if (ent) { *ent = NULL; }
+		}
 	}
 	dbp->match = rc;
 	return rc;
@@ -202,6 +209,7 @@ done:
 	if (rc >= 0) {
 		dbp->kmin = kmin;
 		dbp->kmax = kmax;
+		dbp->hasentry = true;
 	}
 	dbp->match = rc;
 	dbp->nmatches = 0;
@@ -286,24 +294,17 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 	EdBpt *leaf = node->tree;
 	uint8_t *p = dbp->entry;
 	uint32_t i = dbp->entry_index;
+	if (dbp->hasentry) { i++; }
 
-	if (i == leaf->nkeys-1) {
-		EdPgno next = leaf->next;
-		if (next == ED_PG_NONE) {
-			rc = move_right(txn, dbp, node);
-			if (rc < 0) { goto error; }
-		}
-		else {
-			rc = ed_txn_map(txn, next, node, 0, &node);
-			if (rc < 0) { goto error; }
-			dbp->find = node;
-		}
+	if (i >= leaf->nkeys) {
+		rc = move_right(txn, dbp, node);
+		if (rc < 0) { goto error; }
 		p = dbp->find->tree->data;
 		i = 0;
 	}
 	else {
-		p += dbp->entry_size;
-		i++;
+		if (dbp->hasentry) { p += dbp->entry_size; }
+		else { dbp->hasentry = true; }
 		dbp->kmin = dbp->kmax + 1;
 		dbp->kmax = ed_fetch64(p);
 	}
@@ -651,6 +652,7 @@ ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace)
 	dbp->nmatches = 1;
 	dbp->nloops = 0;
 	dbp->haskey = true;
+	dbp->hasentry = true;
 	return 0;
 }
 

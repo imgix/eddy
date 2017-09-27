@@ -1162,6 +1162,73 @@ test_key_range_del(void)
 	finish(&txn);
 }
 
+static void
+test_no_find(void)
+{
+	mu_teardown = cleanup;
+	unlink(cfg.index_path);
+
+	EdTxn *txn;
+
+	setup(&txn);
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+	for (unsigned seed = 0, i = 0; i < SMALL; i += 2) {
+		{
+			Entry ent = { .key = get_random(&seed) };
+			snprintf(ent.name, sizeof(ent.name), "a%u", i);
+			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		}
+		mu_assert_uint_eq(txn->db[0].root->tree->xid, txn->xid);
+		{
+			Entry ent = { .key = get_random(&seed) };
+			snprintf(ent.name, sizeof(ent.name), "a%u", i+1);
+			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		}
+	}
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	Entry *ent;
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 19932545, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 19932546);
+	ed_txn_close(&txn, FRESET);
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 764889542, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 777488834);
+	ed_txn_close(&txn, FRESET);
+	
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 1669187897, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 1671889999);
+	ed_txn_close(&txn, FRESET);
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 2146335338, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 19932546);
+	ed_txn_close(&txn, FRESET);
+
+	finish(&txn);
+}
+
 int
 main(void)
 {
@@ -1195,6 +1262,7 @@ main(void)
 	mu_run(test_key_range_set);
 	mu_run(test_key_range_set_less);
 	mu_run(test_key_range_del);
+	mu_run(test_no_find);
 	return 0;
 }
 
