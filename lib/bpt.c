@@ -310,7 +310,7 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 	else if (dbp->hasentry) {
 		dbp->entry = (uint8_t *)dbp->entry + dbp->entry_size;
 		dbp->entry_index++;
-		dbp->kmin = dbp->kmax + 1;
+		dbp->kmin = dbp->kmax;
 		dbp->kmax = ed_fetch64(dbp->entry);
 	}
 	else {
