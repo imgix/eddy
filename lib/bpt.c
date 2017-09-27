@@ -300,24 +300,30 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 	if (!dbp->hasfind) { return ED_EINDEX_KEY_MATCH; }
 
 	int rc = 0;
-	EdNode *node = dbp->find;
-	EdBpt *leaf = node->tree;
 	uint32_t i = dbp->entry_index;
 	if (dbp->hasentry) { i++; }
 
-	if (i >= leaf->nkeys) {
-		rc = move_right(txn, dbp, node);
+	if (i >= dbp->find->tree->nkeys) {
+		rc = move_right(txn, dbp, dbp->find);
 		if (rc < 0) { goto error; }
 	}
+	else if (dbp->hasentry) {
+		dbp->entry = (uint8_t *)dbp->entry + dbp->entry_size;
+		dbp->entry_index++;
+		dbp->kmin = dbp->kmax + 1;
+		dbp->kmax = ed_fetch64(dbp->entry);
+	}
 	else {
-		if (dbp->hasentry) {
-			dbp->entry = (uint8_t *)dbp->entry + dbp->entry_size;
-			dbp->entry_index++;
-			dbp->kmin = dbp->kmax + 1;
-			dbp->kmax = ed_fetch64(dbp->entry);
+		dbp->hasentry = true;
+	}
+
+	if (dbp->haskey) {
+		if (dbp->key == ed_fetch64(dbp->entry)) {
+			dbp->nmatches++;
+			rc = 1;
 		}
 		else {
-			dbp->hasentry = true;
+			dbp->haskey = false;
 		}
 	}
 
