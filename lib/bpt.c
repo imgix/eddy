@@ -187,6 +187,18 @@ done:
 }
 
 static uint64_t
+find_kmin(EdNode *node)
+{
+	if (node->parent == NULL) {
+		return 0;
+	}
+	if (node->pindex > 0) {
+		return branch_key(node->parent->tree, node->pindex-1) - 1;
+	}
+	return find_kmin(node->parent);
+}
+
+static uint64_t
 find_kmax(EdNode *node)
 {
 	if (node->parent == NULL) {
@@ -240,6 +252,47 @@ done:
 }
 
 /**
+ * @brief   Move ths db find to the last entry from a start point
+ * @param  txn  Transaction object
+ * @param  dbp  Transaction database object
+ * @param  from  Node to move from
+ * @param  kmin  The current minimum key value range
+ * @param  kmax  The current maximum key value range
+ * @return 0 on succces, <0 on error
+ */
+static int
+move_last(EdTxn *txn, EdTxnDb *dbp, EdNode *from, uint64_t kmin, uint64_t kmax)
+{
+	int rc = 0;
+	if (from == NULL) { goto done; }
+
+	while (IS_BRANCH(from->tree)) {
+		EdPgno no = branch_ptr(from->tree, from->tree->nkeys);
+		EdNode *next;
+		rc = ed_txn_map(txn, no, from, from->tree->nkeys, &next);
+		if (rc < 0) { goto done; }
+		kmin = branch_key(from->tree, from->tree->nkeys);
+		from = next;
+	}
+	dbp->find = from;
+	if (from->tree->nkeys > 0) {
+		kmin = leaf_key(from->tree, from->tree->nkeys - 1, dbp->entry_size);
+	}
+
+done:
+	if (rc >= 0) {
+		dbp->kmin = kmin;
+		dbp->kmax = kmax;
+		dbp->hasentry = true;
+		dbp->entry = dbp->find->tree->data + (dbp->find->tree->nkeys - 1) * dbp->entry_size;
+		dbp->entry_index = dbp->find->tree->nkeys - 1;
+	}
+	dbp->match = rc;
+	dbp->nmatches = 0;
+	return rc;
+}
+
+/**
  * @brief  Moves the db find to a right sibling node
  * @param  txn  Transaction object
  * @param  dbp  Transaction database object
@@ -277,6 +330,44 @@ move_right(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 	return move_first(txn, dbp, from, kmin, kmax);
 }
 
+/**
+ * @brief  Moves the db find to a left sibling node
+ * @param  txn  Transaction object
+ * @param  dbp  Transaction database object
+ * @param  from  Node to move from
+ * @return 0 on succces, <0 on error
+ */
+static int
+move_left(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
+{
+	assert(from->page->type == ED_PG_LEAF);
+
+	uint64_t kmin, kmax;
+
+	// Traverse up the nearest node that isn't the last key of its parent.
+	do {
+		// When at the root, wrapping is the only option.
+		if (from->parent == NULL) {
+			kmin = 0;
+			kmax = UINT64_MAX;
+			break;
+		}
+		// If a child node is not the first key, load the sibling.
+		if (from->pindex > 0) {
+			EdPgno no = branch_ptr(from->parent->tree, from->pindex-1);
+			int rc = ed_txn_map(txn, no, from->parent, from->pindex-1, &from);
+			if (rc < 0) { return rc; }
+			kmin = find_kmin(from);
+			kmax = branch_key(from->parent->tree, from->pindex);
+			break;
+		}
+		from = from->parent;
+	} while (1);
+
+	// Traverse down to the left-most leaf.
+	return move_last(txn, dbp, from, kmin, kmax);
+}
+
 int
 ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
 {
@@ -284,11 +375,25 @@ ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
 
 	int rc = move_first(txn, dbp, dbp->root, 0, UINT64_MAX);
 	if (rc == 0) {
-		void *data = dbp->find->tree->data;
-		dbp->start = data;
+		dbp->start = dbp->entry;
 		dbp->nloops = 0;
 		dbp->hasfind = true;
-		if (ent) { *ent = data; }
+		if (ent) { *ent = dbp->entry; }
+	}
+	return rc;
+}
+
+int
+ed_bpt_last(EdTxn *txn, unsigned db, void **ent)
+{
+	EdTxnDb *dbp = &txn->db[db];
+
+	int rc = move_last(txn, dbp, dbp->root, 0, UINT64_MAX);
+	if (rc == 0) {
+		dbp->start = dbp->entry;
+		dbp->nloops = 0;
+		dbp->hasfind = true;
+		if (ent) { *ent = dbp->entry; }
 	}
 	return rc;
 }
@@ -325,6 +430,38 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 		else {
 			dbp->haskey = false;
 		}
+	}
+
+	if (ent) { *ent = dbp->entry; }
+	if (dbp->entry == dbp->start) { dbp->nloops++; }
+	dbp->match = rc;
+	return rc;
+
+error:
+	dbp->match = 0;
+	txn->error = rc;
+	return rc;
+}
+
+int
+ed_bpt_prev(EdTxn *txn, unsigned db, void **ent)
+{
+	EdTxnDb *dbp = &txn->db[db];
+	if (!dbp->hasfind) { return ED_EINDEX_KEY_MATCH; }
+
+	int rc = 0;
+	uint32_t i = dbp->entry_index;
+
+	if (i == 0) {
+		rc = move_left(txn, dbp, dbp->find);
+		if (rc < 0) { goto error; }
+	}
+	else {
+		dbp->entry = (uint8_t *)dbp->entry - dbp->entry_size;
+		dbp->entry_index--;
+		dbp->kmax = dbp->kmin;
+		dbp->kmin = ed_fetch64(dbp->entry);
+		dbp->hasentry = true;
 	}
 
 	if (dbp->haskey) {

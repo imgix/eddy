@@ -855,6 +855,49 @@ test_iter(void)
 }
 
 static void
+test_iter_reverse(void)
+{
+	mu_teardown = cleanup;
+	unlink(cfg.index_path);
+
+	EdTxn *txn;
+	uint64_t start, begin = UINT64_MAX;
+
+	setup(&txn);
+
+	for (unsigned seed = 0, i = 0; i < LARGE; i++) {
+		Entry ent = { .key = get_random(&seed) };
+		if (i == LARGE/3) { start = ent.key; }
+		else if (ent.key < begin) { begin = ent.key; }
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	Entry *ent;
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, start, (void **)&ent), 1);
+	mu_assert_uint_eq(ent->key, start);
+
+	uint64_t last = UINT64_MAX;
+	int c;
+	for (c = 0; ed_bpt_loop(txn, 0) == 0; c++) {
+		mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+		mu_assert_uint_gt(last, ent->key);
+		last = ent->key;
+		if (last == begin) { last = UINT64_MAX; }
+	}
+	mu_assert_int_eq(c, LARGE);
+
+	finish(&txn);
+}
+
+static void
 test_iter_del(void)
 {
 	mu_teardown = cleanup;
@@ -910,12 +953,131 @@ test_iter_del(void)
 	keys[2] = ent->key;
 	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
 	keys[3] = ent->key;
+	mu_assert_int_lt(keys[0], keys[1]);
+	mu_assert_int_lt(keys[1], keys[2]);
+	mu_assert_int_lt(keys[2], keys[3]);
 	mu_assert_int_eq(ed_bpt_first(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[0], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[1], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[2], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[3], (void **)&ent), 0);
+	ed_txn_close(&txn, FRESET);
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_last(txn, 0, (void **)&ent), 0);
+	keys[0] = ent->key;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	keys[1] = ent->key;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	keys[2] = ent->key;
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	keys[3] = ent->key;
+	mu_assert_int_gt(keys[0], keys[1]);
+	mu_assert_int_lt(keys[1], keys[2]);
+	mu_assert_int_lt(keys[2], keys[3]);
+	mu_assert_int_eq(ed_bpt_last(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[0], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[1], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[2], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[3], (void **)&ent), 0);
+	ed_txn_close(&txn, FRESET);
+
+	finish(&txn);
+}
+
+static void
+test_iter_reverse_del(void)
+{
+	mu_teardown = cleanup;
+	unlink(cfg.index_path);
+
+	EdTxn *txn;
+
+	setup(&txn);
+
+	for (unsigned seed = 0, i = 0; i < 200; i++) {
+		Entry ent = { .key = get_random(&seed) };
+		snprintf(ent.name, sizeof(ent.name), "a%u", i);
+		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
+		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
+		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+	}
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	Entry *ent;
+	uint64_t keys[4];
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_last(txn, 0, (void **)&ent), 0);
+	keys[0] = ent->key;
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	keys[1] = ent->key;
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	keys[2] = ent->key;
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	keys[3] = ent->key;
+	mu_assert_int_gt(keys[0], keys[1]);
+	mu_assert_int_gt(keys[1], keys[2]);
+	mu_assert_int_gt(keys[2], keys[3]);
+	mu_assert_int_eq(ed_bpt_last(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
+
+	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[0], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[1], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[2], (void **)&ent), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, keys[3], (void **)&ent), 0);
+	ed_txn_close(&txn, FRESET);
+
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_first(txn, 0, (void **)&ent), 0);
+	keys[0] = ent->key;
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	keys[1] = ent->key;
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	keys[2] = ent->key;
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	keys[3] = ent->key;
+	mu_assert_int_lt(keys[0], keys[1]);
+	mu_assert_int_gt(keys[1], keys[2]);
+	mu_assert_int_gt(keys[2], keys[3]);
+	mu_assert_int_eq(ed_bpt_first(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, NULL), 0);
+	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 
 	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
@@ -951,7 +1113,7 @@ test_key_range(void)
 	EdTxn *txn;
 	setup(&txn);
 
-	uint64_t keys[200], kmin = 0;
+	uint64_t keys[200], kmin = 0, kmax = UINT64_MAX;
 
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 	for (unsigned seed = 0, i = 0; i < 200; i++) {
@@ -969,7 +1131,7 @@ test_key_range(void)
 
 	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
 	for (unsigned i = 0; i < ed_len(keys); i++) {
-		uint64_t kmax = keys[i];
+		kmax = keys[i];
 		mu_assert_int_eq(ed_bpt_find(txn, 0, keys[i], NULL), 1);
 		mu_assert_uint_ge(txn->db[0].kmin, kmin);
 		mu_assert_uint_le(txn->db[0].kmin, keys[i]);
@@ -983,12 +1145,24 @@ test_key_range(void)
 	kmin = 0;
 	for (unsigned i = 0; i < ed_len(keys); i++) {
 		mu_assert_uint_eq(ed_bpt_loop(txn, 0), 0);
-		uint64_t kmax = keys[i];
+		kmax = keys[i];
 		mu_assert_uint_ge(txn->db[0].kmin, kmin);
-		mu_assert_uint_le(txn->db[0].kmin, keys[i]);
-		mu_assert_uint_eq(txn->db[0].kmax, kmax);
+		mu_assert_uint_le(txn->db[0].kmax, kmax);
 		kmin = kmax;
 		mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
+	}
+	ed_txn_close(&txn, FRESET);
+
+	mu_assert_int_eq(ed_txn_open(txn, ED_FRDONLY|FOPEN), 0);
+	mu_assert_int_eq(ed_bpt_last(txn, 0, NULL), 0);
+	kmax = UINT64_MAX;
+	for (unsigned i = ed_len(keys); i > 0; i--) {
+		mu_assert_uint_eq(ed_bpt_loop(txn, 0), 0);
+		kmin = keys[i-1];
+		mu_assert_uint_ge(txn->db[0].kmin, kmin);
+		mu_assert_uint_le(txn->db[0].kmax, kmax);
+		kmax = kmin;
+		mu_assert_int_eq(ed_bpt_prev(txn, 0, NULL), 0);
 	}
 	ed_txn_close(&txn, FRESET);
 
@@ -1194,6 +1368,7 @@ test_no_find(void)
 
 	Entry *ent;
 
+	// Before first entry
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 19932545, (void **)&ent), 0);
 	mu_assert_ptr_eq(ent, NULL);
@@ -1202,6 +1377,7 @@ test_no_find(void)
 	mu_assert_uint_eq(ent->key, 19932546);
 	ed_txn_close(&txn, FRESET);
 
+	// Middle of leaf
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 764889542, (void **)&ent), 0);
 	mu_assert_ptr_eq(ent, NULL);
@@ -1209,7 +1385,8 @@ test_no_find(void)
 	mu_assert_ptr_ne(ent, NULL);
 	mu_assert_uint_eq(ent->key, 777488834);
 	ed_txn_close(&txn, FRESET);
-	
+
+	// After end of leaf
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 1669187897, (void **)&ent), 0);
 	mu_assert_ptr_eq(ent, NULL);
@@ -1218,6 +1395,44 @@ test_no_find(void)
 	mu_assert_uint_eq(ent->key, 1671889999);
 	ed_txn_close(&txn, FRESET);
 
+	// After last entry
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 2146335338, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 19932546);
+	ed_txn_close(&txn, FRESET);
+
+
+	// Before first entry
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 19932545, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 2146335337);
+	ed_txn_close(&txn, FRESET);
+
+	// Middle of leaf
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 764889542, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 764889541);
+	ed_txn_close(&txn, FRESET);
+
+	// After end of leaf
+	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
+	mu_assert_int_eq(ed_bpt_find(txn, 0, 1669187897, (void **)&ent), 0);
+	mu_assert_ptr_eq(ent, NULL);
+	mu_assert_int_eq(ed_bpt_prev(txn, 0, (void **)&ent), 0);
+	mu_assert_ptr_ne(ent, NULL);
+	mu_assert_uint_eq(ent->key, 1669187896);
+	ed_txn_close(&txn, FRESET);
+
+	// After last entry
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN|ED_FRDONLY), 0);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, 2146335338, (void **)&ent), 0);
 	mu_assert_ptr_eq(ent, NULL);
@@ -1257,7 +1472,9 @@ main(void)
 	mu_run(test_remove_large);
 	mu_run(test_multi);
 	mu_run(test_iter);
+	mu_run(test_iter_reverse);
 	mu_run(test_iter_del);
+	mu_run(test_iter_reverse_del);
 	mu_run(test_key_range);
 	mu_run(test_key_range_set);
 	mu_run(test_key_range_set_less);
