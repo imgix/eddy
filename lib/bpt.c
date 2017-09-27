@@ -186,6 +186,27 @@ done:
 	return rc;
 }
 
+static uint64_t
+find_kmax(EdNode *node)
+{
+	if (node->parent == NULL) {
+		return UINT64_MAX;
+	}
+	if (node->pindex < node->parent->tree->nkeys) {
+		return branch_key(node->parent->tree, node->pindex+1) - 1;
+	}
+	return find_kmax(node->parent);
+}
+
+/**
+ * @brief   Move ths db find to the first entry from a start point
+ * @param  txn  Transaction object
+ * @param  dbp  Transaction database object
+ * @param  from  Node to move from
+ * @param  kmin  The current minimum key value range
+ * @param  kmax  The current maximum key value range
+ * @return 0 on succces, <0 on error
+ */
 static int
 move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from, uint64_t kmin, uint64_t kmax)
 {
@@ -210,22 +231,12 @@ done:
 		dbp->kmin = kmin;
 		dbp->kmax = kmax;
 		dbp->hasentry = true;
+		dbp->entry = dbp->find->tree->data;
+		dbp->entry_index = 0;
 	}
 	dbp->match = rc;
 	dbp->nmatches = 0;
 	return rc;
-}
-
-static uint64_t
-find_kmax(EdNode *node)
-{
-	if (node->parent == NULL) {
-		return UINT64_MAX;
-	}
-	if (node->pindex < node->parent->tree->nkeys) {
-		return branch_key(node->parent->tree, node->pindex+1) - 1;
-	}
-	return find_kmax(node->parent);
 }
 
 /**
@@ -274,8 +285,7 @@ ed_bpt_first(EdTxn *txn, unsigned db, void **ent)
 	int rc = move_first(txn, dbp, dbp->root, 0, UINT64_MAX);
 	if (rc == 0) {
 		void *data = dbp->find->tree->data;
-		dbp->entry = dbp->start = data;
-		dbp->entry_index = 0;
+		dbp->start = data;
 		dbp->nloops = 0;
 		dbp->hasfind = true;
 		if (ent) { *ent = data; }
@@ -307,10 +317,10 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 		else { dbp->hasentry = true; }
 		dbp->kmin = dbp->kmax + 1;
 		dbp->kmax = ed_fetch64(p);
+		dbp->entry = p;
+		dbp->entry_index = i;
 	}
 
-	dbp->entry = p;
-	dbp->entry_index = i;
 	if (ent) { *ent = p; }
 
 	if (dbp->haskey) {
@@ -674,8 +684,6 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 		if (rc >= 0) {
 			leaf = dbp->find;
 			eidx = 0;
-			dbp->entry = leaf->tree->data;
-			dbp->entry_index = 0;
 		}
 	}
 
