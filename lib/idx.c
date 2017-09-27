@@ -260,7 +260,6 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
 	hdrnew.epoch = ed_now_unix();
 	hdrnew.flags = ed_fsave(flags);
-	hdrnew.slab_block_size = cfg->slab_block_size ? cfg->slab_block_size : PAGESIZE;
 	hdrnew.gc_head = PG_ROOT_GC;
 	hdrnew.gc_tail = PG_ROOT_GC;
 	hdrnew.tail_start = PG_NINIT(nconns);
