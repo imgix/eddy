@@ -30,25 +30,48 @@ branch_key(EdBpt *b, uint16_t idx)
 }
 
 static inline EdPgno
-branch_ptr(EdNode *b, uint16_t idx)
+branch_ptr(EdBpt *b, uint16_t idx)
 {
-	assert(idx <= b->tree->nkeys);
-	return ed_fetch32(b->tree->data + idx*BRANCH_ENTRY_SIZE);
+	assert(idx <= b->nkeys);
+	return ed_fetch32(b->data + idx*BRANCH_ENTRY_SIZE);
 }
 
 static inline void
-branch_set_key(EdNode *b, uint16_t idx, uint64_t val)
+branch_set_key(EdBpt *b, uint16_t idx, uint64_t val)
 {
-	assert(idx <= b->tree->nkeys);
+	assert(idx <= b->nkeys);
 	if (idx == 0) { return; }
-	memcpy(b->tree->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE, &val, sizeof(val));
+	memcpy(b->data + idx*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE, &val, sizeof(val));
 }
 
 static inline void
-branch_set_ptr(EdNode *b, uint16_t idx, EdPgno val)
+branch_set_ptr(EdBpt *b, uint16_t idx, EdPgno val)
 {
-	assert(idx <= b->tree->nkeys);
-	memcpy(b->tree->data + idx*BRANCH_ENTRY_SIZE, &val, sizeof(val));
+	assert(idx <= b->nkeys);
+	memcpy(b->data + idx*BRANCH_ENTRY_SIZE, &val, sizeof(val));
+}
+
+static inline uint16_t
+branch_index(EdBpt *b, EdPgno *ptr)
+{
+	assert(b->data <= (uint8_t *)ptr);
+	assert((uint8_t *)ptr < b->data + (BRANCH_ORDER*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE));
+	return ((uint8_t *)ptr - b->data) / BRANCH_ENTRY_SIZE;
+}
+
+static EdPgno *
+branch_search(EdBpt *b, uint64_t key)
+{
+	// TODO: binary search or SIMD
+	EdPgno *ptr = (EdPgno *)b->data;
+	uint8_t *bkey = b->data + BRANCH_PTR_SIZE;
+	for (uint32_t i = 0, n = b->nkeys; i < n; i++, bkey += BRANCH_ENTRY_SIZE) {
+		uint64_t cmp = ed_fetch64(bkey);
+		if (key < cmp) { break; }
+		ptr = BRANCH_NEXT(ptr);
+		if (key == cmp) { break; }
+	}
+	return ptr;
 }
 
 static inline uint64_t
@@ -56,14 +79,6 @@ leaf_key(EdBpt *l, uint16_t idx, size_t esize)
 {
 	assert(idx < l->nkeys);
 	return ed_fetch64(l->data + idx*esize);
-}
-
-static inline uint16_t
-branch_index(EdBpt *node, EdPgno *ptr)
-{
-	assert(node->data <= (uint8_t *)ptr);
-	assert((uint8_t *)ptr < node->data + (BRANCH_ORDER*BRANCH_ENTRY_SIZE - BRANCH_KEY_SIZE));
-	return ((uint8_t *)ptr - node->data) / BRANCH_ENTRY_SIZE;
 }
 
 
@@ -83,21 +98,6 @@ size_t
 ed_bpt_capacity(size_t esize, size_t depth)
 {
 	return llround(pow(BRANCH_ORDER, depth-1) * LEAF_ORDER(esize));
-}
-
-static EdPgno *
-search_branch(EdBpt *node, uint64_t key)
-{
-	// TODO: binary search or SIMD
-	EdPgno *ptr = (EdPgno *)node->data;
-	uint8_t *bkey = node->data + BRANCH_PTR_SIZE;
-	for (uint32_t i = 0, n = node->nkeys; i < n; i++, bkey += BRANCH_ENTRY_SIZE) {
-		uint64_t cmp = ed_fetch64(bkey);
-		if (key < cmp) { break; }
-		ptr = BRANCH_NEXT(ptr);
-		if (key == cmp) { break; }
-	}
-	return ptr;
 }
 
 int
@@ -128,7 +128,7 @@ ed_bpt_find(EdTxn *txn, unsigned db, uint64_t key, void **ent)
 	while (IS_BRANCH(node->tree)) {
 		if (IS_BRANCH_FULL(node->tree)) { dbp->nsplits++; }
 		else { dbp->nsplits = 0; }
-		EdPgno *ptr = search_branch(node->tree, key);
+		EdPgno *ptr = branch_search(node->tree, key);
 		uint16_t bidx = branch_index(node->tree, ptr);
 		EdPgno no = ed_fetch32(node->tree->data + bidx*BRANCH_ENTRY_SIZE);
 		EdNode *next;
@@ -214,7 +214,7 @@ move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from, uint64_t kmin, uint64_t kmax)
 	if (from == NULL) { goto done; }
 
 	while (IS_BRANCH(from->tree)) {
-		EdPgno no = ed_fetch32(from->tree->data);
+		EdPgno no = branch_ptr(from->tree, 0);
 		EdNode *next;
 		rc = ed_txn_map(txn, no, from, 0, &next);
 		if (rc < 0) { goto done; }
@@ -223,7 +223,7 @@ move_first(EdTxn *txn, EdTxnDb *dbp, EdNode *from, uint64_t kmin, uint64_t kmax)
 	}
 	dbp->find = from;
 	if (from->tree->nkeys > 0) {
-		kmax = ed_fetch64(from->tree->data);
+		kmax = leaf_key(from->tree, 0, dbp->entry_size);
 	}
 
 done:
@@ -263,7 +263,7 @@ move_right(EdTxn *txn, EdTxnDb *dbp, EdNode *from)
 		}
 		// If a child node is not the last key, load the sibling.
 		if (from->pindex < from->parent->tree->nkeys) {
-			EdPgno no = branch_ptr(from->parent, from->pindex+1);
+			EdPgno no = branch_ptr(from->parent->tree, from->pindex+1);
 			int rc = ed_txn_map(txn, no, from->parent, from->pindex+1, &from);
 			if (rc < 0) { return rc; }
 			kmin = branch_key(from->parent->tree, from->pindex);
@@ -367,7 +367,7 @@ set_node(EdTxn *txn, EdTxnDb *dbp, EdNode *node)
 		node->parent = parent;
 	}
 	if (node->tree->xid == txn->xid) {
-		branch_set_ptr(parent, node->pindex, node->page->no);
+		branch_set_ptr(parent->tree, node->pindex, node->page->no);
 	}
 	return set_node(txn, dbp, parent);
 }
@@ -377,7 +377,7 @@ set_leaf(EdTxn *txn, EdTxnDb *dbp, EdNode *leaf, uint32_t eidx)
 {
 	int rc = set_node(txn, dbp, leaf);
 	if (rc == 0 && eidx == 0 && leaf->pindex > 0) {
-		branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(leaf->tree->data));
+		branch_set_key(leaf->parent->tree, leaf->pindex, ed_fetch64(leaf->tree->data));
 	}
 	return 0;
 }
@@ -474,7 +474,7 @@ insert_into_parent(EdTxn *txn, EdTxnDb *dbp, EdNode *l, EdNode *r, uint64_t rkey
 	r->parent = branch;
 
 	set_node(txn, dbp, l);
-	branch_set_key(r->parent, r->pindex, rkey);
+	branch_set_key(r->parent->tree, r->pindex, rkey);
 	set_node(txn, dbp, r);
 	return 0;
 }
@@ -707,7 +707,7 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 		leaf->tree->nkeys--;
 #if 0
 		if (leaf->parent && eidx == 0) {
-			branch_set_key(leaf->parent, leaf->pindex, ed_fetch64(dbp->entry));
+			branch_set_key(leaf->parent->tree, leaf->pindex, ed_fetch64(dbp->entry));
 		}
 #endif
 	}
