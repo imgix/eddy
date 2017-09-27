@@ -28,7 +28,7 @@
 #define ED_FRDONLY       UINT64_C(0x0000200000000000) /** The operation does not need to write. */
 #define ED_FNOVACUUM     UINT64_C(0x0000400000000000) /** Disable fair vacuum for writers. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /** Reset the transaction when closing. */
-/* @} */
+/** @} */
 
 /** @brief  Seconds in UNIX time */
 typedef time_t EdTimeUnix;
@@ -125,7 +125,8 @@ ed_discard(EdObject *obj);
 #define ED_EINDEX  3 /** Error group for index errors. */
 #define ED_EKEY    4 /** Error group for key errors. */
 #define ED_ESLAB   5 /** Error group for slab errors. */
-#define ED_EMIME   6 /** Error group for mime errors. */
+#define ED_EOBJECT 6 /** Error group for object errors. */
+#define ED_EMIME   7 /** Error group for mime errors. */
 
 /** 
  * @brief  Produces an error code
@@ -185,6 +186,13 @@ ed_discard(EdObject *obj);
 #define ed_eslab(n)   ed_emake(ED_ESLAB, n)
 
 /**
+ * @brief  Produces an object error code
+ * @param  n  The object error code
+ * @return  Combined error code <0
+ */
+#define ed_eobject(n) ed_emake(ED_EOBJECT, n)
+
+/**
  * @brief  Produces a mime error code
  * @param  n  The mime error code
  * @return  Combined error code <0
@@ -221,6 +229,8 @@ ed_discard(EdObject *obj);
 #define ED_ESLAB_INODE           ed_eslab(4)   /** Error code when the slab inode changed. */
 
 #define ED_EKEY_LENGTH           ed_ekey(0)    /** Error code when the key is too long. */
+
+#define ED_EOBJECT_LENGTH        ed_eobject(0) /** Error code when too many bytes are written to an object. */
 
 #define ED_EMIME_FILE            ed_emime(0)   /** Error code when the mime.cache file can't be loaded. */
 
@@ -263,12 +273,18 @@ ED_EXPORT bool ed_eiskey(int code);
 ED_EXPORT bool ed_eisslab(int code);
 
 /**
+ * @brief  Tests if the error code is a slab error.
+ * @param  code  Error code <0
+ */
+ED_EXPORT bool ed_eisobject(int code);
+
+/**
  * @brief  Tests if the error code is a mime error.
  * @param  code  Error code <0
  */
 ED_EXPORT bool ed_eismime(int code);
 
-/* @} */
+/** @} */
 
 #endif
 

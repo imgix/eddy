@@ -37,6 +37,10 @@ static const char *const eslab[] = {
 	[ed_ecode(ED_ESLAB_INODE)]           = "slab inode reference invalid",
 };
 
+static const char *const eobject[] = {
+	[ed_ecode(ED_EOBJECT_LENGTH)]        = "write exceeds allocated object size",
+};
+
 static const char *const emime[] = {
 	[ed_ecode(ED_EMIME_FILE)]            = "invalid mime.cache file",
 };
@@ -56,6 +60,7 @@ ed_strerror(int code)
 		case ED_EINDEX:  msg = EGETMSG(eindex, ec); break;
 		case ED_EKEY:    msg = EGETMSG(ekey, ec); break;
 		case ED_ESLAB:   msg = EGETMSG(eslab, ec); break;
+		case ED_EOBJECT: msg = EGETMSG(eobject, ec); break;
 		case ED_EMIME:   msg = EGETMSG(emime, ec); break;
 		}
 	}
@@ -67,5 +72,6 @@ bool ed_eisconfig(int code) { return ed_etype(code) == ED_ECONFIG; }
 bool ed_eisindex(int code)  { return ed_etype(code) == ED_EINDEX; }
 bool ed_eiskey(int code)    { return ed_etype(code) == ED_EKEY; }
 bool ed_eisslab(int code)   { return ed_etype(code) == ED_ESLAB; }
+bool ed_eisobject(int code) { return ed_etype(code) == ED_EOBJECT; }
 bool ed_eismime(int code)   { return ed_etype(code) == ED_EMIME; }
 
