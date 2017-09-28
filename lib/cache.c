@@ -84,19 +84,91 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 int
 ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 {
-	(void)cache;
-	(void)key;
-	(void)len;
-	*objp = NULL;
-	return ed_esys(ENOTSUP);
+	EdObject *obj = calloc(1, sizeof(*obj));
+	if (obj == NULL) { return ED_ERRNO; }
+
+	obj->cache = cache;
+	obj->key = (uint8_t *)key;
+	obj->keylen = len;
+
+	int rc = ed_idx_get(&cache->idx, obj);
+	if (rc <= 0) {
+		free(obj);
+		obj = NULL;
+	}
+	*objp = obj;
+	return rc;
 }
 
 int
 ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 {
-	(void)cache;
-	(void)attr;
-	*objp = NULL;
-	return ed_esys(ENOTSUP);
+	EdObject *obj = calloc(1, sizeof(*obj));
+	if (obj == NULL) { return ED_ERRNO; }
+
+	obj->cache = cache;
+	obj->key = (uint8_t *)attr->key;
+	obj->keylen = attr->key_size;
+	obj->metalen= attr->meta_size;
+	obj->datalen = attr->object_size;
+	obj->expiry = attr->ttl < 0 ? -1 : ed_now_unix() + attr->ttl;
+
+	int rc = ed_idx_reserve(&cache->idx, obj);
+	if (rc < 0) {
+		free(obj);
+		return rc;
+	}
+
+	if (attr->meta != NULL) {
+		if (cache->idx.flags & ED_FCHECKSUM) {
+			obj->hdr->metacrc = ed_crc32c(0, attr->meta, obj->metalen);
+		}
+		memcpy(obj->meta, attr->meta, obj->metalen);
+	}
+
+	*objp = obj;
+	return rc;
+}
+
+int64_t
+ed_write(EdObject *obj, const void *buf, size_t len)
+{
+	if (len > UINT32_MAX || (uint64_t)obj->datacur + len > (uint64_t)obj->datalen) {
+		return ED_EOBJECT_LENGTH;
+	}
+	if (obj->cache->idx.flags & ED_FCHECKSUM) {
+		ed_crc32c(obj->crc, buf, len);
+	}
+	memcpy(obj->data + obj->datacur, buf, len);
+	obj->datacur += (uint32_t)len;
+	return (int64_t)len;
+}
+
+const void *
+ed_value(EdObject *obj, size_t *len)
+{
+	*len = obj->datalen;
+	return obj->data;
+}
+
+const void *
+ed_meta(EdObject *obj, size_t *len)
+{
+	*len = obj->metalen;
+	return obj->meta;
+}
+
+void
+ed_close(EdObject **objp)
+{
+	EdObject *obj = *objp;
+	if (obj == NULL) { return; }
+	objp = NULL;
+
+	ed_flck(obj->cache->idx.slabfd, ED_LCK_UN,
+			obj->no, obj->count * PAGESIZE, obj->cache->idx.flags);
+	ed_pg_unmap(obj->hdr, obj->count);
+	free(obj);
+
 }
 

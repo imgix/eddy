@@ -61,6 +61,15 @@ main(int argc, char **argv)
 	if (rc < 0) {
 		warnx("faild to create object: %s", ed_strerror(rc));
 	}
+	else if (rc == 0) {
+		warnx("key not found");
+	}
+	else {
+		size_t len;
+		const void *data = ed_value(obj, &len);
+		write(STDOUT_FILENO, data, len);
+		ed_close(&obj);
+	}
 
 	/*
 	if (unlink) {

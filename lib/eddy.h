@@ -10,6 +10,8 @@
 
 #define ED_EXPORT extern __attribute__((visibility ("default")))
 
+#define ED_MAX_KEY 4032
+
 /** @defgroup  flags  EdConfig and ed_cache_open flags
  * @{
  */
@@ -26,7 +28,7 @@
 #define ED_FNOTLCK       UINT64_C(0x0000080000000000) /** Disable thread locking. */
 #define ED_FNOBLOCK      UINT64_C(0x0000100000000000) /** May return EAGAIN for open or create. */
 #define ED_FRDONLY       UINT64_C(0x0000200000000000) /** The operation does not need to write. */
-#define ED_FNOVACUUM     UINT64_C(0x0000400000000000) /** Disable fair vacuum for writers. */
+#define ED_FZERO         UINT64_C(0x0000400000000000) /** Zero new entries before writing. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /** Reset the transaction when closing. */
 /** @} */
 
@@ -98,20 +100,20 @@ ed_write(EdObject *obj, const void *buf, size_t len);
 ED_EXPORT ssize_t
 ed_splice(EdObject *obj, int s, size_t len);
 
-ED_EXPORT uint32_t
-ed_size(const EdObject *obj);
-
 ED_EXPORT ssize_t
 ed_sendfile(EdObject *obj, int s, size_t len);
 
 ED_EXPORT const void *
-ed_value(EdObject *obj);
+ed_value(EdObject *obj, size_t *len);
+
+ED_EXPORT const void *
+ed_meta(EdObject *obj, size_t *len);
+
+ED_EXPORT void
+ed_close(EdObject **objp);
 
 ED_EXPORT int
-ed_close(EdObject *obj);
-
-ED_EXPORT int
-ed_discard(EdObject *obj);
+ed_discard(EdObject **objp);
 
 
 

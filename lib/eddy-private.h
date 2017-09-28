@@ -704,8 +704,8 @@ struct EdIdx {
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL  EdTxnId ed_idx_xmin(EdIdx *idx, EdTime now);
-ED_LOCAL      int ed_idx_get(EdIdx *, const void *key, size_t len, EdObject *obj);
-ED_LOCAL      int ed_idx_put(EdIdx *, const void *key, size_t len, EdObject *obj);
+ED_LOCAL      int ed_idx_get(EdIdx *, EdObject *obj);
+ED_LOCAL      int ed_idx_reserve(EdIdx *, EdObject *obj);
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
 ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);
 ED_LOCAL     void ed_idx_release_xid(EdIdx *);
@@ -974,13 +974,17 @@ struct EdCache {
 struct EdObject {
 	EdCache *    cache;
 	time_t       expiry;
-	const void * data;
-	const void * key;
-	const void * meta;
+	uint8_t *    data;
+	uint8_t *    key;
+	uint8_t *    meta;
 	uint16_t     keylen;
 	uint16_t     metalen;
 	uint32_t     datalen;
+	uint32_t     datacur;
+	uint32_t     crc;
 	EdObjectHdr *hdr;
+	EdBlkno      no;
+	EdBlkno      count;
 };
 
 #pragma GCC diagnostic push
@@ -1086,6 +1090,9 @@ struct EdObjectHdr {
 	uint16_t     keylen;           /**< Number of bytes for the key */
 	uint16_t     metalen;          /**< Number of bytes for the metadata */
 	uint32_t     datalen;          /**< Number of bytes for the data */
+	uint64_t     keyhash;          /**< Hash of the key */
+	uint32_t     metacrc;          /**< Optional CRC-32c of the object meta data */
+	uint32_t     datacrc;          /**< Optional CRC-32c of the object body data */
 };
 
 /**
@@ -1131,7 +1138,7 @@ struct EdBpt {
  * @brief  B+Tree value type for indexing the slab by position
  */
 struct EdEntryBlock {
-	EdBlkno      block;            /**< Block number for the entry */ // XXX last block of the entry?
+	EdBlkno      no;               /**< Block number for the entry */
 	EdPgno       count;            /**< Number of blocks used by the entry */
 	EdTime       exp;              /**< Expiration of the entry */
 };
