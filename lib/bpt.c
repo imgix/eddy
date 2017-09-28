@@ -403,6 +403,7 @@ ed_bpt_next(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
 	if (!dbp->hasfind) { return ED_EINDEX_KEY_MATCH; }
+	if (dbp->find == NULL) { return 0; }
 
 	int rc = 0;
 	uint32_t i = dbp->entry_index;
@@ -448,6 +449,7 @@ ed_bpt_prev(EdTxn *txn, unsigned db, void **ent)
 {
 	EdTxnDb *dbp = &txn->db[db];
 	if (!dbp->hasfind) { return ED_EINDEX_KEY_MATCH; }
+	if (dbp->find == NULL) { return 0; }
 
 	int rc = 0;
 	uint32_t i = dbp->entry_index;
