@@ -111,7 +111,7 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 	obj->keylen = attr->key_size;
 	obj->metalen= attr->meta_size;
 	obj->datalen = attr->object_size;
-	obj->expiry = attr->ttl < 0 ? -1 : ed_now_unix() + attr->ttl;
+	obj->expiry = ed_unix_from_ttl(attr->ttl);
 
 	int rc = ed_idx_reserve(&cache->idx, obj);
 	if (rc < 0) {

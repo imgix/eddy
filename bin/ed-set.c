@@ -34,7 +34,7 @@ main(int argc, char **argv)
 	EdObjectAttr attr = { .ttl = -1 };
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hem:")) != -1) {
+	while ((ch = getopt(argc, argv, ":he:m:")) != -1) {
 		switch (ch) {
 		case 'e':
 			attr.ttl = strtol(optarg, &end, 10);
@@ -77,6 +77,9 @@ main(int argc, char **argv)
 	if (rc < 0) {
 		warnx("faild to create object: %s", ed_strerror(rc));
 	}
+
+	ed_write(obj, data.data, data.length);
+	ed_close(&obj);
 
 	ed_input_final(&data);
 	ed_input_final(&meta);

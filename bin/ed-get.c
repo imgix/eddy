@@ -26,14 +26,14 @@ main(int argc, char **argv)
 {
 	EdConfig cfg = ed_config_make();
 	EdCache *cache = NULL;
-	bool unlink = false, mime = false;
+	bool unlink = false, meta = false;
 	const char *key = NULL;
 
 	int ch;
 	while ((ch = getopt(argc, argv, ":hum")) != -1) {
 		switch (ch) {
 		case 'u': unlink = true; break;
-		case 'm': mime = true; break;
+		case 'm': meta = true; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
 		case ':': errx(1, "missing argument for option: -%c", optopt);
@@ -59,15 +59,19 @@ main(int argc, char **argv)
 	EdObject *obj;
 	rc = ed_open(cache, &obj, key, strlen(key));
 	if (rc < 0) {
-		warnx("faild to create object: %s", ed_strerror(rc));
+		if (!meta) { warnx("faild to open object: %s", ed_strerror(rc)); }
 	}
 	else if (rc == 0) {
-		warnx("key not found");
+		if (!meta) { warnx("key not found"); }
 	}
 	else {
 		size_t len;
 		const void *data = ed_value(obj, &len);
 		write(STDOUT_FILENO, data, len);
+		if (meta) {
+			data = ed_meta(obj, &len);
+			write(STDERR_FILENO, data, len);
+		}
 		ed_close(&obj);
 	}
 
@@ -81,6 +85,6 @@ main(int argc, char **argv)
 #if ED_MMAP_DEBUG
 	if (ed_pg_check() > 0) { return EXIT_FAILURE; }
 #endif
-	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+	return rc == 1 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

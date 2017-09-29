@@ -482,8 +482,10 @@ ed_idx_get(EdIdx *idx, EdObject *obj)
 	int rc = ed_txn_open(idx->txn, idx->flags|ED_FRDONLY);
 	if (rc < 0) { return rc; }
 
+	int set = 0;
 	EdEntryKey *key;
-	for (rc = ed_bpt_find(idx->txn, ED_DB_KEYS, h, (void **)&key); rc == 1;
+	for (rc = ed_bpt_find(idx->txn, ED_DB_KEYS, h, (void **)&key);
+			rc == 1 && ed_bpt_loop(idx->txn, ED_DB_KEYS) == 0;
 			rc = ed_bpt_next(idx->txn, ED_DB_KEYS, (void **)&key)) {
 		// First check if the object is expired.
 		if (ed_expired_at(idx->hdr->epoch, key->exp, now)) {
@@ -513,6 +515,7 @@ ed_idx_get(EdIdx *idx, EdObject *obj)
 				memcmp(obj_key(hdr), obj->key, obj->keylen) == 0) {
 			obj->expiry = ed_expiry_at(idx->hdr->epoch, key->exp, now);
 			obj_set(obj, hdr, key->no);
+			set = 1;
 			break;
 		}
 
@@ -522,7 +525,7 @@ ed_idx_get(EdIdx *idx, EdObject *obj)
 		ed_pg_unmap(hdr, key->count);
 	}
 	ed_txn_close(&idx->txn, idx->flags|ED_FRESET);
-	return rc;
+	return rc < 0 ? rc : set;
 }
 
 int
@@ -538,8 +541,10 @@ ed_idx_reserve(EdIdx *idx, EdObject *obj)
 
 	size_t len = obj_slab_size(&hdrnew);
 
-	EdEntryBlock *block = NULL, blocknew = { 0, len/PAGESIZE, 0 };
-	EdEntryKey *key = NULL, keynew = { h, 0, blocknew.count, 0 };
+	EdEntryBlock *block = NULL, blocknew = { 0, len/PAGESIZE,
+		ed_time_from_unix(idx->hdr->epoch, obj->expiry) };
+	EdEntryKey *key = NULL, keynew = { h, 0, blocknew.count,
+		blocknew.exp };
 
 	bool locked = false;
 	int rc;
