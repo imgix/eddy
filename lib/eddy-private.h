@@ -251,6 +251,7 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 #define ED_PG_GC        UINT32_C(0x4c4c4347)
 
 #define ED_PG_NONE UINT32_MAX
+#define ED_PG_MAX (UINT32_MAX-1)
 #define ED_BLK_NONE UINT64_MAX
 
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
@@ -1034,6 +1035,17 @@ struct EdPgGcList {
 
 /** Maximum number of pages for a list in a new gc page */
 #define ED_GC_LIST_MAX ((ED_GC_DATA - sizeof(EdPgGcList)) / sizeof(EdPgno) + 1)
+
+#define ED_GC_LIST_PAGE_SIZE \
+	(sizeof(((EdPgGcList *)0)->pages[0]))
+
+/**
+ * @brief  Calculates the list byte size requirement for a given number of pages
+ * @param  npages  Number of pages
+ * @return  Size in bytes required to store a list and pages
+ */
+#define ED_GC_LIST_SIZE(npages) \
+	ed_align_type(offsetof(EdPgGcList, pages) + (npages)*ED_GC_LIST_PAGE_SIZE, EdPgGcList)
 
 /**
  * @brief  Connection handle for each active process

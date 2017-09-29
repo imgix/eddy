@@ -5,8 +5,6 @@ _Static_assert(sizeof(EdPgGc) == PAGESIZE,
 _Static_assert(offsetof(EdPgGc, data) % ed_alignof(EdPgGcList) == 0,
 		"EdPgGc data not properly aligned");
 
-#define GC_LIST_PAGE_SIZE (sizeof(((EdPgGcList *)0)->pages[0]))
-
 void *
 ed_pg_map(int fd, EdPgno no, EdPgno count)
 {
@@ -159,7 +157,7 @@ static EdPgno
 gc_list_npages(size_t size)
 {
 	if (size <= offsetof(EdPgGcList, pages)) { return 0; }
-	return (size - offsetof(EdPgGcList, pages)) / GC_LIST_PAGE_SIZE;
+	return (size - offsetof(EdPgGcList, pages)) / ED_GC_LIST_PAGE_SIZE;
 }
 
 /**
@@ -174,21 +172,10 @@ gc_list_npages_for(EdPgGc *pgc, EdTxnId xid)
 	if (pgc == NULL) { return 0; }
 	EdPgGcList *list = (EdPgGcList *)(pgc->data + pgc->state.tail);
 	uint16_t remain = gc_list_remain(pgc, list);
-	if (xid <= list->xid) { return remain / GC_LIST_PAGE_SIZE; }
+	if (xid <= list->xid) { return remain / ED_GC_LIST_PAGE_SIZE; }
 
 	ssize_t tail = ed_align_type((ssize_t)sizeof(pgc->data) - remain, EdPgGcList);
 	return gc_list_npages(sizeof(pgc->data) - tail);
-}
-
-/**
- * @brief  Calculates the list byte size requirement for a given number of pages
- * @param  npages  Number of pages
- * @return  Size in bytes required to store a list and pages
- */
-static size_t
-gc_list_size(EdPgno npages)
-{
-	return ed_align_type(offsetof(EdPgGcList, pages) + npages*GC_LIST_PAGE_SIZE, EdPgGcList);
 }
 
 /**
@@ -209,7 +196,7 @@ gc_list_next(EdPgGc *pgc, EdTxnId xid)
 
 	// Older xid pages can be merged into a new xid.
 	if (nlists > 0 && xid <= list->xid) {
-		return remain < GC_LIST_PAGE_SIZE ? NULL : list;
+		return remain < ED_GC_LIST_PAGE_SIZE ? NULL : list;
 	}
 
 	// If the page is full, return NULL.
@@ -217,7 +204,7 @@ gc_list_next(EdPgGc *pgc, EdTxnId xid)
 		return NULL;
 	}
 
-	uint16_t tail = nlists ? pgc->state.tail + gc_list_size(list->npages) : 0;
+	uint16_t tail = nlists ? pgc->state.tail + ED_GC_LIST_SIZE(list->npages) : 0;
 
 	// Load the next list in the current gc page.
 	pgc->state = (EdPgGcState) {
@@ -291,7 +278,7 @@ gc_check(EdPgGc *gc, EdPgno *p, EdPgno n)
 				}
 			}
 		}
-		head += (uint16_t)gc_list_size(list->npages);
+		head += (uint16_t)ED_GC_LIST_SIZE(list->npages);
 		nskip = 0;
 	}
 }
@@ -325,7 +312,7 @@ ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
 				rc = ed_stat_mark(stat, list->pages[i]);
 				if (rc < 0) { break; }
 			}
-			head += (uint16_t)gc_list_size(list->npages);
+			head += (uint16_t)ED_GC_LIST_SIZE(list->npages);
 			nskip = 0;
 		}
 
@@ -425,7 +412,7 @@ ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
 		}
 
 		// Otherwise reset the skip position and continue with the next list.
-		head += (uint16_t)gc_list_size(list->npages);
+		head += (uint16_t)ED_GC_LIST_SIZE(list->npages);
 		nlists--;
 		nskip = 0;
 	}
