@@ -68,7 +68,7 @@ main(int argc, char **argv)
 	if (rc < 0) { errc(1, ed_ecode(rc), "failed to read object file"); }
 
 	rc = ed_cache_open(&cache, &cfg);
-	if (rc < 0) { errx(1, "failed to open: %s", ed_strerror(rc)); }
+	if (rc < 0) { errx(1, "failed to open index '%s': %s", cfg.index_path, ed_strerror(rc)); }
 
 	attr.meta = meta.data;
 	attr.meta_size = meta.length;

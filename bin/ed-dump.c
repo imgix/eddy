@@ -54,7 +54,12 @@ print_page_array(EdPgno *pages, EdPgno n)
 	printf("[");
 	for (EdPgno i = 0; i < n; i++) {
 		if (i > 0) { printf(", "); }
-		printf("%u", pages[i]);
+		if (pages[i] == ED_PG_NONE) {
+			putc('~', stdout);
+		}
+		else {
+			printf("%u", pages[i]);
+		}
 	}
 	printf("]\n");
 }
@@ -94,6 +99,7 @@ dump_index(EdPgIdx *idx)
 			printf("- ~\n");
 			break;
 		}
+		if (c->pid <= 0 && c->npending == 0) { continue; }
 		printf("- pid: %d\n", c->pid);
 		if (c->active == 0) {
 			printf("  active: -1\n");
@@ -189,7 +195,7 @@ dump_page(EdPgno no, EdPg *pg)
 	printf("---\npage: %u\ntype: ", no);
 
 	if (pg == NULL) {
-		printf("invalid\n");
+		printf("unallocated\n");
 		return;
 	}
 
@@ -212,7 +218,7 @@ dump_page(EdPgno no, EdPg *pg)
 		if (hex < 2) { dump_gc((EdPgGc *)pg); }
 		break;
 	default:
-		printf("unknown\n");
+		printf("unused\n");
 		break;
 	}
 
