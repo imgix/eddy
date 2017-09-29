@@ -285,11 +285,11 @@ main(int argc, char **argv)
 		if (argc == 0) { errx(1, "index file path not provided"); }
 		if (argc == 1) { errx(1, "page number(s) not provided"); }
 
-		argc--;
-		argv++;
-
 		EdIdx idx;
 		EdConfig cfg = { .index_path = argv[0] };
+
+		argc--;
+		argv++;
 
 		struct {
 			EdPgno no;
