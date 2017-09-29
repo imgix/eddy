@@ -51,7 +51,7 @@ LIBSRC:= lib/cache.c \
 	lib/stat.c \
 	lib/mkfile.c \
 	lib/time.c
-BINSRC:= bin/ed-new.c bin/ed-stat.c bin/ed-get.c bin/ed-set.c
+BINSRC:= bin/ed-new.c bin/ed-stat.c bin/ed-get.c bin/ed-set.c bin/ed-dump.c
 ifeq ($(BUILD_MIME),yes)
   LIBSRC+= lib/mime.c
   BINSRC+= bin/ed-mime.c
