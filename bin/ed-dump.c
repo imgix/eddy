@@ -151,18 +151,26 @@ dump_gc(EdPgGc *gc)
 	else {
 		printf("next: %u\n", gc->next);
 	}
-	printf("lists:\n");
 
-	uint16_t head = gc->state.head;
-	uint16_t nskip = gc->state.nskip;
-	while (head <= gc->state.tail) {
-		EdPgGcList *list = (EdPgGcList *)(gc->data + head);
-		printf("- xid: %" PRIu64 "\n", list->xid);
-		printf("- npages: %u\n", list->npages);
-		printf("- pages: ");
-		print_page_array(list->pages + nskip, list->npages - nskip);
-		head += (uint16_t)ED_GC_LIST_SIZE(list->npages);
-		nskip = 0;
+	if (gc->state.nlists > 0) {
+		uint8_t *end = (uint8_t *)gc + PAGESIZE;
+		uint16_t head = gc->state.head;
+		uint16_t nskip = gc->state.nskip;
+
+		printf("lists:\n");
+		for (uint16_t i = 0; i < gc->state.nlists; i++) {
+			EdPgGcList *list = (EdPgGcList *)(gc->data + head);
+			if ((uint8_t *)list >= end) {
+				printf("- ...\n");
+				break;
+			}
+			printf("- xid: %" PRIu64 "\n", list->xid);
+			printf("- npages: %u\n", list->npages);
+			printf("- pages: ");
+			print_page_array(list->pages + nskip, list->npages - nskip);
+			head += (uint16_t)ED_GC_LIST_SIZE(list->npages);
+			nskip = 0;
+		}
 	}
 }
 
