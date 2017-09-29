@@ -81,8 +81,8 @@ dump_index(EdPgIdx *idx)
 	printf("tree: "); print_page_array(idx->tree, ed_len(idx->tree));
 	printf("xid: %" PRIu64 "\n", idx->xid);
 	printf("pos: %" PRIu64 "\n", idx->pos);
-	printf("slab_block_count: %" PRIu64 "s\n", idx->slab_block_count);
-	printf("slab_ino: %" PRIu64 "s\n", idx->slab_ino);
+	printf("slab_block_count: %" PRIu64 "\n", idx->slab_block_count);
+	printf("slab_ino: %" PRIu64 "\n", idx->slab_ino);
 	printf("slab_path: %s\n", idx->slab_path);
 	printf("active: "); print_page_array(idx->active, idx->nactive);
 	printf("conns:\n");
@@ -91,7 +91,7 @@ dump_index(EdPgIdx *idx)
 	EdConn *c = idx->conns;
 	for (int i = 0; i < idx->nconns; i++, c++) {
 		if ((uint8_t *)c + sizeof(*c) > end) {
-			printf("- ...\n");
+			printf("- ~\n");
 			break;
 		}
 		printf("- pid: %d\n", c->pid);
@@ -161,12 +161,12 @@ dump_gc(EdPgGc *gc)
 		for (uint16_t i = 0; i < gc->state.nlists; i++) {
 			EdPgGcList *list = (EdPgGcList *)(gc->data + head);
 			if ((uint8_t *)list >= end) {
-				printf("- ...\n");
+				printf("- ~\n");
 				break;
 			}
 			printf("- xid: %" PRIu64 "\n", list->xid);
-			printf("- npages: %u\n", list->npages);
-			printf("- pages: ");
+			printf("  npages: %u\n", list->npages);
+			printf("  pages: ");
 			print_page_array(list->pages + nskip, list->npages - nskip);
 			head += (uint16_t)ED_GC_LIST_SIZE(list->npages);
 			nskip = 0;
