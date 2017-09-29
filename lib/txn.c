@@ -416,7 +416,7 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 		if (rc < 0) { return (txn->error = rc); }
 	}
 
-	EdPg *pg = ed_pg_map(txn->idx->fd, no, 1);
+	EdPg *pg = ed_pg_map(txn->idx->fd, no, 1, true);
 	if (pg == MAP_FAILED) { return (txn->error = ED_ERRNO); }
 	*out = node_wrap(txn, pg, par, pidx);
 	return 0;
@@ -440,7 +440,7 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 		EdPgno nactive = hdr->nactive;
 
 		unsigned nalloc = txn->npgslot - npg;
-		int rc = ed_alloc(txn->idx, txn->pg+npg, nalloc);
+		int rc = ed_alloc(txn->idx, txn->pg+npg, nalloc, true);
 		if (rc < 0) { return (txn->error = rc); }
 
 		if (nactive + nalloc > ed_len(hdr->active)) {

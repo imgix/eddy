@@ -282,7 +282,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	if (fd < 0) { rc = ED_ERRNO; goto error; }
 
 	idx->nconns = nconns;
-	idx->hdr = hdr = ed_pg_map(fd, 0, PG_NINIT(nconns));
+	idx->hdr = hdr = ed_pg_map(fd, 0, PG_NINIT(nconns), false);
 	if (hdr == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 
 	EdPgGc *gc = (EdPgGc *)((uint8_t *)hdr + PG_ROOT_GC*PAGESIZE);
@@ -472,7 +472,7 @@ obj_set(EdObject *obj, EdObjectHdr *hdr, EdBlkno no)
 }
 
 int
-ed_idx_get(EdIdx *idx, EdObject *obj)
+ed_idx_get(EdIdx *idx, EdObject *obj, bool need)
 {
 	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
 
@@ -502,7 +502,7 @@ ed_idx_get(EdIdx *idx, EdObject *obj)
 		}
 
 		// Map the slab object.
-		EdObjectHdr *hdr = ed_pg_map(idx->slabfd, key->no, key->count);
+		EdObjectHdr *hdr = ed_pg_map(idx->slabfd, key->no, key->count, need);
 		if (hdr == MAP_FAILED) {
 			rc = ED_ERRNO;
 			ed_flck(idx->slabfd, ED_LCK_UN, off, len, idx->flags);
@@ -598,7 +598,7 @@ ed_idx_reserve(EdIdx *idx, EdObject *obj)
 	// entries in the index.
 	while (block && block->no < next && block->no >= pos) {
 		// Only the first page of the object is needed.
-		EdObjectHdr *old = ed_pg_map(idx->slabfd, block->no, 1);
+		EdObjectHdr *old = ed_pg_map(idx->slabfd, block->no, 1, true);
 		if (old == MAP_FAILED) { rc = ED_ERRNO; goto done; }
 
 		// Loop through each key entry to resolve collisions. Key comparison is not
@@ -619,7 +619,7 @@ ed_idx_reserve(EdIdx *idx, EdObject *obj)
 	}
 
 	// Map the new object header in the slab.
-	hdr = ed_pg_map(idx->slabfd, pos, next - pos);
+	hdr = ed_pg_map(idx->slabfd, pos, next - pos, true);
 	if (hdr == MAP_FAILED) {
 		rc = ED_ERRNO;
 		goto done;
@@ -630,7 +630,7 @@ ed_idx_reserve(EdIdx *idx, EdObject *obj)
 	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key); rc == 1;
 			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 		// Map the slab object.
-		EdObjectHdr *old = ed_pg_map(obj->cache->idx.slabfd, key->no, 1);
+		EdObjectHdr *old = ed_pg_map(obj->cache->idx.slabfd, key->no, 1, true);
 		if (old == MAP_FAILED) {
 			rc = ED_ERRNO;
 			goto done;
@@ -718,7 +718,8 @@ ed_idx_acquire_snapshot(EdIdx *idx, EdBpt **trees)
 	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
 	ed_idx_acquire_xid(idx);
 	for (int i = 0; i < ED_NDB; i++) {
-		if (ed_pg_load(idx->fd, (EdPg **)&trees[i], idx->hdr->tree[i]) == MAP_FAILED) {
+		if (ed_pg_load(idx->fd, (EdPg **)&trees[i], idx->hdr->tree[i], true)
+				== MAP_FAILED) {
 			int rc = ED_ERRNO;
 			for (; i >= 0; i--) {
 				if (trees[i]) { ed_pg_unmap(trees[i], 1); }

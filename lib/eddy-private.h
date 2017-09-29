@@ -254,9 +254,9 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 #define ED_PG_MAX (UINT32_MAX-1)
 #define ED_BLK_NONE UINT64_MAX
 
-ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count);
+ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count, bool need);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
-ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no);
+ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no, bool need);
 ED_LOCAL     void ed_pg_unload(EdPg **pgp);
 ED_LOCAL      int ed_pg_mark_gc(EdIdx *idx, EdStat *stat);
 
@@ -275,11 +275,12 @@ ED_LOCAL      int ed_pg_mark_gc(EdIdx *idx, EdStat *stat);
  * @param  idx  Index object
  * @param  p  Array to store allocated pages into
  * @param  n  Number of pages to allocate
+ * @param  need  Hint that the pages will be needed soon
  * @return  >0 the number of pages allocated from the tail or free list,
  *          <0 error code
  */
 ED_LOCAL int
-ed_alloc(EdIdx *idx, EdPg **, EdPgno n);
+ed_alloc(EdIdx *idx, EdPg **, EdPgno n, bool need);
 
 /**
  * @brief  Allocates and resets a page from the underlying file.
@@ -705,7 +706,7 @@ struct EdIdx {
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL  EdTxnId ed_idx_xmin(EdIdx *idx, EdTime now);
-ED_LOCAL      int ed_idx_get(EdIdx *, EdObject *obj);
+ED_LOCAL      int ed_idx_get(EdIdx *, EdObject *obj, bool need);
 ED_LOCAL      int ed_idx_reserve(EdIdx *, EdObject *obj);
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
 ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);

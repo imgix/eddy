@@ -39,7 +39,7 @@ task(void *data)
 
 	for (int x = 0; x < sets; x++) {
 		ed_idx_lock(&cache->idx, ED_LCK_EX);
-		int rc = ed_alloc(&cache->idx, p, pages);
+		int rc = ed_alloc(&cache->idx, p, pages, true);
 		if (rc < 0) { warnx("failed to allocate page: %s", ed_strerror(rc)); }
 		ed_idx_lock(&cache->idx, ED_LCK_UN);
 		if (rc < 0) { break; }

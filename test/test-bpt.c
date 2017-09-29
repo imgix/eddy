@@ -53,7 +53,7 @@ verify_tree(int fd, EdPgno no, bool tryprint)
 	if (p && strcmp(p, "1") == 0) { return 0; }
 
 	EdBpt *bt = NULL;
-	if (ed_pg_load(fd, (EdPg **)&bt, no) == MAP_FAILED) {
+	if (ed_pg_load(fd, (EdPg **)&bt, no, true) == MAP_FAILED) {
 		return ED_ERRNO;
 	}
 	int rc = ed_bpt_verify(bt, idx.fd, sizeof(Entry), stderr);

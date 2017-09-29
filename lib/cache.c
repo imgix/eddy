@@ -91,7 +91,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 	obj->key = (uint8_t *)key;
 	obj->keylen = len;
 
-	int rc = ed_idx_get(&cache->idx, obj);
+	int rc = ed_idx_get(&cache->idx, obj, false);
 	if (rc <= 0) {
 		free(obj);
 		obj = NULL;

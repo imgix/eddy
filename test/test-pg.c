@@ -38,11 +38,11 @@ test_basic(void)
 	EdPg *pages[8];
 	EdPgno pgno[ed_len(pages)];
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), false), ed_len(pages));
 	copy_pgno(pages, pgno, ed_len(pages));
 	mu_assert_int_eq(ed_free(&idx, 0, pages, ed_len(pages)), 0);
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), false), ed_len(pages));
 	// This is actually guaranteed, but for the moment it does test the alloc/free
 	// interaction as expected.
 	for (size_t i = 0; i < ed_len(pages); i++) {
@@ -64,7 +64,7 @@ test_gc(void)
 	EdPg *pages[8];
 	EdPgno pgno[ed_len(pages)];
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), false), ed_len(pages));
 	copy_pgno(pages, pgno, ed_len(pages));
 
 	idx.hdr->xid = 1;
@@ -76,7 +76,7 @@ test_gc(void)
 	idx.hdr->xid = 2;
 	ed_idx_acquire_xid(&idx);
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), false), ed_len(pages));
 	for (size_t i = 0; i < ed_len(pages); i++) {
 		for (size_t j = 0; j < ed_len(pages); j++) {
 			mu_assert_uint_ne(pages[i]->no, pgno[j]);
@@ -85,7 +85,7 @@ test_gc(void)
 	mu_assert_int_eq(ed_free(&idx, 3, pages, ed_len(pages)), 0);
 	idx.hdr->xid = 3;
 
-	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages)), ed_len(pages));
+	mu_assert_int_eq(ed_alloc(&idx, pages, ed_len(pages), false), ed_len(pages));
 	for (size_t i = 0; i < ed_len(pages); i++) {
 		for (size_t j = ed_len(pages)/2; j < ed_len(pages); j++) {
 			mu_assert_uint_ne(pages[i]->no, pgno[j]);

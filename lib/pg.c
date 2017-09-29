@@ -6,13 +6,19 @@ _Static_assert(offsetof(EdPgGc, data) % ed_alignof(EdPgGcList) == 0,
 		"EdPgGc data not properly aligned");
 
 void *
-ed_pg_map(int fd, EdPgno no, EdPgno count)
+ed_pg_map(int fd, EdPgno no, EdPgno count, bool need)
 {
 	if (no == ED_PG_NONE) {
 		errno = EINVAL;
 		return MAP_FAILED;
 	}
-	void *p = mmap(NULL, (size_t)count*PAGESIZE, PROT_READ|PROT_WRITE, MAP_SHARED,
+	int flags = MAP_SHARED;
+#ifdef MAP_POPULATE
+	if (need) { flags |= MAP_POPULATE; }
+#else
+	(void)need;
+#endif
+	void *p = mmap(NULL, (size_t)count*PAGESIZE, PROT_READ|PROT_WRITE, flags,
 			fd, (off_t)no*PAGESIZE);
 #ifdef ED_MMAP_DEBUG
 	if (p != MAP_FAILED) { ed_pg_track(no, p, count); }
@@ -30,7 +36,7 @@ ed_pg_unmap(void *p, EdPgno count)
 }
 
 void *
-ed_pg_load(int fd, EdPg **pgp, EdPgno no)
+ed_pg_load(int fd, EdPg **pgp, EdPgno no, bool need)
 {
 	EdPg *pg = *pgp;
 	if (pg != NULL) {
@@ -41,7 +47,7 @@ ed_pg_load(int fd, EdPg **pgp, EdPgno no)
 		*pgp = pg = NULL;
 	}
 	else {
-		pg = ed_pg_map(fd, no, 1);
+		pg = ed_pg_map(fd, no, 1, need);
 		*pgp = pg == MAP_FAILED ? NULL : pg;
 	}
 	return pg;
@@ -71,7 +77,7 @@ map_live_pages(EdIdx *idx, EdPgno no, EdPg **p, EdPgno n)
 {
 	if (n == 0) { return 0; }
 
-	uint8_t *pages = ed_pg_map(idx->fd, no, n);
+	uint8_t *pages = ed_pg_map(idx->fd, no, n, true);
 	if (pages == MAP_FAILED) { return ED_ERRNO; }
 	for (EdPgno i = 0; i < n; i++, pages += PAGESIZE) {
 		EdPg *live = (EdPg *)pages;
@@ -87,11 +93,12 @@ map_live_pages(EdIdx *idx, EdPgno no, EdPg **p, EdPgno n)
  * @param  no  Sorted array of page numbers
  * @param  p  Array to store mapped pages into
  * @param  n  Number of pages to map
+ * @param  need  Hint that the pages will be needed soon
  * @return  >0 if all pages successfully mapped,
  *          <0 error code
  */
 static int
-map_sorted_pages(EdIdx *idx, EdPgno *no, EdPg **p, EdPgno n)
+map_sorted_pages(EdIdx *idx, EdPgno *no, EdPg **p, EdPgno n, bool need)
 {
 	if (n == 0) { return 0; }
 
@@ -99,7 +106,7 @@ map_sorted_pages(EdIdx *idx, EdPgno *no, EdPg **p, EdPgno n)
 	EdPgno mapped = 0;
 	for (EdPgno i = 1; i <= n; i++) {
 		if (i == n || no[i] != no[i-1] + 1) {
-			uint8_t *pages = ed_pg_map(idx->fd, no[mapped], i - mapped);
+			uint8_t *pages = ed_pg_map(idx->fd, no[mapped], i - mapped, need);
 			if (pages == MAP_FAILED) { rc = ED_ERRNO; goto error; }
 			for (; mapped < i; mapped++, pages += PAGESIZE) {
 				p[mapped] = (EdPg *)pages;
@@ -299,7 +306,7 @@ gc_unmap(EdIdx *idx, EdPgGc *gc)
 int
 ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
 {
-	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head);
+	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head, true);
 	if (gc == MAP_FAILED) { return ED_ERRNO; }
 
 	int rc = ed_stat_mark(stat, gc->base.no);
@@ -320,7 +327,7 @@ ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
 
 		EdPgGc *next = NULL;
 		if (gc->next != ED_PG_NONE) {
-			next = ed_pg_map(idx->fd, gc->next, 1);
+			next = ed_pg_map(idx->fd, gc->next, 1, true);
 			if (next == MAP_FAILED) {
 				rc = ED_ERRNO;
 				break;
@@ -337,12 +344,13 @@ ed_pg_mark_gc(EdIdx *idx, EdStat *stat)
 }
 
 int
-ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
+ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg, bool need)
 {
 	if (npg == 0) { return 0; }
 	if (npg > 1024) { return ed_esys(EINVAL); }
 
-	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head, idx->hdr->gc_head);
+	EdPgGc *gc = ed_pg_load(idx->fd, (EdPg **)&idx->gc_head,
+			idx->hdr->gc_head, true);
 	if (gc == MAP_FAILED) { return ED_ERRNO; }
 
 	int rc = 0;
@@ -372,7 +380,7 @@ ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
 
 			// The gc variable can safely be overwritten, but the new value will need
 			// to be moved into the index once all #pgno pages have been mapped.
-			gc = ed_pg_map(idx->fd, gc->next, 1);
+			gc = ed_pg_map(idx->fd, gc->next, 1, true);
 			if (gc == MAP_FAILED) {
 				rc = ED_ERRNO;
 				goto error;
@@ -417,7 +425,7 @@ ed_alloc(EdIdx *idx, EdPg **pg, EdPgno npg)
 
 	// Sort the collected page numbers so sequential pages can be mapped together.
 	qsort(pgno, npgno, sizeof(pgno[0]), pg_cmp);
-	rc = map_sorted_pages(idx, pgno, pg + nrecycle, npgno);
+	rc = map_sorted_pages(idx, pgno, pg + nrecycle, npgno, need);
 	if (rc < 0) { goto error; }
 	nmap = (EdPgno)rc;
 
@@ -472,7 +480,7 @@ ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *pg, EdPgno n)
 	}
 #endif
 
-	EdPgGc *tail = ed_pg_load(idx->fd, (EdPg **)&idx->gc_tail, idx->hdr->gc_tail);
+	EdPgGc *tail = ed_pg_load(idx->fd, (EdPg **)&idx->gc_tail, idx->hdr->gc_tail, true);
 	if (tail == MAP_FAILED) { return ED_ERRNO; }
 	gc_check(tail, pg, n);
 
@@ -505,7 +513,7 @@ ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *pg, EdPgno n)
 	if (alloc_pages > 0) {
 		new = alloca(sizeof(*new) * alloc_pages);
 		if (new == NULL) { return ED_ERRNO; }
-		int rc = ed_alloc(idx, (EdPg **)new, alloc_pages);
+		int rc = ed_alloc(idx, (EdPg **)new, alloc_pages, true);
 		if (rc < 0) { return rc; }
 	}
 

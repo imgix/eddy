@@ -874,7 +874,7 @@ bpt_mark_children(EdIdx *idx, EdStat *stat, EdBpt *brch, int depth, int *max)
 		int rc = ed_stat_mark(stat, no);
 		if (rc < 0) { return rc; }
 		if (depth < *max) {
-			EdBpt *chld = ed_pg_map(idx->fd, no, 1);
+			EdBpt *chld = ed_pg_map(idx->fd, no, 1, true);
 			if (chld == MAP_FAILED) { return ED_ERRNO; }
 			if (chld->base.type == ED_PG_LEAF) {
 				*max = depth;
@@ -1020,7 +1020,7 @@ print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool 
 	print_box(out, n, n, stack, top);
 
 	if (leaf->next != ED_PG_NONE) {
-		EdBpt *next = ed_pg_map(fd, leaf->next, 1);
+		EdBpt *next = ed_pg_map(fd, leaf->next, 1, true);
 		print_tree(out, stack, top-1);
 		fprintf(out, "= %llu, ", ed_fetch64(next->data));
 		print_leaf(fd, esize, next, out, print, stack, top);
@@ -1066,7 +1066,7 @@ print_node(int fd, size_t esize, EdBpt *t, FILE *out, EdBptPrint print, bool *st
 static void
 print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBptPrint print, bool *stack, int top)
 {
-	EdBpt *t = ed_pg_map(fd, ed_fetch32(p), 1);
+	EdBpt *t = ed_pg_map(fd, ed_fetch32(p), 1, true);
 	if (t == MAP_FAILED) {
 		fprintf(out, "MAP FAILED (%s)\n", strerror(errno));
 		return;
@@ -1128,7 +1128,7 @@ verify_node(int fd, size_t esize, EdBpt *t, FILE *out, uint64_t min, uint64_t ma
 			return -1;
 		}
 
-		chld = ed_pg_map(fd, ed_fetch32(p), 1);
+		chld = ed_pg_map(fd, ed_fetch32(p), 1, true);
 		if (chld == MAP_FAILED) { return ED_ERRNO; }
 		rc = verify_node(fd, esize, chld, out, nmin, nmax - 1);
 		ed_pg_unmap(chld, 1);
@@ -1136,7 +1136,7 @@ verify_node(int fd, size_t esize, EdBpt *t, FILE *out, uint64_t min, uint64_t ma
 		nmin = nmax;
 	}
 
-	chld = ed_pg_map(fd, ed_fetch32(p), 1);
+	chld = ed_pg_map(fd, ed_fetch32(p), 1, true);
 	if (chld == MAP_FAILED) { return ED_ERRNO; }
 	rc = verify_node(fd, esize, chld, out, nmin, max);
 	ed_pg_unmap(chld, 1);

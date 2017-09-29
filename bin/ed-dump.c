@@ -329,7 +329,7 @@ main(int argc, char **argv)
 			EdPgno npages = idx.hdr->tail_start + idx.hdr->tail_count;
 			for (int i = 0; i < argc; i++) {
 				if (pages[i].no >= npages) { continue; }
-				EdPg *pg = ed_pg_map(idx.fd, pages[i].no, 1);
+				EdPg *pg = ed_pg_map(idx.fd, pages[i].no, 1, true);
 				if (pg != MAP_FAILED) {
 					pages[i].pg = (EdPg *)(in.data + i*PAGESIZE);
 					memcpy(in.data + i*PAGESIZE, pg, PAGESIZE);
