@@ -525,6 +525,9 @@ ed_idx_get(EdIdx *idx, EdObject *obj, bool need)
 		ed_pg_unmap(hdr, key->count);
 	}
 	ed_txn_close(&idx->txn, idx->flags|ED_FRESET);
+	if (rc == 1) {
+		madvise(obj->hdr, obj->count*PAGESIZE, MADV_SEQUENTIAL);
+	}
 	return rc < 0 ? rc : set;
 }
 
@@ -680,6 +683,9 @@ done:
 			ed_flck(idx->slabfd, ED_LCK_UN, off, len, idx->flags);
 		}
 		ed_txn_close(&idx->txn, idx->flags|ED_FRESET);
+	}
+	else {
+		madvise(obj->hdr, obj->count*PAGESIZE, MADV_SEQUENTIAL);
 	}
 	return rc;
 }
