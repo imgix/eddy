@@ -18,9 +18,10 @@ ifeq ($(BUILD),release)
   OPT?= 3
   LTO?= yes
 else
-  BUILD_DEV?= yes
+  DEBUG_MMAP?= yes
+  DEBUG_FAULT?= yes
   LTO?= no
-  SANITIZE?= address,undefined
+  SANITIZE?= address
 endif
 ifdef OPT
   CFLAGS?= -O$(OPT) -DNDEBUG
