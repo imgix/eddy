@@ -41,12 +41,16 @@
 #include <sys/mman.h>
 #include <errno.h>
 
+#ifndef MU_OUT
+# define MU_OUT stderr
+#endif
+
 struct mu_counts {
 	uintptr_t asserts, failures;
 };
 
 static const char *mu_name = "test";
-static int mu_register, mu_main = -1;
+static int mu_register, mu_main_pid = -1, mu_test_pid = -1;
 static bool mu_fork = true, mu_tty;
 static const char *mu_skip, *mu_run;
 static struct mu_counts mu_counts_start, *mu_counts = &mu_counts_start;
@@ -75,7 +79,7 @@ mu_count_failure (void)
 
 #define mu_fail(...) do { \
 	mu_count_failure (); \
-	fprintf (stderr, __FILE__ ":" MU_STR(__LINE__) " " __VA_ARGS__); \
+	fprintf (MU_OUT, __FILE__ ":" MU_STR(__LINE__) ": " __VA_ARGS__); \
 	exit (0); \
 } while (0);
 
@@ -164,7 +168,7 @@ mu_final (void)
 	int rc;
 	if (fails == 0) {
 #if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_PASS_SUMMARY)
-		fprintf (stderr, "%8s: %s %" PRIuPTR " assertion%s\n",
+		fprintf (MU_OUT, "%8s: %s %" PRIuPTR " assertion%s\n",
 				name,
 				passed[mu_tty],
 				asserts,
@@ -177,7 +181,7 @@ mu_final (void)
 	}
 	else {
 #if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_FAIL_SUMMARY)
-		fprintf (stderr, "%8s: %s %" PRIuPTR " of %" PRIuPTR " assertion%s\n",
+		fprintf (MU_OUT, "%8s: %s %" PRIuPTR " of %" PRIuPTR " assertion%s\n",
 				name,
 				failed[mu_tty],
 				fails,
@@ -189,6 +193,7 @@ mu_final (void)
 #endif
 		rc = EXIT_FAILURE;
 	}
+	fflush (MU_OUT);
 	fflush (stderr);
 	fflush (stdout);
 	return rc;
@@ -197,7 +202,13 @@ mu_final (void)
 static bool
 mu_ismain(void)
 {
-	return mu_main == getpid();
+	return mu_main_pid == getpid();
+}
+
+static bool
+mu_istest(void)
+{
+	return mu_test_pid == getpid();
 }
 
 static void
@@ -210,11 +221,11 @@ static void
 mu_setup (void)
 {
 	if (__sync_bool_compare_and_swap (&mu_register, 0, 1)) {
-		mu_main = getpid();
+		mu_main_pid = getpid();
 		mu_counts = mmap (NULL, 4096,
 				PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if (mu_counts == MAP_FAILED) {
-			fprintf (stderr, "failed mmap: %s\n", strerror (errno));
+			fprintf (MU_OUT, "failed mmap: %s\n", strerror (errno));
 			exit (1);
 		}
 		if (getenv ("MU_NOFORK") != NULL) { mu_fork = false; }
@@ -246,6 +257,17 @@ mu__match (const char *list, const char *name)
 }
 
 static void __attribute__ ((unused))
+mu__invoke (void (*fn) (void))
+{
+	mu_test_pid = getpid ();
+	fn ();
+	if (mu_istest ()) {
+		mu_teardown ();
+		mu_teardown = mu_noop;
+	}
+}
+
+static void __attribute__ ((unused))
 mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 {
 	mu_setup ();
@@ -253,24 +275,18 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 	if (mu_skip != NULL && mu__match (mu_skip, fname)) { return; }
 	if (mu_run != NULL && !mu__match (mu_run, fname)) { return; }
 	if (!mu_fork) {
-		fn ();
-		if (mu_ismain()) {
-			mu_teardown ();
-			mu_teardown = mu_noop;
-		}
+		mu__invoke (fn);
 	}
 	else {
 		int stat = 0, exitstat = 0, termsig = 0;
 		pid_t pid = fork ();
 		if (pid < 0) {
-			fprintf (stderr, "%s:%d: %s failed fork '%s'\n",
+			fprintf (MU_OUT, "%s:%d: %s failed fork '%s'\n",
 					file, line, fname, strerror (errno));
 			exit (1);
 		}
 		if (pid == 0) {
-			fn ();
-			mu_teardown ();
-			mu_teardown = mu_noop;
+			mu__invoke (fn);
 			exit (0);
 		}
 		else {
@@ -278,7 +294,7 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 				pid_t p = waitpid (pid, &stat, 0);
 				if (p >= 0) { break; }
 				if (p < 0 && errno != EINTR) {
-					fprintf (stderr, "%s:%d: %s failed waitpid '%s'\n",
+					fprintf (MU_OUT, "%s:%d: %s failed waitpid '%s'\n",
 							file, line, fname, strerror (errno));
 					exit (1);
 				}
@@ -286,12 +302,12 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 		}
 		if (WIFEXITED (stat) && (exitstat = WEXITSTATUS (stat))) {
 			mu_count_failure ();
-			fprintf (stderr, "%s:%d: %s non-zero exit (%d)\n",
+			fprintf (MU_OUT, "%s:%d: %s non-zero exit (%d)\n",
 					file, line, fname, exitstat);
 		}
 		if (WIFSIGNALED (stat) && (termsig = WTERMSIG (stat))) {
 			mu_count_failure ();
-			fprintf (stderr, "%s:%d: %s recieved signal (%d)\n",
+			fprintf (MU_OUT, "%s:%d: %s recieved signal (%d)\n",
 					file, line, fname, termsig);
 		}
 	}
