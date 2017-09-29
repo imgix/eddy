@@ -39,6 +39,18 @@ ed_ttl_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at)
 	return ttl < 0 ? 0 : ttl;
 }
 
+EdTimeUnix
+ed_unix_from_ttl_at(EdTimeTTL ttl, EdTimeUnix at)
+{
+	return ttl < 0 ? -1 : ttl + at;
+}
+
+EdTimeUnix
+ed_unix_from_ttl(EdTimeTTL ttl)
+{
+	return ed_unix_from_ttl_at(ttl, ed_now_unix());
+}
+
 bool
 ed_expired_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at)
 {

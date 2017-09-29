@@ -822,6 +822,12 @@ ed_expiry_at(EdTimeUnix epoch, EdTimeTTL ttl, EdTimeUnix at);
 ED_LOCAL EdTimeTTL
 ed_ttl_at(EdTimeUnix epoch, EdTime exp, EdTimeUnix at);
 
+ED_LOCAL EdTimeUnix
+ed_unix_from_ttl_at(EdTimeTTL ttl, EdTimeUnix at);
+
+ED_LOCAL EdTimeUnix
+ed_unix_from_ttl(EdTimeTTL ttl);
+
 /**
  * @brief  Tests if the internal time is expired against the a UNIX time
  * @param  epoch  The internal epoch as a UNIX timestamp
@@ -973,7 +979,7 @@ struct EdCache {
 
 struct EdObject {
 	EdCache *    cache;
-	time_t       expiry;
+	EdTimeUnix   expiry;
 	uint8_t *    data;
 	uint8_t *    key;
 	uint8_t *    meta;
