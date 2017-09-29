@@ -1,4 +1,4 @@
-#include "eddy-private.h"
+#include "../lib/eddy-private.h"
 
 #include <getopt.h>
 #include <err.h>
@@ -9,7 +9,7 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-n] PATH\n"
+			"usage: %s [-n] index\n"
 			"\n"
 			"about:\n"
 			"  Reports on the status of the cache. Outputs information in YAML.\n"

@@ -1,4 +1,4 @@
-#include "eddy-mime.h"
+#include "../lib/eddy-mime.h"
 
 #include <string.h>
 #include <getopt.h>
@@ -10,7 +10,7 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-p] [-d PATH] [PATH...]\n"
+			"usage: %s [-p] [-d db] [file ...]\n"
 			"       %s -l\n"
 			"\n"
 			"about:\n"
@@ -19,7 +19,7 @@ usage(const char *prog)
 			"options:\n"
 			"  -p        include parent mime types\n"
 			"  -l        list mime types with magic matches and exit\n"
-			"  -d PATH   path to mime.cache file\n"
+			"  -d db     path to mime.cache file\n"
 			,
 			name, name);
 }

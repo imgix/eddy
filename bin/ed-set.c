@@ -1,4 +1,4 @@
-#include "eddy-private.h"
+#include "../lib/eddy-private.h"
 #include "input.h"
 
 #include <getopt.h>
@@ -10,14 +10,14 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-e TTL] [-m FILE] PATH KEY [FILE]\n"
+			"usage: %s [-e ttl] [-m meta] index key {file | <file}\n"
 			"\n"
 			"about:\n"
 			"  Sets the contents of an object in the cache from stdin or a file.\n"
 			"\n"
 			"options:\n"
-			"  -e TTL    set the time-to-live in seconds\n"
-			"  -m FILE   set the object meta data from the contents of a file\n"
+			"  -e ttl    set the time-to-live in seconds\n"
+			"  -m meta   set the object meta data from the contents of a file\n"
 			,
 			name);
 }

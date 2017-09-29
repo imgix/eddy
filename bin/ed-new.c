@@ -1,4 +1,4 @@
-#include "eddy-private.h"
+#include "../lib/eddy-private.h"
 #include "parse_size.h"
 
 // TODO: round new size to PAGESIZE
@@ -14,7 +14,7 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-v] [-f] [-c] [-r] [-s SIZE[k|m|g|t|p]] [-S PATH] PATH\n"
+			"usage: %s [-v] [-f] [-c] [-r] [-s size[k|m|g|t|p]] [-S slab] index\n"
 			"\n"
 			"about:\n"
 			"  Creates a new cache index and slab.\n"
@@ -24,8 +24,8 @@ usage(const char *prog)
 			"  -f        force creation of a new cache file\n"
 			"  -c        track crc32 checksums\n"
 			"  -r        create a RAM disk for the slab\n"
-			"  -s SIZE   size of the file (default " DEFAULT_SIZE ")\n"
-			"  -S PATH   path to slab file (default is the index path with \"-slab\" suffix)\n"
+			"  -s size   size of the file (default " DEFAULT_SIZE ")\n"
+			"  -S slab   path to slab file (default is the index path with \"-slab\" suffix)\n"
 			"\n"
 			"Sizes are expressed as numbers with optional size modifiers.\n"
 			"Supported size modifiers are:\n"

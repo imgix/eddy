@@ -1,4 +1,4 @@
-#include "eddy-private.h"
+#include "../lib/eddy-private.h"
 
 #include <getopt.h>
 #include <err.h>
@@ -12,17 +12,17 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s [-t THREADS] [-p PAGES] [-s SETS] [-l PAGES] [-w USEC] PATH\n"
+			"usage: %s [-t nthreads] [-p npages] [-s nsets] [-l npages] [-w μsec] PATH\n"
 			"\n"
 			"about:\n"
 			"  Fiddles with the index page allocator. Generally its best not to run this.\n"
 			"\n"
 			"options:\n"
-			"  -t THREADS  number of threads to run (default 1)\n"
-			"  -p PAGES    number of pages to allocate and free per set (default %ld, max %u)\n"
-			"  -s SETS     number of sets to perform (default %ld)\n"
-			"  -l PAGES    number of pages to \"lose\" (default %ld)\n"
-			"  -w USEC     hold on to the pages for some microseconds (default %ld)\n"
+			"  -t nthreads  number of threads to run (default 1)\n"
+			"  -p npages    number of pages to allocate and free per set (default %ld, max %u)\n"
+			"  -s nsets     number of sets to perform (default %ld)\n"
+			"  -l npages    number of pages to \"lose\" (default %ld)\n"
+			"  -w μsec      hold on to the pages for some microseconds (default %ld)\n"
 			,
 			name,
 			pages, UINT16_MAX,

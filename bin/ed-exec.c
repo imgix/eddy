@@ -11,7 +11,7 @@ usage(const char *prog)
 	const char *name = strrchr(prog, '/');
 	name = name ? name + 1 : prog;
 	fprintf(stderr,
-			"usage: %s COUNT PROG [...ARGS]\n"
+			"usage: %s nprog prog [args ...]\n"
 			"\n"
 			"about:\n"
 			"  Executes multiple copies of a program in parallel.\n"
