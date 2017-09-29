@@ -318,6 +318,10 @@ main(void)
 {
 	mu_init("fault");
 
+#if !ED_FAULT
+	return 0;
+#endif
+
 	int fd = open(cfg.slab_path, O_CREAT|O_RDWR, 0640);
 	mu_assert_msg(fd >= 0, "failed to open slab: %s\n", strerror(errno));
 

@@ -11,7 +11,7 @@ static EdConfig cfg = {
 static void
 cleanup(void)
 {
-	//unlink(cfg.index_path);
+	unlink(cfg.index_path);
 #if ED_MMAP_DEBUG
 	mu_assert_int_eq(ed_pg_check(), 0);
 #endif
