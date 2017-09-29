@@ -8,7 +8,19 @@ struct EdInput {
 
 #define ed_input_make() ((EdInput){ NULL, 0, false })
 
-static int
+static int __attribute__((unused))
+ed_input_new(EdInput *in, size_t size)
+{
+	uint8_t *m = mmap(NULL, size,
+			PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+	if (m == MAP_FAILED) { return ED_ERRNO; }
+	in->data = m;
+	in->length = size;
+	in->mapped = true;
+	return 0;
+}
+
+static int __attribute__((unused))
 ed_input_read(EdInput *in, int fd, off_t max)
 {
 	struct stat sbuf;
@@ -56,7 +68,7 @@ done_rc:
 	return rc;
 }
 
-static int
+static int __attribute__((unused))
 ed_input_fread(EdInput *in, const char *path, off_t max)
 {
 	if (path == NULL || strcmp(path, "-") == 0) {
