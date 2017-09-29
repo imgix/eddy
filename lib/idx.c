@@ -652,6 +652,9 @@ ed_idx_reserve(EdIdx *idx, EdObject *obj)
 		goto done;
 	}
 
+	// Add the next write position to the transaction.
+	ed_txn_set_block(idx->txn, next);
+
 	// Commit changes and initialize the new header.
 	rc = ed_txn_commit(&idx->txn, idx->flags|ED_FRESET);
 	if (rc >= 0) {
