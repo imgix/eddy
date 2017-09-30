@@ -103,6 +103,10 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 int
 ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 {
+	// TODO: this needs to be a three-stage write.
+	// 1) find writable location and kick out entries there
+	// 2) write contents to slab
+	// 3) on close upsert the key and slab position
 	EdObject *obj = calloc(1, sizeof(*obj));
 	if (obj == NULL) { return ED_ERRNO; }
 

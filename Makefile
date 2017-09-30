@@ -56,6 +56,7 @@ BINSRC:= bin/ed-new.c bin/ed-stat.c bin/ed-get.c bin/ed-set.c bin/ed-dump.c
 ifeq ($(BUILD_MIME),yes)
   LIBSRC+= lib/mime.c
   BINSRC+= bin/ed-mime.c
+  CFLAGS+= -DED_MIME=1
   ifeq ($(BUILD_MIMEDB),yes)
     LIBSRC+= lib/mimedb.c
     CFLAGS+= -DED_MIMEDB=1
