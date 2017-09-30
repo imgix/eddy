@@ -428,12 +428,22 @@ ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 	unsigned npg = txn->npg;
 	if (txn->npgused == npg) {
 		if (txn->npgslot == npg) {
-			unsigned npgslot = ed_len(txn->db)*5;
-			npgslot = ED_ALIGN_SIZE(npg+1, npgslot);
-			EdPg **pg = realloc(txn->pg, npgslot*sizeof(pg[0]));
-			if (pg == NULL) { return (txn->error = ED_ERRNO); }
-			txn->pg = pg;
-			txn->npgslot = npgslot;
+			// Try to ease into the page array size. This keeps the page allocation
+			// cache small when the transaction is only used a few times. However,
+			// if the transaction keeps getting reused, the buffer will expand. This
+			// helps to balance the needs of single-use transactions--such as the
+			// command line tools--with long-lived processes.
+			if (npg > 0 && npg < ed_len(txn->db)*5) {
+				txn->npgslot += ed_len(txn->db);
+			}
+			else {
+				unsigned npgslot = ed_len(txn->db)*5;
+				npgslot = ED_ALIGN_SIZE(npg+1, npgslot);
+				EdPg **pg = realloc(txn->pg, npgslot*sizeof(pg[0]));
+				if (pg == NULL) { return (txn->error = ED_ERRNO); }
+				txn->pg = pg;
+				txn->npgslot = npg ? npgslot : ed_len(txn->db);
+			}
 		}
 
 		EdPgIdx *hdr = txn->idx->hdr;
