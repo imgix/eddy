@@ -51,7 +51,7 @@ struct mu_counts {
 
 static const char *mu_name = "test";
 static int mu_register, mu_main_pid = -1, mu_test_pid = -1;
-static bool mu_fork = true, mu_tty;
+static bool mu_fork = true, mu_verbose = false, mu_tty = false;
 static const char *mu_skip, *mu_run;
 static struct mu_counts mu_counts_start, *mu_counts = &mu_counts_start;
 
@@ -228,9 +228,12 @@ mu_setup (void)
 			fprintf (MU_OUT, "failed mmap: %s\n", strerror (errno));
 			exit (1);
 		}
-		if (getenv ("MU_NOFORK") != NULL) { mu_fork = false; }
+		const char *nofork = getenv ("MU_NOFORK");
+		const char *verbose = getenv ("MU_VERBOSE");
 		mu_skip = getenv ("MU_SKIP");
 		mu_run = getenv ("MU_RUN");
+		mu_fork = !nofork || strcmp(nofork, "1");
+		mu_verbose = verbose && !strcmp(verbose, "1");
 		mu_tty = isatty (STDERR_FILENO);
 		memcpy (mu_counts, &mu_counts_start, sizeof (mu_counts_start));
 		atexit (mu_exit);
@@ -274,6 +277,9 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 
 	if (mu_skip != NULL && mu__match (mu_skip, fname)) { return; }
 	if (mu_run != NULL && !mu__match (mu_run, fname)) { return; }
+	if (mu_verbose) {
+		fprintf (MU_OUT, "running %s #%s (%s:%d)...\n", mu_name, fname, file, line);
+	}
 	if (!mu_fork) {
 		mu__invoke (fn);
 	}
