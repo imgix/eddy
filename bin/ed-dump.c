@@ -9,6 +9,7 @@ static int hex = 0;
 static bool raw = false;
 static EdPgno skip[64], nskip = 0;
 static EdPgno include[64], ninclude = 0;
+static EdTimeUnix epoch;
 
 static void
 usage(const char *prog)
@@ -18,6 +19,7 @@ usage(const char *prog)
 	fprintf(stderr,
 			"usage: %s [-rx] index page1 [page2 ...]\n"
 			"       %s [-rx] [-i pgno] [-s pgno] <raw\n"
+			"       %s {-k | -b }\n"
 			"\n"
 			"about:\n"
 			"  Prints information about pages in the index.\n"
@@ -27,8 +29,10 @@ usage(const char *prog)
 			"  -s pgno   skip the page number in the output\n"
 			"  -r        output the raw page(s)\n"
 			"  -x        include a hex dump of the page\n"
+			"  -k        print the key b+tree\n"
+			"  -b        print the slab block b+tree\n"
 			,
-			name, name);
+			name, name, name);
 }
 
 static bool
@@ -254,13 +258,155 @@ parse_pgno(const char *arg)
 	return (EdPgno)no;
 }
 
+static int
+read_raw(void)
+{
+	EdInput in;
+	int rc = ed_input_read(&in, STDIN_FILENO, PAGESIZE * ED_PG_MAX);
+	if (rc < 0) { errx(1, "failed to read input: %s", ed_strerror(rc)); }
+	uint8_t *p = in.data, *pe = p + in.length;
+	for (; p < pe; p += PAGESIZE) {
+		EdPg *pg = (EdPg *)p;
+		dump_page(pg->no, pg);
+	}
+	ed_input_final(&in);
+	return 0;
+}
+
+static int
+read_pages(int argc, char **argv)
+{
+	if (argc == 0) { errx(1, "index file path not provided"); }
+	if (argc == 1) { errx(1, "page number(s) not provided"); }
+
+	EdConfig cfg = { .index_path = argv[0] };
+	EdInput in;
+	EdIdx idx;
+	int rc;
+
+	argc--;
+	argv++;
+
+	struct {
+		EdPgno no;
+		EdPg *pg;
+	} pages[argc];
+
+	for (int i = 0; i < argc; i++) {
+		pages[i].no = parse_pgno(argv[i]);
+		pages[i].pg = NULL;
+	}
+
+	rc = ed_input_new(&in, argc * PAGESIZE);
+	if (rc < 0) { errx(1, "mmap failed: %s", ed_strerror(rc)); }
+
+	rc = ed_idx_open(&idx, &cfg);
+	if (rc < 0) { errx(1, "failed to open: %s", ed_strerror(rc)); }
+
+	rc = ed_idx_lock(&idx, ED_LCK_EX);
+	if (rc < 0) {
+		warnx("failed to lock: %s", ed_strerror(rc));
+	}
+	else {
+		EdPgno npages = idx.hdr->tail_start + idx.hdr->tail_count;
+		for (int i = 0; i < argc; i++) {
+			if (pages[i].no >= npages) { continue; }
+			EdPg *pg = ed_pg_map(idx.fd, pages[i].no, 1, true);
+			if (pg != MAP_FAILED) {
+				pages[i].pg = (EdPg *)(in.data + i*PAGESIZE);
+				memcpy(in.data + i*PAGESIZE, pg, PAGESIZE);
+				ed_pg_unmap(pg, 1);
+			}
+		}
+		ed_idx_lock(&idx, ED_LCK_UN);
+	}
+
+	ed_idx_close(&idx);
+
+	if (rc >= 0) {
+		for (int i = 0; i < argc; i++) {
+			dump_page(pages[i].no, pages[i].pg);
+		}
+	}
+
+	ed_input_final(&in);
+	return rc;
+}
+
+static int
+print_key(const void *ent, char *buf, size_t len)
+{
+	const EdEntryKey *k = ent;
+	return snprintf(buf, len, "%016" PRIx64 "@%" PRIx64 "#%" PRIx32,
+			k->hash, k->no, k->count);
+}
+
+static int
+print_block(const void *ent, char *buf, size_t len)
+{
+	const EdEntryBlock *b = ent;
+	return snprintf(buf, len, "@%" PRIx64 "#%" PRIx32 " %ld",
+			b->no, b->count, ed_ttl_at(epoch, b->exp, ed_now_unix()));
+}
+
+static int
+print_trees(int argc, char **argv, bool key, bool block)
+{
+	if (argc == 0) { errx(1, "index file path not provided"); }
+
+	EdConfig cfg = { .index_path = argv[0] };
+	EdIdx idx;
+	EdTxn *txn = NULL;
+	int rc;
+
+	rc = ed_idx_open(&idx, &cfg);
+	if (rc < 0) { errx(1, "failed to open: %s", ed_strerror(rc)); }
+	epoch = idx.epoch;
+
+	rc = ed_txn_new(&txn, &idx);
+	if (rc < 0) {
+		warnx("failed to create transaction: %s", ed_strerror(rc));
+		goto done;
+	}
+
+	rc = ed_txn_open(txn, ED_FRDONLY);
+	if (rc < 0) {
+		warnx("failed to open transaction: %s", ed_strerror(rc));
+		goto done;
+	}
+
+	if (key) {
+		EdBpt *bt = NULL;
+		if (ed_pg_load(idx.fd, (EdPg **)&bt, idx.hdr->tree[ED_DB_KEYS], true) == MAP_FAILED) {
+			rc = ED_ERRNO;
+			goto done;
+		}
+		ed_bpt_print(bt, idx.fd, sizeof(EdEntryKey), stdout, print_key);
+		ed_pg_unload((EdPg **)&bt);
+	}
+	else if (block) {
+		EdBpt *bt = NULL;
+		if (ed_pg_load(idx.fd, (EdPg **)&bt, idx.hdr->tree[ED_DB_BLOCKS], true) == MAP_FAILED) {
+			rc = ED_ERRNO;
+			goto done;
+		}
+		ed_bpt_print(bt, idx.fd, sizeof(EdEntryBlock), stdout, print_block);
+		ed_pg_unload((EdPg **)&bt);
+	}
+
+done:
+	ed_txn_close(&txn, 0);
+	ed_idx_close(&idx);
+	return rc;
+}
+
 int
 main(int argc, char **argv)
 {
-	EdInput in;
 	int rc, ch;
+	bool key = false, block = false;
 
-	while ((ch = getopt(argc, argv, ":hrxi:s:")) != -1) {
+	while ((ch = getopt(argc, argv, ":hrxkbi:s:")) != -1) {
 		switch (ch) {
 		case 'i':
 			if (ninclude == ed_len(include)) {
@@ -277,6 +423,8 @@ main(int argc, char **argv)
 			nskip++;
 			break;
 		case 'r': raw = true; break;
+		case 'k': key = true; break;
+		case 'b': block = true; break;
 		case 'x': hex++; break;
 		case 'h': usage(argv[0]); return 0;
 		case '?': errx(1, "invalid option: -%c", optopt);
@@ -287,68 +435,15 @@ main(int argc, char **argv)
 	argv += optind;
 
 	if (argc == 0) {
-		rc = ed_input_read(&in, STDIN_FILENO, PAGESIZE * ED_PG_MAX);
-		if (rc < 0) { errx(1, "failed to read input: %s", ed_strerror(rc)); }
-		uint8_t *p = in.data, *pe = p + in.length;
-		for (; p < pe; p += PAGESIZE) {
-			EdPg *pg = (EdPg *)p;
-			dump_page(pg->no, pg);
-		}
+		rc = read_raw();
+	}
+	else if (key || block) {
+		rc = print_trees(argc, argv, key, block);
 	}
 	else {
-		if (argc == 0) { errx(1, "index file path not provided"); }
-		if (argc == 1) { errx(1, "page number(s) not provided"); }
-
-		EdIdx idx;
-		EdConfig cfg = { .index_path = argv[0] };
-
-		argc--;
-		argv++;
-
-		struct {
-			EdPgno no;
-			EdPg *pg;
-		} pages[argc];
-
-		for (int i = 0; i < argc; i++) {
-			pages[i].no = parse_pgno(argv[i]);
-			pages[i].pg = NULL;
-		}
-
-		rc = ed_input_new(&in, argc * PAGESIZE);
-		if (rc < 0) { errx(1, "mmap failed: %s", ed_strerror(rc)); }
-
-		rc = ed_idx_open(&idx, &cfg);
-		if (rc < 0) { errx(1, "failed to open: %s", ed_strerror(rc)); }
-
-		rc = ed_idx_lock(&idx, ED_LCK_EX);
-		if (rc < 0) {
-			warnx("failed to lock: %s", ed_strerror(rc));
-		}
-		else {
-			EdPgno npages = idx.hdr->tail_start + idx.hdr->tail_count;
-			for (int i = 0; i < argc; i++) {
-				if (pages[i].no >= npages) { continue; }
-				EdPg *pg = ed_pg_map(idx.fd, pages[i].no, 1, true);
-				if (pg != MAP_FAILED) {
-					pages[i].pg = (EdPg *)(in.data + i*PAGESIZE);
-					memcpy(in.data + i*PAGESIZE, pg, PAGESIZE);
-					ed_pg_unmap(pg, 1);
-				}
-			}
-			ed_idx_lock(&idx, ED_LCK_UN);
-		}
-
-		ed_idx_close(&idx);
-
-		if (rc >= 0) {
-			for (int i = 0; i < argc; i++) {
-				dump_page(pages[i].no, pages[i].pg);
-			}
-		}
+		rc = read_pages(argc, argv);
 	}
 
-	ed_input_final(&in);
 	return rc < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
