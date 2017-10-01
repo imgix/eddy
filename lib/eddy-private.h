@@ -76,6 +76,10 @@ typedef struct EdEntryBlock EdEntryBlock;
 typedef struct EdEntryKey EdEntryKey;
 typedef struct EdObjectHdr EdObjectHdr;
 
+typedef volatile EdPgno EdPgnoV;
+typedef volatile EdBlkno EdBlknoV;
+typedef volatile EdTxnId EdTxnIdV;
+
 
 
 /**
@@ -1054,7 +1058,7 @@ struct EdPgGcList {
 struct EdConn {
 	volatile int     pid;          /**< Process ID */
 	volatile EdTime  active;       /**< Optional time of last activity */
-	volatile EdTxnId xid;          /**< Active read transaction id */
+	EdTxnIdV     xid;              /**< Active read transaction id */
 	EdPgno       npending;         /**< Number of pages in #pending */
 	EdPgno       pending[11];      /**< Allocated pages pending reuse */
 };
@@ -1075,20 +1079,20 @@ struct EdPgIdx {
 	uint32_t     size_page;        /**< Saved system page size in bytes */
 	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
 	uint16_t     nconns;           /**< Number of process connection slots */
-	EdPgno       tail_start;       /**< Page number for the start of the tail pages */
-	EdPgno       tail_count;       /**< Number of pages available at #tail_start */
-	EdPgno       gc_head;          /**< Page pointer for the garbage collector head */
-	EdPgno       gc_tail;          /**< Page pointer for the garbage collector tail */
+	EdPgnoV      tail_start;       /**< Page number for the start of the tail pages */
+	EdPgnoV      tail_count;       /**< Number of pages available at #tail_start */
+	EdPgnoV      gc_head;          /**< Page pointer for the garbage collector head */
+	EdPgnoV      gc_tail;          /**< Page pointer for the garbage collector tail */
 	union {
 		uint64_t vtree;            /**< Atomic CAS value for the trees */
 		EdPgno   tree[4];          /**< Page pointer for the key and slab b+trees */
 	};
-	EdTxnId      xid;              /**< Global transaction ID */
-	EdBlkno      pos;              /**< Current slab write block */
+	EdTxnIdV     xid;              /**< Global transaction ID */
+	EdBlknoV     pos;              /**< Current slab write block */
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
 	uint64_t     slab_ino;         /**< Inode number of the slab */
 	char         slab_path[912];   /**< Path to the slab */
-	EdPgno       nactive;          /**< Number of pages in #active */
+	EdPgnoV      nactive;          /**< Number of pages in #active */
 	EdPgno       active[255];      /**< Allocated pages in the active transaction */
 	EdConn       conns[1];         /**< Flexible array of active process connections */
 };

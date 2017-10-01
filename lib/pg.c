@@ -251,7 +251,7 @@ gc_list_init(EdPgGc *pgc, EdTxnId xid)
  * @param  new  New page to assign to #pg and #no
  */
 static void
-gc_set(EdPgGc **pg, EdPgno *no, EdPgGc *new)
+gc_set(EdPgGc **pg, EdPgnoV *no, EdPgGc *new)
 {
 	assert(new != NULL);
 	*pg = new;
