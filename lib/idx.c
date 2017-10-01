@@ -351,6 +351,8 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	idx->flags = ed_idx_flags(hdr->flags | ed_fopen(flags));
 	idx->pid = pid;
 	idx->path = strdup(cfg->index_path);
+	idx->seed = hdr->seed;
+	idx->epoch = hdr->epoch;
 
 	return 0;
 
@@ -391,7 +393,7 @@ EdTxnId
 ed_idx_xmin(EdIdx *idx, EdTime now)
 {
 	if (now == 0) {
-		now = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
+		now = ed_time_from_unix(idx->epoch, ed_now_unix());
 	}
 
 	EdTxnId xid = idx->hdr->xid - 1;
@@ -703,7 +705,7 @@ ed_idx_acquire_xid(EdIdx *idx)
 	ed_idx_assert(idx);
 	EdConn *conn = idx->conn;
 	conn->xid = idx->hdr->xid;
-	conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
+	conn->active = ed_time_from_unix(idx->epoch, ed_now_unix());
 	return conn->xid;
 }
 
@@ -714,7 +716,7 @@ ed_idx_release_xid(EdIdx *idx)
 	EdConn *conn = idx->conn;
 	if (conn->xid > 0) {
 		conn->xid = 0;
-		conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
+		conn->active = ed_time_from_unix(idx->epoch, ed_now_unix());
 	}
 }
 

@@ -739,6 +739,8 @@ struct EdIdx {
 	EdConn *     conn;             /**< Current connection or NULL */
 	int          nconns;           /**< Number of available connections */
 	int          pid;              /**< Process ID that opened the index */
+	uint64_t     seed;             /**< Randomized seed */
+	EdTimeUnix   epoch;            /**< Epoch adjustment in seconds */
 };
 
 #define ED_IDX_PAGES(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)
