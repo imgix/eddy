@@ -693,14 +693,14 @@ done:
 int
 ed_idx_lock(EdIdx *idx, EdLckType type)
 {
-	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
+	ed_idx_assert(idx);
 	return ed_lck(&idx->lck, idx->fd, type, idx->flags);
 }
 
 EdTxnId
 ed_idx_acquire_xid(EdIdx *idx)
 {
-	if (idx->pid != getpid()) { return 0; }
+	ed_idx_assert(idx);
 	EdConn *conn = idx->conn;
 	conn->xid = idx->hdr->xid;
 	conn->active = ed_time_from_unix(idx->hdr->epoch, ed_now_unix());
@@ -710,7 +710,7 @@ ed_idx_acquire_xid(EdIdx *idx)
 void
 ed_idx_release_xid(EdIdx *idx)
 {
-	if (idx->pid != getpid()) { return; }
+	ed_idx_assert(idx);
 	EdConn *conn = idx->conn;
 	if (conn->xid > 0) {
 		conn->xid = 0;
@@ -721,7 +721,7 @@ ed_idx_release_xid(EdIdx *idx)
 int
 ed_idx_acquire_snapshot(EdIdx *idx, EdBpt **trees)
 {
-	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
+	ed_idx_assert(idx);
 	ed_idx_acquire_xid(idx);
 	for (int i = 0; i < ED_NDB; i++) {
 		if (ed_pg_load(idx->fd, (EdPg **)&trees[i], idx->hdr->tree[i], true)
@@ -752,7 +752,7 @@ ed_idx_release_snapshot(EdIdx *idx, EdBpt **trees)
 int
 ed_idx_repair_leaks(EdIdx *idx, EdStat *stat, uint64_t flags)
 {
-	if (idx->pid != getpid()) { return ED_EINDEX_FORK; }
+	ed_idx_assert(idx);
 	flags = flags | idx->flags;
 
 	// TODO check connections against stat->xid with FNOBLOCK support

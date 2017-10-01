@@ -439,6 +439,42 @@ ED_LOCAL      int ed_bpt_verify(EdBpt *, int fd, size_t esize, FILE *);
  */
 
 /**
+ * @brief  Verifies the transaction is usable
+ * @param  txn  Transaction object
+ */
+#define ED_TXN_CHECK(txn) do { \
+	if ((txn) == NULL) { return ed_esys(EINVAL); } \
+	ED_IDX_CHECK((txn)->idx); \
+} while (0)
+
+/**
+ * @brief  Verifies the transaction closed
+ * @param  txn  Transaction object
+ */
+#define ED_TXN_CHECK_CLOSED(txn) do { \
+	ED_TXN_CHECK(txn); \
+	if ((txn)->state != ED_TXN_CLOSED) { return ed_esys(EINVAL); } \
+} while (0)
+
+/**
+ * @brief  Verifies the transaction is open for reading
+ * @param  txn  Transaction object
+ */
+#define ED_TXN_CHECK_RD(txn) do { \
+	ED_TXN_CHECK(txn); \
+	if ((txn)->state == ED_TXN_CLOSED) { return ED_EINDEX_TXN_CLOSED; } \
+} while (0)
+
+/**
+ * @brief  Verifies the transaction is open for writing
+ * @param  txn  Transaction object
+ */
+#define ED_TXN_CHECK_WR(txn) do { \
+	ED_TXN_CHECK_RD(txn); \
+	if ((txn)->isrdonly) { return ED_EINDEX_RDONLY; } \
+} while (0)
+
+/**
  * @brief  State of the the transaction object
  */
 enum EdTxnState {
@@ -706,6 +742,14 @@ struct EdIdx {
 };
 
 #define ED_IDX_PAGES(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)
+
+#define ed_idx_active(idx) ((idx)->pid == getpid())
+#define ed_idx_assert(idx) assert(ed_idx_active(idx))
+
+#define ED_IDX_CHECK(idx) do { \
+	if (!ed_idx_active(idx)) { return ED_EINDEX_FORK; } \
+} while (0)
+
 
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg);
 ED_LOCAL     void ed_idx_close(EdIdx *);

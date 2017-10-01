@@ -222,6 +222,7 @@ ed_discard(EdObject **objp);
 #define ED_EINDEX_BUSY           ed_eindex(14) /** Error code if connection cannot be acquired. */
 #define ED_EINDEX_DUPKEY         ed_eindex(15) /** Error code if too many duplicate keys are added */
 #define ED_EINDEX_FORK           ed_eindex(16) /** Error code if the index is used across a fork */
+#define ED_EINDEX_TXN_CLOSED     ed_eindex(17) /** Error code if the transaction is closed */
 
 #define ED_ESLAB_MODE            ed_eslab(0)   /** Error code when the slab file mode is invalid. */
 #define ED_ESLAB_SIZE            ed_eslab(1)   /** Error code when the slab size requested is invalid. */

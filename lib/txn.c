@@ -63,6 +63,8 @@ ed_txn_new(EdTxn **txnp, EdIdx *idx)
 	assert(txnp != NULL);
 	assert(idx != NULL);
 
+	ED_IDX_CHECK(idx);
+
 	int rc = 0;
 	EdTxn *txn;
 	unsigned nslot = ed_len(txn->db) * 12;
@@ -105,8 +107,8 @@ error:
 int
 ed_txn_open(EdTxn *txn, uint64_t flags)
 {
-	if (txn == NULL || txn->state != ED_TXN_CLOSED) { return ed_esys(EINVAL); }
-	if (txn->idx->pid != getpid()) { return ED_EINDEX_FORK; }
+	ED_TXN_CHECK_CLOSED(txn);
+
 	bool rdonly = flags & ED_FRDONLY;
 	int rc = 0;
 
@@ -192,9 +194,11 @@ int
 ed_txn_commit(EdTxn **txnp, uint64_t flags)
 {
 	EdTxn *txn = *txnp;
+	ED_TXN_CHECK_RD(txn);
+
 	int rc = 0;
 
-	if (txn == NULL || txn->state != ED_TXN_OPEN || txn->error < 0 || txn->isrdonly) {
+	if (ed_txn_isrdonly(txn)) {
 		rc = ED_EINDEX_RDONLY;
 		goto close;
 	}
@@ -244,7 +248,7 @@ void
 ed_txn_close(EdTxn **txnp, uint64_t flags)
 {
 	EdTxn *txn = *txnp;
-	if (txn == NULL) { return; }
+	if (txn == NULL || !ed_idx_active(txn->idx)) { return; }
 	flags = ed_txn_fclose(flags, txn->cflags);
 
 	EdTxnId xid = txn->xid;
@@ -375,7 +379,9 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 EdBlkno
 ed_txn_block(const EdTxn *txn)
 {
-	if (txn->state != ED_TXN_OPEN || txn->error < 0 || txn->isrdonly) {
+	ED_TXN_CHECK_RD(txn);
+
+	if (ed_txn_isrdonly(txn)) {
 		return txn->idx->hdr->pos;
 	}
 	return txn->pos;
@@ -384,7 +390,9 @@ ed_txn_block(const EdTxn *txn)
 int
 ed_txn_set_block(EdTxn *txn, EdBlkno pos)
 {
-	if (txn == NULL || txn->state != ED_TXN_OPEN || txn->error < 0 || txn->isrdonly) {
+	ED_TXN_CHECK_WR(txn);
+
+	if (ed_txn_isrdonly(txn)) {
 		return ED_EINDEX_RDONLY;
 	}
 	txn->pos = pos;
@@ -400,6 +408,8 @@ ed_txn_isrdonly(const EdTxn *txn)
 int
 ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 {
+	ED_TXN_CHECK(txn);
+
 	for (EdTxnNode *node = txn->nodes; node != NULL; node = node->next) {
 		for (int i = (int)node->nused-1; i >= 0; i--) {
 			if (node->nodes[i].page->no == no) {
@@ -425,6 +435,8 @@ ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 int
 ed_txn_alloc(EdTxn *txn, EdNode *par, uint16_t pidx, EdNode **out)
 {
+	ED_TXN_CHECK_WR(txn);
+
 	unsigned npg = txn->npg;
 	if (txn->npgused == npg) {
 		if (txn->npgslot == npg) {
@@ -499,8 +511,8 @@ ed_txn_clone(EdTxn *txn, EdNode *node, EdNode **out)
 {
 	EdNode *copy = NULL;
 	int rc = ed_txn_alloc(txn, node->parent, node->pindex, &copy);
-	assert(copy != NULL);
 	if (rc >= 0) {
+		assert(copy != NULL);
 		copy->page->type = node->page->type;
 		copy->tree->next = node->tree->next;
 		copy->tree->nkeys = node->tree->nkeys;
@@ -517,6 +529,8 @@ ed_txn_clone(EdTxn *txn, EdNode *node, EdNode **out)
 int
 ed_txn_discard(EdTxn *txn, EdNode *node)
 {
+	ED_TXN_CHECK_WR(txn);
+
 	if (!node->gc) {
 		unsigned ngcslot = txn->ngcslot;
 		if (txn->ngcused == ngcslot) {
