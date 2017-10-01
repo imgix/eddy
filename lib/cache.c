@@ -1,73 +1,96 @@
 #include "eddy-private.h"
 
 static int
-obj_new(EdObject **objp, const void *k, size_t klen)
+obj_new(EdObject **objp, const void *k, size_t klen, bool rdonly)
 {
 	EdObject *obj = calloc(1, sizeof(*obj) + klen);
 	if (obj == NULL) { return ED_ERRNO; }
-	memcpy(obj->key, k, klen);
+	obj->rdonly = rdonly;
+	memcpy(obj->newkey, k, klen);
 	*objp = obj;
 	return 0;
 }
 
 static size_t
-obj_key_offset(EdObjectHdr *hdr)
+obj_key_offset(void)
 {
-	return sizeof(*hdr);
+	return sizeof(EdObjectHdr);
 }
 
 static size_t
-obj_meta_offset(EdObjectHdr *hdr)
+obj_meta_offset(uint16_t keylen)
 {
-	return ed_align_max(obj_key_offset(hdr) + hdr->keylen + 1);
+	return ed_align_max(obj_key_offset() + keylen + 1);
 }
 
 static size_t
-obj_data_offset(EdObjectHdr *hdr)
+obj_data_offset(uint16_t keylen, uint16_t metalen)
 {
-	return ed_align_pg(obj_meta_offset(hdr) + hdr->metalen);
+	return ed_align_pg(obj_meta_offset(keylen) + metalen);
 }
 
 static size_t
-obj_slab_size(EdObjectHdr *hdr)
+obj_slab_size(uint16_t keylen, uint16_t metalen, uint32_t datalen)
 {
-	return ed_align_pg(obj_data_offset(hdr) + hdr->datalen);
+	return ed_align_pg(obj_data_offset(keylen, metalen) + datalen);
 }
 
 static uint8_t *
 obj_key(EdObjectHdr *hdr)
 {
-	return (uint8_t *)hdr + obj_key_offset(hdr);
+	return (uint8_t *)hdr + obj_key_offset();
 }
 
 static uint8_t *
 obj_meta(EdObjectHdr *hdr)
 {
-	return (uint8_t *)hdr + obj_meta_offset(hdr);
+	return (uint8_t *)hdr + obj_meta_offset(hdr->keylen);
 }
 
 static uint8_t *
 obj_data(EdObjectHdr *hdr)
 {
-	return (uint8_t *)hdr + obj_data_offset(hdr);
+	return (uint8_t *)hdr + obj_data_offset(hdr->keylen, hdr->metalen);
 }
 
 static void
-obj_set(EdObject *obj, EdObjectHdr *hdr, EdBlkno no, bool rdonly)
+obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly)
 {
-	size_t size = obj_slab_size(hdr);
+	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen);
+	obj->cache = cache;
 	obj->key = obj_key(hdr);
 	obj->keylen = hdr->keylen;
 	obj->meta = obj_meta(hdr);
 	obj->metalen = hdr->metalen;
 	obj->data = obj_data(hdr);
 	obj->datalen = hdr->datalen;
+	obj->dataseek = 0;
+	obj->datacrc = hdr->datacrc;
 	obj->hdr = hdr;
 	obj->blck = no;
 	obj->nblcks = size/PAGESIZE;
 	obj->byte = no*PAGESIZE;
 	obj->nbytes = size;
 	obj->rdonly = rdonly;
+}
+
+static void
+obj_hdr_init(EdObjectHdr *hdr, EdObjectAttr *attr, uint64_t h, size_t nbytes, uint64_t flags)
+{
+	hdr->keylen = attr->keylen;
+	hdr->metalen = attr->metalen;
+	hdr->datalen = attr->datalen;
+	hdr->keyhash = h;
+	hdr->metacrc = 0;
+	hdr->datacrc = 0;
+	memcpy(obj_key(hdr), attr->key, attr->keylen);
+	if (flags & ED_FZERO) {
+		memset(obj_key(hdr) + attr->keylen, 0,
+				nbytes - obj_key_offset() - attr->keylen);
+	}
+	else {
+		obj_key(hdr)[attr->keylen] = '\0';
+	}
 }
 
 static int
@@ -111,7 +134,7 @@ obj_get(EdCache *cache, const void *k, size_t klen, EdObject *obj)
 		// likely match. If it does, set up the object and end the loop.
 		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
 			obj->expiry = ed_expiry_at(cache->idx.epoch, key->exp, now);
-			obj_set(obj, hdr, key->no, true);
+			obj_init(obj, cache, hdr, key->no, true);
 			set = 1;
 			break;
 		}
@@ -129,7 +152,7 @@ obj_get(EdCache *cache, const void *k, size_t klen, EdObject *obj)
 }
 
 static int
-obj_reserve_slab(EdTxn *txn, int fd, uint64_t flags, EdBlkno *posp, size_t len)
+obj_reserve_slab(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, size_t len)
 {
 	EdBlkno pos = *posp, end;
 	size_t start = pos * PAGESIZE;
@@ -145,7 +168,7 @@ obj_reserve_slab(EdTxn *txn, int fd, uint64_t flags, EdBlkno *posp, size_t len)
 	// Find then next unlocked region >= #pos. If the current #pos cannot be used,
 	// start from the beginning of the next entry.
 	do {
-		if (ed_flck(fd, ED_LCK_EX, start, len, flags|ED_FNOBLOCK) < 0) {
+		if (ed_flck(slabfd, ED_LCK_EX, start, len, flags|ED_FNOBLOCK) < 0) {
 			rc = ed_bpt_next(txn, ED_DB_BLOCKS, (void **)&block);
 			if (rc < 0) { goto done; }
 			pos = block->no;
@@ -171,7 +194,7 @@ obj_reserve_slab(EdTxn *txn, int fd, uint64_t flags, EdBlkno *posp, size_t len)
 	// entries in the index.
 	while (block && block->no < end && block->no >= pos) {
 		// Only the first page of the object is needed.
-		EdObjectHdr *old = ed_pg_map(fd, block->no, 1, true);
+		EdObjectHdr *old = ed_pg_map(slabfd, block->no, 1, true);
 		if (old == MAP_FAILED) { rc = ED_ERRNO; goto done; }
 
 		// Loop through each key entry to resolve collisions. Key comparison is not
@@ -194,30 +217,41 @@ obj_reserve_slab(EdTxn *txn, int fd, uint64_t flags, EdBlkno *posp, size_t len)
 
 done:
 	if (rc < 0 && locked) {
-		ed_flck(fd, ED_LCK_UN, start, len, flags);
+		ed_flck(slabfd, ED_LCK_UN, start, len, flags);
 	}
 	return rc;
 }
 
 static int
-obj_upsert(EdTxn *txn, int fd, const void *k, size_t klen, uint64_t h, EdEntryKey *knew)
+obj_upsert(EdCache *cache, EdObjectAttr *attr, uint64_t h,
+		EdBlkno blck, EdBlkno nblcks, EdTime exp)
 {
-	// Upsert the key into the db.
-	EdEntryKey *key;
+	EdTxn *txn = cache->txn;
+	EdEntryBlock blocknew = { blck, nblcks, exp };
+	EdEntryKey *key, keynew = { h, blck, nblcks, exp };
 	bool replace = false;
 	int rc;
+
+	// Insert the slab position into the db.
+	if ((rc = ed_bpt_find(txn, ED_DB_BLOCKS, blck, NULL)) < 0 || 
+		(rc = ed_bpt_set(txn, ED_DB_BLOCKS, (void *)&blocknew, true) < 0)) {
+		return rc;
+	}
+
+	// Insert the key into the db.
 	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key); rc == 1;
 			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 		// Map the slab object.
-		EdObjectHdr *old = ed_pg_map(fd, key->no, 1, true);
+		EdObjectHdr *old = ed_pg_map(cache->idx.slabfd, key->no, 1, true);
 		if (old == MAP_FAILED) { return ED_ERRNO; }
 
-		replace = old->keylen == klen && memcmp(obj_key(old), k, klen) == 0;
+		replace = old->keylen == attr->keylen &&
+			memcmp(obj_key(old), attr->key, attr->keylen) == 0;
 		ed_pg_unmap(old, 1);
 		if (replace) { break; }
 	}
 	if (rc >= 0) {
-		rc = ed_bpt_set(txn, ED_DB_KEYS, knew, replace);
+		rc = ed_bpt_set(txn, ED_DB_KEYS, (void *)&keynew, replace);
 	}
 	return rc;
 }
@@ -235,64 +269,45 @@ obj_reserve(EdCache *cache, EdObjectAttr *attr, EdTimeUnix expiry, EdObject *obj
 	bool locked = false;
 	EdTxn *txn = cache->txn;
 	int rc = 0;
+	int slabfd = cache->idx.slabfd;
+	uint64_t flags = cache->idx.flags;
 
-	EdObjectHdr *hdr = MAP_FAILED, hdrnew = {
-		attr->keylen, attr->metalen, attr->datalen, h, 0, 0
-	};
+	EdObjectHdr *hdr = MAP_FAILED;
 
-	size_t nbytes = obj_slab_size(&hdrnew);
-	EdBlkno pos, nblcks = nbytes/PAGESIZE;
-
-	EdEntryBlock blocknew = { 0, nblcks,
-		ed_time_from_unix(cache->idx.epoch, expiry) };
-	EdEntryKey keynew = { h, 0, blocknew.count,
-		blocknew.exp };
+	size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen);
+	EdBlkno blck, nblcks = nbytes/PAGESIZE;
+	EdTime exp = ed_time_from_unix(cache->idx.epoch, expiry);
 
 	// Open a transaction. This allows to get the current slab position safely.
 	// If this fails, return the error code, but any furtur failures must goto
 	// the done label.
-	rc = ed_txn_open(txn, cache->idx.flags);
+	rc = ed_txn_open(txn, flags);
 	if (rc < 0) { return rc; }
 
-	pos = ed_txn_block(txn);
-	rc = obj_reserve_slab(txn, cache->idx.slabfd, cache->idx.flags, &pos, nbytes);
+	blck = ed_txn_block(txn);
+	rc = obj_reserve_slab(txn, slabfd, flags, &blck, nbytes);
 	if (rc < 0) { goto done; }
 
-	keynew.no = pos;
-	blocknew.no = pos;
-
 	// Map the new object header in the slab.
-	hdr = ed_pg_map(cache->idx.slabfd, pos, nblcks, true);
+	hdr = ed_pg_map(slabfd, blck, nblcks, true);
 	if (hdr == MAP_FAILED) {
 		rc = ED_ERRNO;
 		goto done;
 	}
 
-	// Insert the slab position into the db.
-	if ((rc = ed_bpt_find(txn, ED_DB_BLOCKS, pos, NULL)) < 0 || 
-		(rc = ed_bpt_set(txn, ED_DB_BLOCKS, (void *)&blocknew, true) < 0)) {
-		goto done;
-	}
-
 	// Add the next write position to the transaction.
-	ed_txn_set_block(txn, pos + nblcks);
+	ed_txn_set_block(txn, blck + nblcks);
 
-	rc = obj_upsert(txn, cache->idx.slabfd, attr->key, attr->keylen, h, &keynew);
+	// Make object available in the index.
+	rc = obj_upsert(cache, attr, h, blck, nblcks, exp);
 	if (rc < 0) { goto done; }
 
 	// Commit changes and initialize the new header.
-	rc = ed_txn_commit(&cache->txn, cache->idx.flags|ED_FRESET);
+	rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
+
 	if (rc >= 0) {
-		memcpy(hdr, &hdrnew, sizeof(hdrnew));
-		memcpy(obj_key(hdr), attr->key, hdrnew.keylen);
-		if (cache->idx.flags & ED_FZERO) {
-			memset(obj_key(hdr) + hdrnew.keylen, 0,
-					nbytes - obj_key_offset(hdr) - hdrnew.keylen);
-		}
-		else {
-			obj_key(hdr)[hdrnew.keylen] = '\0';
-		}
-		obj_set(obj, hdr, blocknew.no, false);
+		obj_hdr_init(hdr, attr, h, nbytes, flags);
+		obj_init(obj, cache, hdr, blck, false);
 	}
 
 done:
@@ -302,7 +317,7 @@ done:
 			ed_pg_unmap(hdr, nblcks);
 		}
 		if (locked) {
-			ed_flck(cache->idx.slabfd, ED_LCK_UN, pos * PAGESIZE, nbytes, cache->idx.flags);
+			ed_flck(cache->idx.slabfd, ED_LCK_UN, blck*PAGESIZE, nbytes, cache->idx.flags);
 		}
 		ed_txn_close(&cache->txn, cache->idx.flags|ED_FRESET);
 	}
@@ -405,7 +420,7 @@ int
 ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 {
 	EdObject *obj;
-	int rc = obj_new(&obj, NULL, 0);
+	int rc = obj_new(&obj, NULL, 0, true);
 	if (rc < 0) { return rc; }
 
 	rc = obj_get(cache, key, len, obj);
@@ -413,7 +428,6 @@ ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
 		free(obj);
 		obj = NULL;
 	}
-	obj->rdonly = true;
 	*objp = obj;
 	return rc;
 }
@@ -426,7 +440,7 @@ ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
 	// 2) write contents to slab
 	// 3) on close upsert the key and slab position
 	EdObject *obj;
-	int rc = obj_new(&obj, attr->key, attr->keylen);
+	int rc = obj_new(&obj, attr->key, attr->keylen, false);
 	if (rc < 0) { return rc; }
 
 	rc = obj_reserve(cache, attr, ed_unix_from_ttl(attr->ttl), obj);
@@ -453,7 +467,7 @@ ed_write(EdObject *obj, const void *buf, size_t len)
 		return ED_EOBJECT_LENGTH;
 	}
 	if (obj->cache->idx.flags & ED_FCHECKSUM) {
-		ed_crc32c(obj->crc, buf, len);
+		ed_crc32c(obj->datacrc, buf, len);
 	}
 	memcpy(obj->data + obj->dataseek, buf, len);
 	obj->dataseek += (uint32_t)len;

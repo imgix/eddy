@@ -1037,7 +1037,7 @@ struct EdObject {
 	uint16_t     metalen;
 	uint32_t     datalen;
 	uint32_t     dataseek;
-	uint32_t     crc;
+	uint32_t     datacrc;
 	EdObjectHdr *hdr;
 	EdBlkno      blck;
 	EdBlkno      nblcks;
