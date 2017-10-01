@@ -1036,11 +1036,15 @@ struct EdObject {
 	uint16_t     keylen;
 	uint16_t     metalen;
 	uint32_t     datalen;
-	uint32_t     datacur;
+	uint32_t     dataseek;
 	uint32_t     crc;
 	EdObjectHdr *hdr;
-	EdBlkno      no;
-	EdBlkno      count;
+	EdBlkno      blck;
+	EdBlkno      nblcks;
+	size_t       byte;
+	size_t       nbytes;
+	bool         rdonly;
+	uint8_t      newkey[1];
 };
 
 #pragma GCC diagnostic push

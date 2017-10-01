@@ -44,18 +44,21 @@ typedef struct EdObject EdObject;
 typedef struct EdObjectAttr EdObjectAttr;
 
 struct EdConfig {
-	const char *index_path;
-	const char *slab_path;
-	unsigned max_conns;
-	long long slab_size;
-	uint64_t flags;
+	const char * index_path;
+	const char * slab_path;
+	unsigned     max_conns;
+	long long    slab_size;
+	uint64_t     flags;
 };
 
 struct EdObjectAttr {
-	uint32_t object_size;
-	uint16_t key_size, meta_size;
-	const void *key, *meta;
-	EdTimeTTL ttl;
+	const void * key;
+	const void * meta;
+	const void * data;
+	uint16_t     keylen;
+	uint16_t     metalen;
+	uint32_t     datalen;
+	EdTimeTTL    ttl;
 };
 
 #define ed_config_make() ((EdConfig){ .flags = 0 })

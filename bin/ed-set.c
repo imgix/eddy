@@ -59,7 +59,7 @@ main(int argc, char **argv)
 
 	if (argc == 1) { errx(1, "key not provided"); }
 	attr.key = argv[1];
-	attr.key_size = strlen(attr.key);
+	attr.keylen = strlen(attr.key);
 
 	argc -= 2;
 	argv += 2;
@@ -71,8 +71,8 @@ main(int argc, char **argv)
 	if (rc < 0) { errx(1, "failed to open index '%s': %s", cfg.index_path, ed_strerror(rc)); }
 
 	attr.meta = meta.data;
-	attr.meta_size = meta.length;
-	attr.object_size = data.length;
+	attr.metalen = meta.length;
+	attr.datalen = data.length;
 
 	EdObject *obj;
 	rc = ed_create(cache, &obj, &attr);
