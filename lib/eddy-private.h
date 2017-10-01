@@ -735,7 +735,6 @@ struct EdIdx {
 	EdPgGc *     gc_head;          /**< Currently mapped head of the garbage collected pages */
 	EdPgGc *     gc_tail;          /**< Currently mapped tail of the garbage collected pages */
 	uint64_t     flags;            /**< Open flags merged with the saved flags */
-	EdTxn *      txn;              /**< Cached transaction object */
 	EdConn *     conn;             /**< Current connection or NULL */
 	int          nconns;           /**< Number of available connections */
 	int          pid;              /**< Process ID that opened the index */
@@ -756,8 +755,6 @@ struct EdIdx {
 ED_LOCAL      int ed_idx_open(EdIdx *, const EdConfig *cfg);
 ED_LOCAL     void ed_idx_close(EdIdx *);
 ED_LOCAL  EdTxnId ed_idx_xmin(EdIdx *idx, EdTime now);
-ED_LOCAL      int ed_idx_get(EdIdx *, EdObject *obj, bool need);
-ED_LOCAL      int ed_idx_reserve(EdIdx *, EdObject *obj);
 ED_LOCAL      int ed_idx_lock(EdIdx *, EdLckType type);
 ED_LOCAL  EdTxnId ed_idx_acquire_xid(EdIdx *);
 ED_LOCAL     void ed_idx_release_xid(EdIdx *);
@@ -1024,6 +1021,7 @@ ed_power2(unsigned p)
 
 struct EdCache {
 	EdIdx        idx;
+	EdTxn *      txn;
 	atomic_int   ref;
 	size_t       bytes_used;
 	size_t       blocks_used;
