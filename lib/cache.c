@@ -116,49 +116,27 @@ obj_get(EdCache *cache, EdObject *obj)
 }
 
 static int
-obj_reserve(EdCache *cache, EdObject *obj)
+obj_reserve_slab(EdTxn *txn, int fd, uint64_t flags, EdBlkno *posp, size_t len)
 {
-	uint64_t h = ed_hash(obj->key, obj->keylen, cache->idx.seed);
-
-	EdObjectHdr *hdr = MAP_FAILED, hdrnew = {
-		obj->keylen, obj->metalen, obj->datalen, h, 0, 0
-	};
-
-	size_t len = obj_slab_size(&hdrnew);
-
-	EdEntryBlock *block = NULL, blocknew = { 0, len/PAGESIZE,
-		ed_time_from_unix(cache->idx.epoch, obj->expiry) };
-	EdEntryKey *key = NULL, keynew = { h, 0, blocknew.count,
-		blocknew.exp };
-
+	EdBlkno pos = *posp, end;
+	size_t start = pos * PAGESIZE;
 	bool locked = false;
-	int rc;
-	EdBlkno pos, next;
-	size_t off;
-	EdTxn *txn = cache->txn;
-
-	// Open a transaction. This allows to get the current slab position safely.
-	// If this fails, return the error code, but any furtur failures must goto
-	// the done label.
-	rc = ed_txn_open(txn, cache->idx.flags);
-	if (rc < 0) { return rc; }
+	EdEntryBlock *block;
 
 	// Lookup an entry at the current slab position. Its likely nothing will be
 	// matched which will leave the block NULL. We must be sure the check this
 	// case when removing replaced entries.
-	pos = ed_txn_block(txn);
-	off = pos * PAGESIZE;
-	rc = ed_bpt_find(txn, ED_DB_BLOCKS, pos, (void **)&block);
+	int rc = ed_bpt_find(txn, ED_DB_BLOCKS, pos, (void **)&block);
 	if (rc < 0) { goto done; }
 
 	// Find then next unlocked region >= #pos. If the current #pos cannot be used,
 	// start from the beginning of the next entry.
 	do {
-		if (ed_flck(cache->idx.slabfd, ED_LCK_EX, off, len, cache->idx.flags|ED_FNOBLOCK) < 0) {
+		if (ed_flck(fd, ED_LCK_EX, start, len, flags|ED_FNOBLOCK) < 0) {
 			rc = ed_bpt_next(txn, ED_DB_BLOCKS, (void **)&block);
 			if (rc < 0) { goto done; }
 			pos = block->no;
-			off = pos * PAGESIZE;
+			start = pos * PAGESIZE;
 		}
 		else {
 			locked = true;
@@ -166,11 +144,8 @@ obj_reserve(EdCache *cache, EdObject *obj)
 		}
 	} while(1);
 
-	keynew.no = pos;
-	blocknew.no = pos;
-
 	// Determine the first page number after the write region.
-	next = pos + len/PAGESIZE;
+	end = pos + len/PAGESIZE;
 
 	// If the original find didn't match and we never iterated to the next
 	// position, load the next entry.
@@ -181,14 +156,15 @@ obj_reserve(EdCache *cache, EdObject *obj)
 
 	// Loop through objects by block position and remove the key and then block
 	// entries in the index.
-	while (block && block->no < next && block->no >= pos) {
+	while (block && block->no < end && block->no >= pos) {
 		// Only the first page of the object is needed.
-		EdObjectHdr *old = ed_pg_map(cache->idx.slabfd, block->no, 1, true);
+		EdObjectHdr *old = ed_pg_map(fd, block->no, 1, true);
 		if (old == MAP_FAILED) { rc = ED_ERRNO; goto done; }
 
 		// Loop through each key entry to resolve collisions. Key comparison is not
 		// rquireds for this resolution. We are looking for the key that maps to
 		// current block number.
+		EdEntryKey *key;
 		for (rc = ed_bpt_find(txn, ED_DB_KEYS, old->keyhash, (void **)&key); rc == 1;
 				rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 			if (key->no == block->no) {
@@ -203,8 +179,54 @@ obj_reserve(EdCache *cache, EdObject *obj)
 		if (rc < 0) { goto done; }
 	}
 
+done:
+	if (rc < 0 && locked) {
+		ed_flck(fd, ED_LCK_UN, start, len, flags);
+	}
+	return rc;
+}
+
+/**
+ * @brief  Creates an exclusive writable gap in the slab.
+ * @param  cache  Cache pointer
+ * @param  obj   Object pointer to assign slab information
+ * @return  0 on success <0 on error
+ */
+static int
+obj_reserve(EdCache *cache, EdObject *obj)
+{
+	uint64_t h = ed_hash(obj->key, obj->keylen, cache->idx.seed);
+	bool locked = false;
+	EdTxn *txn = cache->txn;
+	int rc = 0;
+
+	EdObjectHdr *hdr = MAP_FAILED, hdrnew = {
+		obj->keylen, obj->metalen, obj->datalen, h, 0, 0
+	};
+
+	size_t len = obj_slab_size(&hdrnew);
+	EdBlkno pos, nblock = len/PAGESIZE;
+
+	EdEntryBlock blocknew = { 0, nblock,
+		ed_time_from_unix(cache->idx.epoch, obj->expiry) };
+	EdEntryKey *key = NULL, keynew = { h, 0, blocknew.count,
+		blocknew.exp };
+
+	// Open a transaction. This allows to get the current slab position safely.
+	// If this fails, return the error code, but any furtur failures must goto
+	// the done label.
+	rc = ed_txn_open(txn, cache->idx.flags);
+	if (rc < 0) { return rc; }
+
+	pos = ed_txn_block(txn);
+	rc = obj_reserve_slab(txn, cache->idx.slabfd, cache->idx.flags, &pos, len);
+	if (rc < 0) { goto done; }
+
+	keynew.no = pos;
+	blocknew.no = pos;
+
 	// Map the new object header in the slab.
-	hdr = ed_pg_map(cache->idx.slabfd, pos, next - pos, true);
+	hdr = ed_pg_map(cache->idx.slabfd, pos, nblock, true);
 	if (hdr == MAP_FAILED) {
 		rc = ED_ERRNO;
 		goto done;
@@ -238,7 +260,7 @@ obj_reserve(EdCache *cache, EdObject *obj)
 	}
 
 	// Add the next write position to the transaction.
-	ed_txn_set_block(txn, next);
+	ed_txn_set_block(txn, pos + nblock);
 
 	// Commit changes and initialize the new header.
 	rc = ed_txn_commit(&cache->txn, cache->idx.flags|ED_FRESET);
@@ -259,10 +281,10 @@ done:
 	// Clean up resources if there was an error.
 	if (rc < 0) {
 		if (hdr != MAP_FAILED) {
-			ed_pg_unmap(hdr, next - pos);
+			ed_pg_unmap(hdr, nblock);
 		}
 		if (locked) {
-			ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
+			ed_flck(cache->idx.slabfd, ED_LCK_UN, pos * PAGESIZE, len, cache->idx.flags);
 		}
 		ed_txn_close(&cache->txn, cache->idx.flags|ED_FRESET);
 	}
@@ -447,12 +469,12 @@ ed_close(EdObject **objp)
 {
 	EdObject *obj = *objp;
 	if (obj == NULL) { return; }
-	objp = NULL;
+	*objp = NULL;
 
 	ed_flck(obj->cache->idx.slabfd, ED_LCK_UN,
-			obj->no, obj->count * PAGESIZE, obj->cache->idx.flags);
+			obj->no * PAGESIZE, obj->count * PAGESIZE,
+			obj->cache->idx.flags);
 	ed_pg_unmap(obj->hdr, obj->count);
 	free(obj);
-
 }
 
