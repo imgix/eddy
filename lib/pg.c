@@ -512,9 +512,15 @@ ed_free_pgno(EdIdx *idx, EdTxnId xid, EdPgno *pg, EdPgno n)
 	EdPgGc **new = NULL;
 	if (alloc_pages > 0) {
 		new = alloca(sizeof(*new) * alloc_pages);
+		memset(new, 0, sizeof(*new) * alloc_pages);
 		if (new == NULL) { return ED_ERRNO; }
 		int rc = ed_alloc(idx, (EdPg **)new, alloc_pages, true);
 		if (rc < 0) { return rc; }
+#ifndef NDEBUG
+		for (size_t x = 0; x < alloc_pages; x++) {
+			assert(new[x] != NULL);
+		}
+#endif
 	}
 
 	do {
