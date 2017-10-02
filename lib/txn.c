@@ -405,6 +405,12 @@ ed_txn_isrdonly(const EdTxn *txn)
 	return txn->error < 0 || txn->isrdonly;
 }
 
+bool
+ed_txn_isopen(const EdTxn *txn)
+{
+	return txn->state == ED_TXN_OPEN;
+}
+
 int
 ed_txn_map(EdTxn *txn, EdPgno no, EdNode *par, uint16_t pidx, EdNode **out)
 {

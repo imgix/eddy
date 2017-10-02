@@ -651,6 +651,14 @@ ED_LOCAL bool
 ed_txn_isrdonly(const EdTxn *txn);
 
 /**
+ * @brief  Checks if a transaction has been opened
+ * @param  txn  Transaction object
+ * @return  Open state
+ */
+ED_LOCAL bool
+ed_txn_isopen(const EdTxn *txn);
+
+/**
  * @brief  Maps a page wrapped into a node
  *
  * The page is unmapped and possibly synced when the transaction is complete.
