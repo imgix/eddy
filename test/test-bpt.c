@@ -926,12 +926,16 @@ test_iter_del(void)
 
 	keys[0] = txn->db[0].key;
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	keys[1] = txn->db[0].key;
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	keys[2] = txn->db[0].key;
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	keys[3] = txn->db[0].key;
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 
@@ -958,9 +962,13 @@ test_iter_del(void)
 	mu_assert_int_lt(keys[2], keys[3]);
 	mu_assert_int_eq(ed_bpt_first(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 
 	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);
@@ -986,9 +994,13 @@ test_iter_del(void)
 	mu_assert_int_lt(keys[2], keys[3]);
 	mu_assert_int_eq(ed_bpt_last(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_bpt_del(txn, 0), 1);
+	mu_assert_int_eq(ed_bpt_next(txn, 0, NULL), 0);
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 
 	mu_assert_int_eq(verify_tree(idx.fd, idx.hdr->tree[0], true), 0);

@@ -818,18 +818,11 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 
 	EdTxnDb *dbp = ed_txn_db(txn, db, false);
 	if (!dbp->hasfind) { return ED_EINDEX_RDONLY; }
+	if (!dbp->hasentry) { return 0; }
 
 	EdNode *leaf = dbp->find;
 	size_t esize = dbp->entry_size;
 	uint32_t eidx = dbp->entry_index;
-
-	if (eidx == dbp->find->tree->nkeys) {
-		int rc = move_right(txn, dbp, leaf);
-		if (rc >= 0) {
-			leaf = dbp->find;
-			eidx = 0;
-		}
-	}
 
 	if (leaf->tree->xid < txn->xid) {
 		EdNode *src = leaf;
@@ -862,6 +855,7 @@ ed_bpt_del(EdTxn *txn, unsigned db)
 		dbp->kmax = ed_fetch64(dbp->entry);
 	}
 	dbp->nmatches = 0;
+	dbp->hasentry = false;
 	return 1;
 }
 
