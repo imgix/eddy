@@ -95,23 +95,14 @@ obj_write(void *dst, const void *src, size_t len, uint32_t *crc, uint64_t flags)
 }
 
 static void
-obj_hdr_init_meta(EdObjectHdr *hdr, const void *src, size_t len, uint64_t flags)
-{
-	uint8_t *dst = obj_meta(hdr);
-	if (src != NULL && len > 0) {
-		obj_write(dst, src, len, &hdr->metacrc, flags);
-	}
-	dst += len;
-
-	// Zero out the end of the meta segment.
-	memset(dst, 0, obj_data(hdr, flags) - dst);
-}
-
-static void
 obj_hdr_init(EdObjectHdr *hdr, const EdObjectAttr *attr, uint64_t h,
-		size_t nbytes, uint64_t flags)
+		size_t nbytes, uint64_t flags, EdTime now)
 {
 	madvise(hdr, nbytes, MADV_SEQUENTIAL);
+	hdr->version = 0;
+	hdr->flags = 0;
+	hdr->tag = 0;
+	hdr->created = now;
 	hdr->keylen = attr->keylen;
 	hdr->metalen = attr->metalen;
 	hdr->datalen = attr->datalen;
@@ -119,14 +110,20 @@ obj_hdr_init(EdObjectHdr *hdr, const EdObjectAttr *attr, uint64_t h,
 	hdr->metacrc = 0;
 	hdr->datacrc = 0;
 
-	uint8_t *key = obj_key(hdr);
+	uint8_t *key = obj_key(hdr), *meta = obj_meta(hdr);
 	memcpy(key, attr->key, attr->keylen);
 	key += attr->keylen;
 
 	// Zero out the end of the key segment.
 	memset(key, 0, obj_meta(hdr) - key);
 
-	obj_hdr_init_meta(hdr, attr->meta, attr->metalen, flags);
+	if (attr->meta != NULL && attr->metalen > 0) {
+		obj_write(meta, attr->meta, attr->metalen, &hdr->metacrc, flags);
+	}
+	meta += attr->metalen;
+
+	// Zero out the end of the meta segment.
+	memset(meta, 0, obj_data(hdr, flags) - meta);
 }
 
 static void
@@ -407,7 +404,9 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	if (rc < 0) { return rc; }
 	assert(obj != NULL);
 
-	const EdTime exp = ed_expiry_at(cache->idx.epoch, attr->ttl, ed_now_unix());
+	const EdTimeUnix unow = ed_now_unix();
+	const EdTime now = ed_time_from_unix(cache->idx.epoch, unow);
+	const EdTime exp = ed_expiry_at(cache->idx.epoch, attr->ttl, unow);
 	const uint64_t h = ed_hash(attr->key, attr->keylen, cache->idx.seed);
 	const uint64_t flags = cache->idx.flags;
 	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, flags);
@@ -443,7 +442,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
 	if (rc < 0) { goto done; }
 
-	obj_hdr_init(hdr, attr, h, nbytes, flags);
+	obj_hdr_init(hdr, attr, h, nbytes, flags, now);
 	obj_init(obj, cache, hdr, blck, false, exp);
 
 done:

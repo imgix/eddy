@@ -1166,6 +1166,10 @@ struct EdPgIdx {
  * @brief  On-disk value for an entry in the slab
  */
 struct EdObjectHdr {
+	uint8_t      version;          /**< Object-specific header version */
+	uint8_t      flags;            /**< Per-object flags */
+	uint16_t     tag;              /**< User-defined tag */
+	EdTime       created;          /**< Timestamp when the object was created */
 	uint16_t     keylen;           /**< Number of bytes for the key */
 	uint16_t     metalen;          /**< Number of bytes for the metadata */
 	uint32_t     datalen;          /**< Number of bytes for the data */
