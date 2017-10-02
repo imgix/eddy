@@ -3,10 +3,15 @@
 static int
 obj_new(EdObject **objp, const void *k, size_t klen, bool rdonly)
 {
-	EdObject *obj = calloc(1, sizeof(*obj) + klen);
+	EdObject *obj = calloc(1, sizeof(*obj) + (rdonly ? 0 : klen));
 	if (obj == NULL) { return ED_ERRNO; }
-	obj->rdonly = rdonly;
-	memcpy(obj->newkey, k, klen);
+	if (rdonly) {
+		obj->rdonly = true;
+	}
+	else {
+		obj->rdonly = false;
+		memcpy(obj->newkey, k, klen);
+	}
 	*objp = obj;
 	return 0;
 }
@@ -26,7 +31,7 @@ obj_meta_offset(uint16_t keylen)
 static size_t
 obj_data_offset(uint16_t keylen, uint16_t metalen)
 {
-	return ed_align_pg(obj_meta_offset(keylen) + metalen);
+	return ed_align_max(obj_meta_offset(keylen) + metalen);
 }
 
 static size_t
@@ -54,7 +59,7 @@ obj_data(EdObjectHdr *hdr)
 }
 
 static void
-obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly)
+obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly, EdTime exp)
 {
 	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen);
 	obj->cache = cache;
@@ -64,95 +69,69 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonl
 	obj->metalen = hdr->metalen;
 	obj->data = obj_data(hdr);
 	obj->datalen = hdr->datalen;
-	obj->dataseek = 0;
 	obj->datacrc = hdr->datacrc;
 	obj->hdr = hdr;
 	obj->blck = no;
 	obj->nblcks = size/PAGESIZE;
 	obj->byte = no*PAGESIZE;
 	obj->nbytes = size;
+	obj->exp = exp;
 	obj->rdonly = rdonly;
 }
 
 static void
-obj_hdr_init(EdObjectHdr *hdr, EdObjectAttr *attr, uint64_t h, size_t nbytes, uint64_t flags)
+obj_write(void *dst, const void *src, size_t len, uint32_t *crc, uint64_t flags)
 {
+	if (flags & ED_FCHECKSUM) {
+		*crc = ed_crc32c(*crc, src, len);
+	}
+	memcpy(dst, src, len);
+}
+
+static void
+obj_hdr_init_meta(EdObjectHdr *hdr, const void *src, size_t len, uint64_t flags)
+{
+	uint8_t *dst = obj_meta(hdr);
+	if (src != NULL && len > 0) {
+		obj_write(dst, src, len, &hdr->metacrc, flags);
+	}
+	dst += len;
+
+	// Zero out the end of the meta segment.
+	memset(dst, 0, obj_data(hdr) - dst);
+}
+
+static void
+obj_hdr_init(EdObjectHdr *hdr, const EdObjectAttr *attr, uint64_t h,
+		size_t nbytes, uint64_t flags)
+{
+	madvise(hdr, nbytes, MADV_SEQUENTIAL);
 	hdr->keylen = attr->keylen;
 	hdr->metalen = attr->metalen;
 	hdr->datalen = attr->datalen;
 	hdr->keyhash = h;
 	hdr->metacrc = 0;
 	hdr->datacrc = 0;
-	memcpy(obj_key(hdr), attr->key, attr->keylen);
-	if (flags & ED_FZERO) {
-		memset(obj_key(hdr) + attr->keylen, 0,
-				nbytes - obj_key_offset() - attr->keylen);
-	}
-	else {
-		obj_key(hdr)[attr->keylen] = '\0';
-	}
+
+	uint8_t *key = obj_key(hdr);
+	memcpy(key, attr->key, attr->keylen);
+	key += attr->keylen;
+
+	// Zero out the end of the key segment.
+	memset(key, 0, obj_meta(hdr) - key);
+
+	obj_hdr_init_meta(hdr, attr->meta, attr->metalen, flags);
 }
 
-static int
-obj_get(EdCache *cache, const void *k, size_t klen, EdObject *obj)
+static void
+obj_hdr_final(EdObjectHdr *hdr, size_t nbytes)
 {
-	EdTxn *txn = cache->txn;
-	uint64_t h = ed_hash(k, klen, cache->idx.seed);
-	EdTimeUnix now = ed_now_unix();
-
-	int rc = ed_txn_open(txn, cache->idx.flags|ED_FRDONLY);
-	if (rc < 0) { return rc; }
-
-	int set = 0;
-	EdEntryKey *key;
-	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key);
-			rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
-			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
-		// First check if the object is expired.
-		if (ed_expired_at(cache->idx.epoch, key->exp, now)) {
-			continue;
-		}
-
-		off_t off = key->no * PAGESIZE;
-		off_t len = key->count * PAGESIZE;
-
-		// Try to get a shared lock on the slab region. If it cannot be locked, a
-		// writer is replacing this slab location.
-		if (ed_flck(cache->idx.slabfd, ED_LCK_SH, off, len, cache->idx.flags|ED_FNOBLOCK) < 0) {
-			continue;
-		}
-
-		// Map the slab object.
-		EdObjectHdr *hdr = ed_pg_map(cache->idx.slabfd, key->no, key->count, false);
-		if (hdr == MAP_FAILED) {
-			rc = ED_ERRNO;
-			ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
-			break;
-		}
-
-		// Resolve any hash collisions with a full key comparison. This will *very*
-		// likely match. If it does, set up the object and end the loop.
-		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
-			obj->expiry = ed_expiry_at(cache->idx.epoch, key->exp, now);
-			obj_init(obj, cache, hdr, key->no, true);
-			set = 1;
-			break;
-		}
-
-		// We have a hash collision so unlock and unmap the slab region and continue
-		// searching with the next entry.
-		ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
-		ed_pg_unmap(hdr, key->count);
-	}
-	ed_txn_close(&cache->txn, cache->idx.flags|ED_FRESET);
-	if (rc == 1) {
-		madvise(obj->hdr, obj->nbytes, MADV_SEQUENTIAL);
-	}
-	return rc < 0 ? rc : set;
+	uint8_t *data = obj_data(hdr) + hdr->datalen;
+	memset(data, 0, nbytes - (data - (uint8_t *)hdr));
 }
 
 static int
-obj_reserve_slab(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, size_t len)
+obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, size_t len)
 {
 	EdBlkno pos = *posp, end;
 	size_t start = pos * PAGESIZE;
@@ -223,7 +202,7 @@ done:
 }
 
 static int
-obj_upsert(EdCache *cache, EdObjectAttr *attr, uint64_t h,
+obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 		EdBlkno blck, EdBlkno nblcks, EdTime exp)
 {
 	EdTxn *txn = cache->txn;
@@ -245,84 +224,12 @@ obj_upsert(EdCache *cache, EdObjectAttr *attr, uint64_t h,
 		EdObjectHdr *old = ed_pg_map(cache->idx.slabfd, key->no, 1, true);
 		if (old == MAP_FAILED) { return ED_ERRNO; }
 
-		replace = old->keylen == attr->keylen &&
-			memcmp(obj_key(old), attr->key, attr->keylen) == 0;
+		replace = old->keylen == klen && memcmp(obj_key(old), k, klen) == 0;
 		ed_pg_unmap(old, 1);
 		if (replace) { break; }
 	}
 	if (rc >= 0) {
 		rc = ed_bpt_set(txn, ED_DB_KEYS, (void *)&keynew, replace);
-	}
-	return rc;
-}
-
-/**
- * @brief  Creates an exclusive writable gap in the slab.
- * @param  cache  Cache pointer
- * @param  obj   Object pointer to assign slab information
- * @return  0 on success <0 on error
- */
-static int
-obj_reserve(EdCache *cache, EdObjectAttr *attr, EdTimeUnix expiry, EdObject *obj)
-{
-	uint64_t h = ed_hash(attr->key, attr->keylen, cache->idx.seed);
-	bool locked = false;
-	EdTxn *txn = cache->txn;
-	int rc = 0;
-	int slabfd = cache->idx.slabfd;
-	uint64_t flags = cache->idx.flags;
-
-	EdObjectHdr *hdr = MAP_FAILED;
-
-	size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen);
-	EdBlkno blck, nblcks = nbytes/PAGESIZE;
-	EdTime exp = ed_time_from_unix(cache->idx.epoch, expiry);
-
-	// Open a transaction. This allows to get the current slab position safely.
-	// If this fails, return the error code, but any furtur failures must goto
-	// the done label.
-	rc = ed_txn_open(txn, flags);
-	if (rc < 0) { return rc; }
-
-	blck = ed_txn_block(txn);
-	rc = obj_reserve_slab(txn, slabfd, flags, &blck, nbytes);
-	if (rc < 0) { goto done; }
-
-	// Map the new object header in the slab.
-	hdr = ed_pg_map(slabfd, blck, nblcks, true);
-	if (hdr == MAP_FAILED) {
-		rc = ED_ERRNO;
-		goto done;
-	}
-
-	// Add the next write position to the transaction.
-	ed_txn_set_block(txn, blck + nblcks);
-
-	// Make object available in the index.
-	rc = obj_upsert(cache, attr, h, blck, nblcks, exp);
-	if (rc < 0) { goto done; }
-
-	// Commit changes and initialize the new header.
-	rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
-
-	if (rc >= 0) {
-		obj_hdr_init(hdr, attr, h, nbytes, flags);
-		obj_init(obj, cache, hdr, blck, false);
-	}
-
-done:
-	// Clean up resources if there was an error.
-	if (rc < 0) {
-		if (hdr != MAP_FAILED) {
-			ed_pg_unmap(hdr, nblcks);
-		}
-		if (locked) {
-			ed_flck(cache->idx.slabfd, ED_LCK_UN, blck*PAGESIZE, nbytes, cache->idx.flags);
-		}
-		ed_txn_close(&cache->txn, cache->idx.flags|ED_FRESET);
-	}
-	else {
-		madvise(hdr, nbytes, MADV_SEQUENTIAL);
 	}
 	return rc;
 }
@@ -417,45 +324,155 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 }
 
 int
-ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len)
+ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 {
-	EdObject *obj;
+	EdObject *obj = NULL;
 	int rc = obj_new(&obj, NULL, 0, true);
 	if (rc < 0) { return rc; }
+	assert(obj != NULL);
 
-	rc = obj_get(cache, key, len, obj);
-	if (rc <= 0) {
+	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
+	const EdTimeUnix now = ed_now_unix();
+	EdTxn *const txn = cache->txn;
+
+	int set = 0;
+	EdEntryKey *key;
+
+	rc = ed_txn_open(txn, cache->idx.flags|ED_FRDONLY);
+	if (rc < 0) { goto done; }
+
+	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key);
+			rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
+			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
+		// First check if the object is expired.
+		if (ed_expired_at(cache->idx.epoch, key->exp, now)) {
+			continue;
+		}
+
+		off_t off = key->no * PAGESIZE;
+		off_t len = key->count * PAGESIZE;
+
+		// Try to get a shared lock on the slab region. If it cannot be locked, a
+		// writer is replacing this slab location.
+		if (ed_flck(cache->idx.slabfd, ED_LCK_SH, off, len, cache->idx.flags|ED_FNOBLOCK) < 0) {
+			continue;
+		}
+
+		// Map the slab object.
+		EdObjectHdr *hdr = ed_pg_map(cache->idx.slabfd, key->no, key->count, false);
+		if (hdr == MAP_FAILED) {
+			rc = ED_ERRNO;
+			ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
+			break;
+		}
+
+		// Resolve any hash collisions with a full key comparison. This will *very*
+		// likely match. If it does, set up the object and end the loop.
+		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
+			obj_init(obj, cache, hdr, key->no, true, key->exp);
+			set = 1;
+			break;
+		}
+
+		// We have a hash collision so unlock and unmap the slab region and continue
+		// searching with the next entry.
+		ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
+		ed_pg_unmap(hdr, key->count);
+	}
+
+done:
+	ed_txn_close(&cache->txn, cache->idx.flags|ED_FRESET);
+	if (rc == 1) {
+		madvise(obj->hdr, obj->nbytes, MADV_SEQUENTIAL);
+	}
+	else {
 		free(obj);
 		obj = NULL;
 	}
 	*objp = obj;
-	return rc;
+	return rc < 0 ? rc : set;
 }
 
 int
-ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr)
+ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 {
-	// TODO: this needs to be a three-stage write.
-	// 1) find writable location and kick out entries there
-	// 2) write contents to slab
-	// 3) on close upsert the key and slab position
-	EdObject *obj;
+	EdObject *obj = NULL;
 	int rc = obj_new(&obj, attr->key, attr->keylen, false);
 	if (rc < 0) { return rc; }
+	assert(obj != NULL);
 
-	rc = obj_reserve(cache, attr, ed_unix_from_ttl(attr->ttl), obj);
+	const EdTime exp = ed_expiry_at(cache->idx.epoch, attr->ttl, ed_now_unix());
+	const uint64_t h = ed_hash(attr->key, attr->keylen, cache->idx.seed);
+	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen);
+	const EdBlkno nblcks = nbytes/PAGESIZE;
+	const bool oneshot = attr->data != NULL;
+	const int slabfd = cache->idx.slabfd;
+	const uint64_t flags = cache->idx.flags;
+	EdTxn *const txn = cache->txn;
+
+	EdObjectHdr *hdr = MAP_FAILED;
+	bool locked = false;
+	EdBlkno blck;
+
+	// Open a transaction. This allows to get the current slab position safely.
+	// If this fails, return the error code, but any furtur failures must goto
+	// the done label.
+	rc = ed_txn_open(txn, flags);
+	if (rc < 0) { goto done; }
+
+	blck = ed_txn_block(txn);
+	rc = obj_reserve(txn, slabfd, flags, &blck, nbytes);
+	if (rc < 0) { goto done; }
+
+	// Map the new object header in the slab.
+	hdr = ed_pg_map(slabfd, blck, nblcks, true);
+	if (hdr == MAP_FAILED) {
+		rc = ED_ERRNO;
+		goto done;
+	}
+
+	// Add the next write position to the transaction.
+	ed_txn_set_block(txn, blck + nblcks);
+
+	// If data is attached to the attribute object, we will create the full object
+	// in a single transaction. This does make a trade-off, however. Write
+	// transactions are exclusive, so all memory copying and CRC calculations must
+	// be done while in this critical section.
+	if (oneshot) {
+		// Make object available in the index.
+		rc = obj_upsert(cache, attr->key, attr->keylen, h, blck, nblcks, exp);
+		if (rc < 0) { goto done; }
+
+		obj_hdr_init(hdr, attr, h, nbytes, flags);
+		obj_write(obj_data(hdr), attr->data, attr->datalen, &hdr->datacrc, flags);
+		obj_hdr_final(hdr, nbytes);
+	}
+
+	// Commit changes and initialize the new header.
+	rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
+	if (rc < 0) { goto done; }
+
+	if (!oneshot) {
+		obj_hdr_init(hdr, attr, h, nbytes, flags);
+	}
+
+	obj_init(obj, cache, hdr, blck, oneshot, exp);
+
+done:
+	// Clean up resources if there was an error.
 	if (rc < 0) {
-		free(obj);
-		return rc;
-	}
-
-	if (attr->meta != NULL) {
-		if (cache->idx.flags & ED_FCHECKSUM) {
-			obj->hdr->metacrc = ed_crc32c(0, attr->meta, obj->metalen);
+		if (hdr != MAP_FAILED) {
+			ed_pg_unmap(hdr, nblcks);
 		}
-		memcpy(obj->meta, attr->meta, obj->metalen);
+		if (locked) {
+			ed_flck(slabfd, ED_LCK_UN, blck*PAGESIZE, nbytes, flags);
+		}
+		if (ed_txn_isopen(txn)) {
+			ed_txn_close(&cache->txn, flags|ED_FRESET);
+		}
+		free(obj);
+		obj = NULL;
 	}
-
 	*objp = obj;
 	return rc;
 }
@@ -464,13 +481,13 @@ int64_t
 ed_write(EdObject *obj, const void *buf, size_t len)
 {
 	if (len > UINT32_MAX || (uint64_t)obj->dataseek + len > (uint64_t)obj->datalen) {
-		return ED_EOBJECT_LENGTH;
+		return ED_EOBJECT_TOOBIG;
 	}
-	if (obj->cache->idx.flags & ED_FCHECKSUM) {
-		ed_crc32c(obj->datacrc, buf, len);
-	}
-	memcpy(obj->data + obj->dataseek, buf, len);
+	obj_write(obj->data + obj->dataseek, buf, len, &obj->datacrc, obj->cache->idx.flags);
 	obj->dataseek += (uint32_t)len;
+	if (obj->datalen == obj->dataseek) {
+		obj_hdr_final(obj->hdr, obj->nbytes);
+	}
 	return (int64_t)len;
 }
 
@@ -488,16 +505,52 @@ ed_meta(EdObject *obj, size_t *len)
 	return obj->meta;
 }
 
-void
+int
 ed_close(EdObject **objp)
 {
 	EdObject *obj = *objp;
-	if (obj == NULL) { return; }
+	if (obj == NULL) { return 0; }
 	*objp = NULL;
 
-	ed_flck(obj->cache->idx.slabfd, ED_LCK_UN,
-			obj->byte, obj->nbytes, obj->cache->idx.flags);
+	EdCache *cache = obj->cache;
+	uint64_t flags = cache->idx.flags;
+	int slabfd = cache->idx.slabfd;
+	int rc = 0;
+	uint64_t h = obj->hdr->keyhash;
+	bool locked = true;
+
 	ed_pg_unmap(obj->hdr, obj->nblcks);
+	if (!(flags & ED_FNOSYNC)) {
+		fsync(slabfd);
+	}
+
+	if (!obj->rdonly) {
+		if (obj->datalen == obj->dataseek) {
+			rc = ed_txn_open(cache->txn, flags);
+			if (rc < 0) { goto done; }
+
+			rc = obj_upsert(cache, obj->newkey, obj->keylen, h,
+					obj->blck, obj->nblcks, obj->exp);
+			if (rc < 0) { goto done; }
+
+			ed_flck(slabfd, ED_LCK_UN, obj->byte, obj->nbytes, flags);
+			locked = false;
+
+			rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
+		}
+		else {
+			rc = ED_EOBJECT_TOOSMALL;
+		}
+	}
+
+done:
+	if (locked) {
+		ed_flck(slabfd, ED_LCK_UN, obj->byte, obj->nbytes, flags);
+	}
+	if (rc < 0 && ed_txn_isopen(cache->txn)) {
+		ed_txn_close(&cache->txn, flags|ED_FRESET);
+	}
 	free(obj);
+	return rc;
 }
 

@@ -28,7 +28,6 @@
 #define ED_FNOTLCK       UINT64_C(0x0000080000000000) /** Disable thread locking. */
 #define ED_FNOBLOCK      UINT64_C(0x0000100000000000) /** May return EAGAIN for open or create. */
 #define ED_FRDONLY       UINT64_C(0x0000200000000000) /** The operation does not need to write. */
-#define ED_FZERO         UINT64_C(0x0000400000000000) /** Zero new entries before writing. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /** Reset the transaction when closing. */
 /** @} */
 
@@ -83,7 +82,7 @@ ED_EXPORT int
 ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len);
 
 ED_EXPORT int
-ed_create(EdCache *cache, EdObject **objp, EdObjectAttr *attr);
+ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr);
 
 ED_EXPORT int
 ed_unlink(EdCache *cache, const void *key, size_t len);
@@ -112,7 +111,7 @@ ed_value(EdObject *obj, size_t *len);
 ED_EXPORT const void *
 ed_meta(EdObject *obj, size_t *len);
 
-ED_EXPORT void
+ED_EXPORT int
 ed_close(EdObject **objp);
 
 ED_EXPORT int
@@ -235,7 +234,8 @@ ed_discard(EdObject **objp);
 
 #define ED_EKEY_LENGTH           ed_ekey(0)    /** Error code when the key is too long. */
 
-#define ED_EOBJECT_LENGTH        ed_eobject(0) /** Error code when too many bytes are written to an object. */
+#define ED_EOBJECT_TOOBIG        ed_eobject(0) /** Error code when too many bytes are written to an object. */
+#define ED_EOBJECT_TOOSMALL      ed_eobject(1) /** Error code when too few bytes are written to an object. */
 
 #define ED_EMIME_FILE            ed_emime(0)   /** Error code when the mime.cache file can't be loaded. */
 

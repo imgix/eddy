@@ -1037,7 +1037,6 @@ struct EdCache {
 
 struct EdObject {
 	EdCache *    cache;
-	EdTimeUnix   expiry;
 	uint8_t *    data;
 	uint8_t *    key;
 	uint8_t *    meta;
@@ -1051,6 +1050,7 @@ struct EdObject {
 	EdBlkno      nblcks;
 	size_t       byte;
 	size_t       nbytes;
+	EdTime       exp;
 	bool         rdonly;
 	uint8_t      newkey[1];
 };

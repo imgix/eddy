@@ -18,7 +18,6 @@ usage(const char *prog)
 			"options:\n"
 			"  -e ttl    set the time-to-live in seconds\n"
 			"  -m meta   set the object meta data from the contents of a file\n"
-			"  -z        zero entry region before writing\n"
 			,
 			name);
 }
@@ -35,9 +34,8 @@ main(int argc, char **argv)
 	EdObjectAttr attr = { .ttl = -1 };
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hze:m:")) != -1) {
+	while ((ch = getopt(argc, argv, ":he:m:")) != -1) {
 		switch (ch) {
-		case 'z': cfg.flags |= ED_FZERO; break;
 		case 'e':
 			attr.ttl = strtol(optarg, &end, 10);
 			if (*end != '\0') { errx(1, "invalid number: -%c", optopt); }
