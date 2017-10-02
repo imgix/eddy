@@ -29,15 +29,20 @@ obj_meta_offset(uint16_t keylen)
 }
 
 static size_t
-obj_data_offset(uint16_t keylen, uint16_t metalen)
+obj_data_offset(uint16_t keylen, uint16_t metalen, uint64_t flags)
 {
-	return ed_align_max(obj_meta_offset(keylen) + metalen);
+	if (flags & ED_FPAGEALIGN) {
+		return ed_align_pg(obj_meta_offset(keylen) + metalen);
+	}
+	else {
+		return ed_align_max(obj_meta_offset(keylen) + metalen);
+	}
 }
 
 static size_t
-obj_slab_size(uint16_t keylen, uint16_t metalen, uint32_t datalen)
+obj_slab_size(uint16_t keylen, uint16_t metalen, uint32_t datalen, uint64_t flags)
 {
-	return ed_align_pg(obj_data_offset(keylen, metalen) + datalen);
+	return ed_align_pg(obj_data_offset(keylen, metalen, flags) + datalen);
 }
 
 static uint8_t *
@@ -53,21 +58,22 @@ obj_meta(EdObjectHdr *hdr)
 }
 
 static uint8_t *
-obj_data(EdObjectHdr *hdr)
+obj_data(EdObjectHdr *hdr, uint64_t flags)
 {
-	return (uint8_t *)hdr + obj_data_offset(hdr->keylen, hdr->metalen);
+	return (uint8_t *)hdr + obj_data_offset(hdr->keylen, hdr->metalen, flags);
 }
 
 static void
 obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly, EdTime exp)
 {
-	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen);
+	const uint64_t flags = cache->idx.flags;
+	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen, flags);
 	obj->cache = cache;
 	obj->key = obj_key(hdr);
 	obj->keylen = hdr->keylen;
 	obj->meta = obj_meta(hdr);
 	obj->metalen = hdr->metalen;
-	obj->data = obj_data(hdr);
+	obj->data = obj_data(hdr, flags);
 	obj->datalen = hdr->datalen;
 	obj->datacrc = hdr->datacrc;
 	obj->hdr = hdr;
@@ -98,7 +104,7 @@ obj_hdr_init_meta(EdObjectHdr *hdr, const void *src, size_t len, uint64_t flags)
 	dst += len;
 
 	// Zero out the end of the meta segment.
-	memset(dst, 0, obj_data(hdr) - dst);
+	memset(dst, 0, obj_data(hdr, flags) - dst);
 }
 
 static void
@@ -124,9 +130,9 @@ obj_hdr_init(EdObjectHdr *hdr, const EdObjectAttr *attr, uint64_t h,
 }
 
 static void
-obj_hdr_final(EdObjectHdr *hdr, size_t nbytes)
+obj_hdr_final(EdObjectHdr *hdr, size_t nbytes, uint64_t flags)
 {
-	uint8_t *data = obj_data(hdr) + hdr->datalen;
+	uint8_t *data = obj_data(hdr, flags) + hdr->datalen;
 	memset(data, 0, nbytes - (data - (uint8_t *)hdr));
 }
 
@@ -403,11 +409,11 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 
 	const EdTime exp = ed_expiry_at(cache->idx.epoch, attr->ttl, ed_now_unix());
 	const uint64_t h = ed_hash(attr->key, attr->keylen, cache->idx.seed);
-	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen);
+	const uint64_t flags = cache->idx.flags;
+	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, flags);
 	const EdBlkno nblcks = nbytes/PAGESIZE;
 	const bool oneshot = attr->data != NULL;
 	const int slabfd = cache->idx.slabfd;
-	const uint64_t flags = cache->idx.flags;
 	EdTxn *const txn = cache->txn;
 
 	EdObjectHdr *hdr = MAP_FAILED;
@@ -444,8 +450,8 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 		if (rc < 0) { goto done; }
 
 		obj_hdr_init(hdr, attr, h, nbytes, flags);
-		obj_write(obj_data(hdr), attr->data, attr->datalen, &hdr->datacrc, flags);
-		obj_hdr_final(hdr, nbytes);
+		obj_write(obj_data(hdr, flags), attr->data, attr->datalen, &hdr->datacrc, flags);
+		obj_hdr_final(hdr, nbytes, flags);
 	}
 
 	// Commit changes and initialize the new header.
@@ -483,10 +489,12 @@ ed_write(EdObject *obj, const void *buf, size_t len)
 	if (len > UINT32_MAX || (uint64_t)obj->dataseek + len > (uint64_t)obj->datalen) {
 		return ED_EOBJECT_TOOBIG;
 	}
-	obj_write(obj->data + obj->dataseek, buf, len, &obj->datacrc, obj->cache->idx.flags);
+	const uint64_t flags = obj->cache->idx.flags;
+	obj_write(obj->data + obj->dataseek, buf, len, &obj->datacrc, flags);
 	obj->dataseek += (uint32_t)len;
 	if (obj->datalen == obj->dataseek) {
-		obj_hdr_final(obj->hdr, obj->nbytes);
+		obj->hdr->datacrc = obj->datacrc;
+		obj_hdr_final(obj->hdr, obj->nbytes, flags);
 	}
 	return (int64_t)len;
 }

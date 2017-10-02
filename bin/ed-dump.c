@@ -79,7 +79,7 @@ dump_index(EdPgIdx *idx)
 	printf("epoch: %ld\n", idx->epoch);
 	printf("flags:\n");
 	if (idx->flags & ED_FCHECKSUM) { printf("- ED_FCHECKSUM\n"); }
-	if (idx->flags & ED_FNOPAGEALIGN) { printf("- ED_FNOPAGEALIGN\n"); }
+	if (idx->flags & ED_FPAGEALIGN) { printf("- ED_FPAGEALIGN\n"); }
 	printf("size_page: %u\n", idx->size_page);
 	printf("slab_block_size: %u\n", idx->slab_block_size);
 	printf("nconns: %u\n", idx->nconns);

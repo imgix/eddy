@@ -48,9 +48,6 @@ main(int argc, char **argv)
 	if (argc == 1) { errx(1, "key not provided"); }
 	key = argv[1];
 
-	argc -= 2;
-	argv += 2;
-
 	int rc;
 
 	rc = ed_cache_open(&cache, &cfg);
@@ -75,11 +72,9 @@ main(int argc, char **argv)
 		ed_close(&obj);
 	}
 
-	/*
 	if (unlink) {
-		ed_set_ttl(obj, 0);
+		warnx("-u not yet supported");
 	}
-	*/
 
 	ed_cache_close(&cache);
 #if ED_MMAP_DEBUG

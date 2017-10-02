@@ -23,6 +23,7 @@ usage(const char *prog)
 			"  -v        enable verbose messaging\n"
 			"  -f        force creation of a new cache file\n"
 			"  -c        track crc32 checksums\n"
+			"  -p        force file data to be page aligned\n"
 			"  -r        create a RAM disk for the slab\n"
 			"  -s size   size of the file (default " DEFAULT_SIZE ")\n"
 			"  -S slab   path to slab file (default is the index path with \"-slab\" suffix)\n"
@@ -99,11 +100,12 @@ main(int argc, char **argv)
 	bool ram = false;
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hrvfcs:S:b:")) != -1) {
+	while ((ch = getopt(argc, argv, ":hrvfcps:S:b:")) != -1) {
 		switch (ch) {
 		case 'v': cfg.flags |= ED_FVERBOSE; break;
 		case 'f': cfg.flags |= ED_FREPLACE; break;
 		case 'c': cfg.flags |= ED_FCHECKSUM; break;
+		case 'p': cfg.flags |= ED_FPAGEALIGN; break;
 		case 's': size_arg = optarg; break;
 		case 'r':
 			if (cfg.slab_path) {
