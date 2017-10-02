@@ -134,22 +134,36 @@ obj_hdr_final(EdObjectHdr *hdr, size_t nbytes, uint64_t flags)
 }
 
 static int
-obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, size_t len)
+obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck, size_t len)
 {
 	EdBlkno pos = *posp, end;
 	size_t start = pos * PAGESIZE;
+	bool searched = false;
 	bool locked = false;
 	EdEntryBlock *block;
-
-	// Lookup an entry at the current slab position. Its likely nothing will be
-	// matched which will leave the block NULL. We must be sure the check this
-	// case when removing replaced entries.
-	int rc = ed_bpt_find(txn, ED_DB_BLOCKS, pos, (void **)&block);
-	if (rc < 0) { goto done; }
+	int rc;
 
 	// Find then next unlocked region >= #pos. If the current #pos cannot be used,
 	// start from the beginning of the next entry.
 	do {
+		// If the range sticks out past the end of the file, search at the beginning.
+		// I was creating a wrapped mmap here previously. For simplicity, that has
+		// been removed, but it could come back without any file format changes.
+		if (start + len > nblck*PAGESIZE) {
+			start = 0;
+			pos = 0;
+			searched = false;
+		}
+
+		if (!searched) {
+			// Lookup an entry at the current slab position. Its likely nothing will be
+			// matched which will leave the block NULL. We must be sure the check this
+			// case when removing replaced entries.
+			rc = ed_bpt_find(txn, ED_DB_BLOCKS, pos, (void **)&block);
+			if (rc < 0) { goto done; }
+			searched = true;
+		}
+
 		if (ed_flck(slabfd, ED_LCK_EX, start, len, flags|ED_FNOBLOCK) < 0) {
 			rc = ed_bpt_next(txn, ED_DB_BLOCKS, (void **)&block);
 			if (rc < 0) { goto done; }
@@ -187,6 +201,9 @@ obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, size_t len)
 				rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 			if (key->no == block->no) {
 				rc = ed_bpt_del(txn, ED_DB_KEYS);
+				if (rc >= 0) {
+					rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key);
+				}
 				break;
 			}
 		}
@@ -195,7 +212,12 @@ obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, size_t len)
 
 		rc = ed_bpt_del(txn, ED_DB_BLOCKS);
 		if (rc < 0) { goto done; }
+
+		rc = ed_bpt_next(txn, ED_DB_BLOCKS, (void **)&block);
+		if (rc < 0) { goto done; }
 	}
+
+	*posp = pos;
 
 done:
 	if (rc < 0 && locked) {
@@ -411,6 +433,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	const uint64_t flags = cache->idx.flags;
 	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, flags);
 	const EdBlkno nblcks = nbytes/PAGESIZE;
+	const EdBlkno nslab = cache->idx.slab_block_count;
 	const int slabfd = cache->idx.slabfd;
 	EdTxn *const txn = cache->txn;
 
@@ -425,7 +448,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	if (rc < 0) { goto done; }
 
 	blck = ed_txn_block(txn);
-	rc = obj_reserve(txn, slabfd, flags, &blck, nbytes);
+	rc = obj_reserve(txn, slabfd, flags, &blck, nslab, nbytes);
 	if (rc < 0) { goto done; }
 
 	// Map the new object header in the slab.
