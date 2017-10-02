@@ -112,7 +112,7 @@ dump_index(EdPgIdx *idx)
 			EdTimeUnix t = ed_time_to_unix(idx->epoch, c->active);
 			printf("  active: %ld\n", t);
 			char buf[32];
-			printf("  date: %s\n", ctime_r(&t, buf));
+			printf("  date: %s", ctime_r(&t, buf));
 		}
 		printf("  xid: %" PRIu64 "\n", c->xid);
 		printf("  pending: "); print_page_array(c->pending, c->npending);
