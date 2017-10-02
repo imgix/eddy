@@ -41,6 +41,7 @@ static const char *const eslab[] = {
 static const char *const eobject[] = {
 	[ed_ecode(ED_EOBJECT_TOOBIG)]        = "write exceeds allocated object size",
 	[ed_ecode(ED_EOBJECT_TOOSMALL)]      = "too few bytes were written to the object",
+	[ed_ecode(ED_EOBJECT_RDONLY)]        = "object is read-only",
 };
 
 static const char *const emime[] = {

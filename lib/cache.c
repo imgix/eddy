@@ -467,6 +467,9 @@ done:
 int64_t
 ed_write(EdObject *obj, const void *buf, size_t len)
 {
+	if (obj->rdonly) {
+		return ED_EOBJECT_RDONLY;
+	}
 	if (len > UINT32_MAX || (uint64_t)obj->dataseek + len > (uint64_t)obj->datalen) {
 		return ED_EOBJECT_TOOBIG;
 	}
@@ -547,13 +550,57 @@ void
 ed_discard(EdObject **objp)
 {
 	EdObject *obj = *objp;
-	if (obj == NULL) { return 0; }
+	if (obj == NULL) { return; }
 	*objp = NULL;
 
 	EdCache *cache = obj->cache;
 	ed_pg_unmap(obj->hdr, obj->nblcks);
 	ed_flck(cache->idx.slabfd, ED_LCK_UN, obj->byte, obj->nbytes, cache->idx.flags);
 	free(obj);
-	return rc;
+}
+
+int
+ed_set_ttl(EdObject *obj, time_t ttl)
+{
+	if (obj->rdonly) {
+		return ED_EOBJECT_RDONLY;
+	}
+	obj->exp = ed_expiry_at(obj->cache->idx.epoch, ttl, ed_now_unix());
+	return 0;
+}
+
+int
+ed_set_tag(EdObject *obj, uint16_t tag)
+{
+	if (obj->rdonly) {
+		return ED_EOBJECT_RDONLY;
+	}
+	obj->hdr->tag = tag;
+	return 0;
+}
+
+EdTimeTTL
+ed_ttl(const EdObject *obj, EdTimeUnix from)
+{
+	if (from < 0) { from = ed_now_unix(); }
+	return ed_ttl_at(obj->cache->idx.epoch, obj->exp, from);
+}
+
+EdTimeUnix
+ed_expiry(const EdObject *obj)
+{
+	return ed_time_to_unix(obj->cache->idx.epoch, obj->exp);
+}
+
+EdTimeUnix
+ed_created_at(const EdObject *obj)
+{
+	return ed_time_to_unix(obj->cache->idx.epoch, obj->hdr->created);
+}
+
+uint16_t
+ed_tag(const EdObject *obj)
+{
+	return obj->hdr->tag;
 }
 

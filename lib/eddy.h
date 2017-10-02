@@ -86,15 +86,6 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr);
 ED_EXPORT int
 ed_unlink(EdCache *cache, const void *key, size_t len);
 
-ED_EXPORT int
-ed_set_ttl(EdObject *obj, time_t ttl);
-
-ED_EXPORT EdTimeTTL
-ed_tll(const EdObject *obj);
-
-ED_EXPORT EdTimeUnix
-ed_expiry(const EdObject *obj);
-
 ED_EXPORT int64_t
 ed_write(EdObject *obj, const void *buf, size_t len);
 
@@ -115,6 +106,24 @@ ed_close(EdObject **objp);
 
 ED_EXPORT void
 ed_discard(EdObject **objp);
+
+ED_EXPORT int
+ed_set_ttl(EdObject *obj, time_t ttl);
+
+ED_EXPORT int
+ed_set_tag(EdObject *obj, uint16_t tag);
+
+ED_EXPORT EdTimeTTL
+ed_ttl(const EdObject *obj, EdTimeUnix from);
+
+ED_EXPORT EdTimeUnix
+ed_expiry(const EdObject *obj);
+
+ED_EXPORT EdTimeUnix
+ed_created_at(const EdObject *obj);
+
+ED_EXPORT uint16_t
+ed_tag(const EdObject *obj);
 
 
 
@@ -235,6 +244,7 @@ ed_discard(EdObject **objp);
 
 #define ED_EOBJECT_TOOBIG        ed_eobject(0) /** Error code when too many bytes are written to an object. */
 #define ED_EOBJECT_TOOSMALL      ed_eobject(1) /** Error code when too few bytes are written to an object. */
+#define ED_EOBJECT_RDONLY        ed_eobject(2) /** Error code when attempting to modify a read-only object. */
 
 #define ED_EMIME_FILE            ed_emime(0)   /** Error code when the mime.cache file can't be loaded. */
 
