@@ -53,7 +53,6 @@ struct EdConfig {
 struct EdObjectAttr {
 	const void * key;
 	const void * meta;
-	const void * data;
 	uint16_t     keylen;
 	uint16_t     metalen;
 	uint32_t     datalen;

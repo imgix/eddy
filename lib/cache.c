@@ -412,7 +412,6 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	const uint64_t flags = cache->idx.flags;
 	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, flags);
 	const EdBlkno nblcks = nbytes/PAGESIZE;
-	const bool oneshot = attr->data != NULL;
 	const int slabfd = cache->idx.slabfd;
 	EdTxn *const txn = cache->txn;
 
@@ -440,29 +439,12 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	// Add the next write position to the transaction.
 	ed_txn_set_block(txn, blck + nblcks);
 
-	// If data is attached to the attribute object, we will create the full object
-	// in a single transaction. This does make a trade-off, however. Write
-	// transactions are exclusive, so all memory copying and CRC calculations must
-	// be done while in this critical section.
-	if (oneshot) {
-		// Make object available in the index.
-		rc = obj_upsert(cache, attr->key, attr->keylen, h, blck, nblcks, exp);
-		if (rc < 0) { goto done; }
-
-		obj_hdr_init(hdr, attr, h, nbytes, flags);
-		obj_write(obj_data(hdr, flags), attr->data, attr->datalen, &hdr->datacrc, flags);
-		obj_hdr_final(hdr, nbytes, flags);
-	}
-
 	// Commit changes and initialize the new header.
 	rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
 	if (rc < 0) { goto done; }
 
-	if (!oneshot) {
-		obj_hdr_init(hdr, attr, h, nbytes, flags);
-	}
-
-	obj_init(obj, cache, hdr, blck, oneshot, exp);
+	obj_hdr_init(hdr, attr, h, nbytes, flags);
+	obj_init(obj, cache, hdr, blck, false, exp);
 
 done:
 	// Clean up resources if there was an error.
