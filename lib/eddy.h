@@ -113,7 +113,7 @@ ed_meta(EdObject *obj, size_t *len);
 ED_EXPORT int
 ed_close(EdObject **objp);
 
-ED_EXPORT int
+ED_EXPORT void
 ed_discard(EdObject **objp);
 
 

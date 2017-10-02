@@ -544,3 +544,17 @@ done:
 	return rc;
 }
 
+void
+ed_discard(EdObject **objp)
+{
+	EdObject *obj = *objp;
+	if (obj == NULL) { return 0; }
+	*objp = NULL;
+
+	EdCache *cache = obj->cache;
+	ed_pg_unmap(obj->hdr, obj->nblcks);
+	ed_flck(cache->idx.slabfd, ED_LCK_UN, obj->byte, obj->nbytes, cache->idx.flags);
+	free(obj);
+	return rc;
+}
+
