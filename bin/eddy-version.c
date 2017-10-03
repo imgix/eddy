@@ -40,6 +40,9 @@ version_run(const EdCommand *cmd, int argc, char *const *argv)
 #if ED_DUMP
 		printf("- dump\n");
 #endif
+#if ED_DEBUG
+		printf("- dbg\n");
+#endif
 #if ED_MMAP_DEBUG
 		printf("- mmapdbg\n");
 #endif
@@ -58,6 +61,9 @@ version_run(const EdCommand *cmd, int argc, char *const *argv)
 #endif
 #if ED_DUMP
 		printf(" +dump");
+#endif
+#if ED_DEBUG
+		printf(" +dbg");
 #endif
 #if ED_MMAP_DEBUG
 		printf(" +mmapdbg");

@@ -90,7 +90,7 @@ CXX:= $(CXX) -std=gnu++11
 
 # Append required flags.
 ifeq ($(DEBUG),yes)
-  CFLAGS+= -g
+  CFLAGS+= -g -DED_DEBUG=1
   LDFLAGS+= -g
 endif
 CFLAGS+= -Ilib -march=native -fvisibility=hidden -pthread -D_GNU_SOURCE -D_BSD_SOURCE -DPAGESIZE=$(PAGESIZE)
