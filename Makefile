@@ -8,7 +8,7 @@ VMIN:= 2
 
 # Select default options.
 LIBNAME?= eddy
-BINNAME?= ed-
+BINNAME?= eddy
 BUILD?= release
 PREFIX?= /usr/local
 UNAME?=$(shell uname -s)
@@ -52,10 +52,9 @@ LIBSRC:= lib/cache.c \
 	lib/stat.c \
 	lib/mkfile.c \
 	lib/time.c
-BINSRC:= bin/ed-new.c bin/ed-stat.c bin/ed-get.c bin/ed-set.c bin/ed-dump.c
+BINSRC:= bin/eddy.c
 ifeq ($(BUILD_MIME),yes)
   LIBSRC+= lib/mime.c
-  BINSRC+= bin/ed-mime.c
   CFLAGS+= -DED_MIME=1
   ifeq ($(BUILD_MIMEDB),yes)
     LIBSRC+= lib/mimedb.c
@@ -73,10 +72,7 @@ ifeq ($(DEBUG_FAULT),yes)
   LIBSRC+= lib/fault.c
   CFLAGS+= -DED_FAULT=1
 endif
-ifeq ($(BUILD_DEV),yes)
-  BINSRC+= bin/ed-alloc.c bin/ed-exec.c
-endif
-TESTSRC:= $(wildcard test/*.c)
+TESTSRC:= $(wildcard test/test-*.c)
 
 # Select compiler and linker.
 ifeq ($(findstring .cc,$(suffix $(LIBSRC))),.cc)
@@ -113,11 +109,11 @@ TEST:= build/$(BUILD)/test
 ifeq ($(LTO),yes)
   OBJEXT:=lto.o
   OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
-  OBJA:= $(TMP)/$(LIBNAME).c.o
+  OBJA:= $(TMP)/$(LIBNAME)-amalg.c.o
 else
   OBJEXT:=o
   ifeq ($(LTO),amalg)
-    OBJ:= $(TMP)/$(LIBNAME).c.$(OBJEXT)
+    OBJ:= $(TMP)/$(LIBNAME)-amalg.c.$(OBJEXT)
   else
     OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
   endif
@@ -140,7 +136,7 @@ endif
 SO:=lib$(LIBNAME).$(SOEXT)
 
 PRODUCTS:= \
-	$(BINSRC:bin/ed-%.c=$(DESTDIR)$(PREFIX)/bin/$(BINNAME)%) \
+	$(DESTDIR)$(PREFIX)/bin/$(BINNAME) \
 	$(DESTDIR)$(PREFIX)/include/eddy.h \
 	$(DESTDIR)$(PREFIX)/lib/$(A) \
 	$(DESTDIR)$(PREFIX)/lib/$(SOMIN) \
@@ -165,7 +161,7 @@ endif
 
 
 # Build only the executable tools.
-bin: $(BINSRC:bin/ed-%.c=$(BIN)/$(BINNAME)%)
+bin: $(BIN)/$(BINNAME)
 
 # Build the static and shared libraries.
 lib: static dynamic
@@ -218,7 +214,7 @@ else
 endif
 
 # Generate and strip statically linked executable.
-$(BIN)/$(BINNAME)%: $(TMP)/ed-%.c.$(OBJEXT) $(OBJ) | $(BIN)
+$(BIN)/$(BINNAME): $(TMP)/eddy.c.$(OBJEXT) $(OBJ) | $(BIN)
 	$(call LINK,$^,$@)
 	@$(STRIP) $@
 
@@ -271,7 +267,7 @@ $(TMP)/%.c.o: $(TMP)/%.c | $(TMP)
 	$(call COMPILE,$(CC),$<,$@)
 
 # Produce amalgamated intermediate source file.
-$(TMP)/$(LIBNAME).c: $(LIBSRC) | $(TMP)
+$(TMP)/$(LIBNAME)-amalg.c: $(LIBSRC) | $(TMP)
 	@echo "amalg\t$@"
 	@date +"/*  $(LIBNAME): %Y-%m-%d %T %Z */" > $@
 	@for f in $^; do cat $$f >> $@; done
@@ -317,6 +313,6 @@ $(DESTDIR)$(PREFIX)/include/%.h: lib/%.h | $(DESTDIR)$(PREFIX)/include
 .PHONY: all bin lib static dynamic test install uninstall clean
 .SECONDARY:
 
--include $(OBJ:%.o=%.d) $(BINSRC:bin/%.c=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/%.c.d)
+-include $(OBJ:%.o=%.d) $(BINSRC:bin/%=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/%.c.d)
 
 $(TMP)/mimedb.c.$(OBJEXT): lib/mimedb.c test/mime.cache

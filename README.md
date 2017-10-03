@@ -20,7 +20,7 @@ make install
 If you only want parts, these may be invoked individually:
 
 ```bash
-make bin # build only executable tools (ed-new, ed-get, ed-set, etc.)
+make bin # build only the executable tool
 make lib # build the static and dynamic libraries
 make static # build only the static library
 make dynamic # build only the dynamic library and version symlinks
@@ -33,7 +33,6 @@ make dynamic # build only the dynamic library and version symlinks
 | `BUILD` | Build mode: `release` or `debug`. | `release` |
 | `BUILD_MIME` | Build the MIME module. This is for both the command line tool and internal `mime.cache` database reader. | `yes` |
 | `BUILD_MIMEDB` | Link the MIME database with the MIME module. This allows the MIME module to work without a local database. | `no` |
-| `BUILD_DEV` | Build the maintainer tools. These are not needed for managing the cache. | `no` for `release`, `yes` for `debug`  |
 | `OPT` | Optimization level of the build. | `3` for `release`, unset for `debug` |
 | `LTO` | Enable link time optimizations. Additionally, this may be set to `amalg` which will produce an amalgamated source build rather than using the compiler LTO. The amalgamated build is always used for the static library any time LTO is enabled. | `yes` for `release`, `no` for `debug` |
 | `DEBUG` | Build with debugging symbols. This allows `release` builds to retain debugging symbols. | `no` for optimized, `yes` otherwise |
@@ -42,7 +41,7 @@ make dynamic # build only the dynamic library and version symlinks
 | `LDFLAGS` | The base linker flags. These will be mixed into the required flags.  | _no default_ |
 | `PREFIX` | Base install directory. | `/usr/local` |
 | `LIBNAME` | Base name of library products. | `eddy` |
-| `BINNAME` | Base name of binary products. | `ed-` |
+| `BINNAME` | Name of the executable. | `eddy` |
 | `PAGESIZE` | The target page size. Generally, this should not be changed. | result of `getconf PAGESIZE` |
 
 <sup>1</sup>This also creates an amalgamated build for the static library.

@@ -1,30 +1,7 @@
 #include "../lib/eddy-private.h"
-#include "input.h"
 
-#include <getopt.h>
-#include <err.h>
-
-static void
-usage(const char *prog)
-{
-	const char *name = strrchr(prog, '/');
-	name = name ? name + 1 : prog;
-	fprintf(stderr,
-			"usage: %s [-e ttl] [-m meta] index key {file | <file}\n"
-			"       %s [-e ttl] -u index key\n"
-			"\n"
-			"about:\n"
-			"  Sets the contents of an object in the cache from stdin or a file.\n"
-			"\n"
-			"options:\n"
-			"  -e ttl    set the time-to-live in seconds\n"
-			"  -m meta   set the object meta data from the contents of a file\n"
-			,
-			name, name);
-}
-
-int
-main(int argc, char **argv)
+static int
+set_run(const EdCommand *cmd, int argc, char *const *argv)
 {
 	EdConfig cfg = ed_config_make();
 	EdCache *cache = NULL;
@@ -36,7 +13,7 @@ main(int argc, char **argv)
 	bool update = false;
 
 	int ch;
-	while ((ch = getopt(argc, argv, ":hue:m:")) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
 		switch (ch) {
 		case 'u': update = true; break;
 		case 'e':
@@ -47,9 +24,6 @@ main(int argc, char **argv)
 			rc = ed_input_fread(&meta, optarg, UINT16_MAX);
 			if (rc < 0) { errc(1, ed_ecode(rc), "failed to read MIME file"); }
 			break;
-		case 'h': usage(argv[0]); return 0;
-		case '?': errx(1, "invalid option: -%c", optopt);
-		case ':': errx(1, "missing argument for option: -%c", optopt);
 		}
 	}
 	argc -= optind;
@@ -91,9 +65,6 @@ main(int argc, char **argv)
 	ed_input_final(&data);
 	ed_input_final(&meta);
 	ed_cache_close(&cache);
-#if ED_MMAP_DEBUG
-	if (ed_pg_check() > 0) { return EXIT_FAILURE; }
-#endif
 	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
