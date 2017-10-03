@@ -5,7 +5,7 @@ static const char version_descr[] =
 static const char version_usage[] =
 	"usage: eddy version [-b] [-y] index\n";
 static EdOption version_opts[] = {
-	{"build", NULL,   0, 'y', "output in YAML format"},
+	{"yaml",  NULL,   0, 'y', "output in YAML format"},
 	{"build", NULL,   0, 'b', "only output the build version"},
 	{0, 0, 0, 0, 0}
 };
