@@ -77,6 +77,7 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonl
 	obj->datalen = hdr->datalen;
 	obj->datacrc = hdr->datacrc;
 	obj->hdr = hdr;
+	obj->xid = ed_bpt_xid(cache->txn, ED_DB_KEYS);
 	obj->blck = no;
 	obj->nblcks = size/PAGESIZE;
 	obj->byte = no*PAGESIZE;
@@ -394,9 +395,8 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		// Resolve any hash collisions with a full key comparison. This will *very*
 		// likely match. If it does, set up the object and end the loop.
 		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
-			obj_init(obj, cache, hdr, key->no, true, key->exp);
-			obj->xid = ed_bpt_xid(txn, ED_DB_KEYS);
 			set = 1;
+			obj_init(obj, cache, hdr, key->no, true, key->exp);
 			break;
 		}
 
@@ -468,7 +468,6 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 
 	obj_hdr_init(hdr, attr, h, nbytes, flags, now);
 	obj_init(obj, cache, hdr, blck, false, exp);
-	obj->xid = ed_bpt_xid(txn, ED_DB_KEYS);
 
 done:
 	// Clean up resources if there was an error.
