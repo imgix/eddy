@@ -195,6 +195,10 @@ ed_mime_load(EdMime **dbp, const void *data, size_t size, int flags)
 	if (data == NULL) {
 		data = ed_mimedb_data;
 		size = ed_mimedb_size;
+		flags |= ED_FMIME_NOVERIFY;
+	}
+	else if (data == ed_mimedb_data) {
+		flags |= ED_FMIME_NOVERIFY;
 	}
 #endif
 
@@ -248,53 +252,55 @@ ed_mime_load(EdMime **dbp, const void *data, size_t size, int flags)
 	return 0;
 }
 
+static int
+try_open(const char *path, int flags, const void **data, size_t *size)
+{
+	int fd = open(path, O_RDONLY);
+	if (fd < 0) { return ED_ERRNO; }
+
+	int rc = 0;
+	struct stat stat;
+	void *m;
+	if (fstat(fd, &stat) < 0 || 
+			(m = mmap(NULL, stat.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
+		rc = ED_ERRNO;
+	}
+	close(fd);
+	if (rc == 0) {
+		madvise((void *)*data, stat.st_size, MADV_RANDOM|MADV_WILLNEED);
+		if (flags & ED_FMIME_MLOCK) {
+			mlock(data, stat.st_size);
+		}
+		*data = m;
+		*size = stat.st_size;
+	}
+	return rc;
+}
+
 int
 ed_mime_open(EdMime **dbp, const char *path, int flags)
 {
-	(void)flags;
-
 	const void *data = NULL;
 	size_t size = 0;
 	int rc = 0;
+	bool mapped = true;
 
 	if (path == NULL) {
-		rc = ed_esys(EINVAL);
-	}
-	else {
-		int fd = open(path, O_RDONLY);
-		if (fd < 0) {
-			rc = ED_ERRNO;
-		}
-		else {
-			struct stat stat;
-			bool ok =
-				fstat(fd, &stat) == 0 &&
-				(data = mmap(NULL, stat.st_size, PROT_READ, MAP_SHARED, fd, 0)) != MAP_FAILED;
-			close(fd);
-			if (!ok) {
-				rc = ED_ERRNO;
-			}
-			else {
-				madvise((void *)data, size, MADV_RANDOM|MADV_WILLNEED);
-				if (flags & ED_FMIME_MLOCK) {
-					mlock(data, size);
-				}
-				size = stat.st_size;
-			}
-		}
-	}
-
-	if (rc < 0) {
 #if ED_MIMEDB
-		data = ed_mimedb_data;
-		size = ed_mimedb_size;
-		rc = 1;
+		mapped = false;
+		goto load;
 #else
-		return rc;
+		if (try_open("/usr/local/share/mime/mime.cache", flags, &data, &size) == 0) {
+			goto load;
+		}
+		path = "/usr/share/mime/mime.cache";
 #endif
 	}
 
-	bool mapped = rc == 0;
+	rc = try_open(path, flags, &data, &size);
+	if (rc < 0) { return rc; }
+
+load:
 	rc = ed_mime_load(dbp, data, size, flags);
 	if (rc == 0) {
 		if (*dbp == NULL) { return ed_esys(EFAULT); }
