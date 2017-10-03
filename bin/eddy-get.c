@@ -68,6 +68,7 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 						"created timestamp: %ld\n"
 						"meta length: %u\n"
 						"data length: %u\n"
+						"xid: %" PRIu64 "\n"
 						"key hash: %" PRIu64 "\n"
 						,
 						ttl,
@@ -77,6 +78,7 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 						created_timestamp,
 						obj->metalen,
 						obj->datalen,
+						obj->xid,
 						obj->hdr->keyhash);
 
 				if (cache->idx.flags & ED_FCHECKSUM) {

@@ -101,7 +101,7 @@ obj_hdr_init(EdObjectHdr *hdr, const EdObjectAttr *attr, uint64_t h,
 	madvise(hdr, nbytes, MADV_SEQUENTIAL);
 	hdr->version = 0;
 	hdr->flags = 0;
-	hdr->tag = 0;
+	hdr->tag = attr->tag;
 	hdr->created = now;
 	hdr->keylen = attr->keylen;
 	hdr->metalen = attr->metalen;
@@ -395,6 +395,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		// likely match. If it does, set up the object and end the loop.
 		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
 			obj_init(obj, cache, hdr, key->no, true, key->exp);
+			obj->xid = ed_bpt_xid(txn, ED_DB_KEYS);
 			set = 1;
 			break;
 		}
@@ -467,6 +468,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 
 	obj_hdr_init(hdr, attr, h, nbytes, flags, now);
 	obj_init(obj, cache, hdr, blck, false, exp);
+	obj->xid = ed_bpt_xid(txn, ED_DB_KEYS);
 
 done:
 	// Clean up resources if there was an error.

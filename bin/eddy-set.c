@@ -3,9 +3,10 @@
 static const char set_descr[] =
 	"Sets the contents of an object in the cache from stdin or a file.";
 static const char set_usage[] =
-	"usage: eddy set [-e ttl] [-m meta] index key {file | <file}\n"
-	"       eddy set [-e ttl] -u index key\n";
+	"usage: eddy set [-e ttl] [-m meta] [-t tag] index key {file | <file}\n"
+	"       eddy set [-e ttl] [-t tag] -u index key\n";
 static EdOption set_opts[] = {
+	{"tag",     "tag",  0, 't', "user defined 16-bit unsigned integer"},
 	{"ttl",     "ttl",  0, 'e', "set the time-to-live in seconds"},
 	{"meta",    "file", 0, 'm', "set the object meta data from the contents of a file"},
 	{"update",  NULL,   0, 'u', "update fields in an existing entry"},
@@ -23,14 +24,22 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	int rc;
 	EdObjectAttr attr = { .ttl = -1 };
 	bool update = false;
+	long num;
 
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
 		switch (ch) {
 		case 'u': update = true; break;
+		case 't':
+			num = strtol(optarg, &end, 10);
+			if (*end != '\0' || num < 0 || num > UINT16_MAX) {
+				errx(1, "invalid number: %s", argv[optind-1]);
+			}
+			attr.tag = (uint16_t)num;
+			break;
 		case 'e':
 			attr.ttl = strtol(optarg, &end, 10);
-			if (*end != '\0') { errx(1, "invalid number: -%c", optopt); }
+			if (*end != '\0') { errx(1, "invalid number: %s", argv[optind-1]); }
 			break;
 		case 'm':
 			rc = ed_input_fread(&meta, optarg, UINT16_MAX);

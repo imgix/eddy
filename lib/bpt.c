@@ -493,6 +493,13 @@ ed_bpt_loop(const EdTxn *txn, unsigned db)
 	return txn->db[db].nloops;
 }
 
+EdTxnId
+ed_bpt_xid(const EdTxn *txn, unsigned db)
+{
+	const EdTxnDb *dbp = &txn->db[db];
+	return dbp->hasfind ? dbp->find->tree->xid : 0;
+}
+
 static int
 set_node(EdTxn *txn, EdTxnDb *dbp, EdNode *node)
 {

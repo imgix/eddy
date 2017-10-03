@@ -57,6 +57,7 @@ struct EdObjectAttr {
 	uint16_t     metalen;
 	uint32_t     datalen;
 	EdTimeTTL    ttl;
+	uint16_t     tag;
 };
 
 #define ed_config_make() ((EdConfig){ .flags = 0 })

@@ -417,6 +417,7 @@ ED_LOCAL      int ed_bpt_last(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_next(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_prev(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_loop(const EdTxn *txn, unsigned db);
+ED_LOCAL  EdTxnId ed_bpt_xid(const EdTxn *txn, unsigned db);
 ED_LOCAL      int ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace);
 ED_LOCAL      int ed_bpt_del(EdTxn *txn, unsigned db);
 ED_LOCAL      int ed_bpt_mark(EdIdx *, EdStat *, EdBpt *);
@@ -1050,6 +1051,7 @@ struct EdObject {
 	uint32_t     dataseek;
 	uint32_t     datacrc;
 	EdObjectHdr *hdr;
+	EdTxnId      xid;
 	EdBlkno      blck;
 	EdBlkno      nblcks;
 	size_t       byte;
