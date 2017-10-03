@@ -2,34 +2,22 @@
 #include "../lib/eddy-mime.h"
 
 static void
-mime_print(const EdMime *db, bool parents, const char *name, const char *mime)
-{
-	if (name) { printf("%s: ", name); }
-	if (mime == NULL) {
-		printf("~\n");
-	}
-	else if (parents) {
-		static const char indent[2] = "  ";
-		int len = name ? 2 : 0;
-		if (name) { printf("\n"); }
-		printf("%.*smime: %s\n%.*sparents:\n", len, indent, mime, len, indent);
-		const char *par[8];
-		size_t n = ed_mime_parents(db, mime, par, 8);
-		for (size_t i = 0; i < n; i++) {
-			printf("%.*s- %s\n", len, indent, par[i]);
-		}
-	}
-	else {
-		printf("%s\n", mime);
-	}
-}
+mime_print(const EdMime *db, bool parents, const char *name, const char *mime);
 
 static void
-mime_print_name(const char *name, void *data)
-{
-	(void)data;
-	printf("%s\n", name);
-}
+mime_print_name(const char *name, void *data);
+
+static const char mime_descr[] =
+	"Checks the MIME types of a file or standard input.";
+static const char mime_usage[] =
+	"usage: eddy mime [-p] [-d db] {file [file ...] | <file}\n"
+	"       eddy mime -l\n";
+static EdOption mime_opts[] = {
+	{"db",      "pgno", 0, 'd', "path to mime.cache database file"},
+	{"parents", NULL,   0, 'p', "include parent mime types"},
+	{"list",    NULL,   0, 'l', "list all mime types with magic matches and exit"},
+	{0, 0, 0, 0, 0}
+};
 
 static int
 mime_run(const EdCommand *cmd, int argc, char *const *argv)
@@ -73,5 +61,35 @@ mime_run(const EdCommand *cmd, int argc, char *const *argv)
 	}
 
 	return EXIT_SUCCESS;
+}
+
+void
+mime_print(const EdMime *db, bool parents, const char *name, const char *mime)
+{
+	if (name) { printf("%s: ", name); }
+	if (mime == NULL) {
+		printf("~\n");
+	}
+	else if (parents) {
+		static const char indent[2] = "  ";
+		int len = name ? 2 : 0;
+		if (name) { printf("\n"); }
+		printf("%.*smime: %s\n%.*sparents:\n", len, indent, mime, len, indent);
+		const char *par[8];
+		size_t n = ed_mime_parents(db, mime, par, 8);
+		for (size_t i = 0; i < n; i++) {
+			printf("%.*s- %s\n", len, indent, par[i]);
+		}
+	}
+	else {
+		printf("%s\n", mime);
+	}
+}
+
+void
+mime_print_name(const char *name, void *data)
+{
+	(void)data;
+	printf("%s\n", name);
 }
 

@@ -1,6 +1,28 @@
 #include "../lib/eddy-private.h"
 #define DEFAULT_SIZE "4096p"
 
+static const char new_descr[] =
+	"Creates a new cache index and slab.";
+static const char new_usage[] =
+	"usage: eddy new [-v] [-f] [-c] [-s size[k|m|g|t|p]] [-S slab] index\n"
+	"\n"
+	"Sizes are expressed as numbers with optional size modifiers.\n"
+	"Supported size modifiers are:\n"
+	"  k  kibibytes (1024 bytes)\n"
+	"  m  mebibytes (1048576 bytes)\n"
+	"  g  gibibytes (1073741824 bytes)\n"
+	"  t  tebibytes (1099511627776 bytes)\n"
+	"  p  pages (" ED_STR(PAGESIZE) " bytes)\n";
+static EdOption new_opts[] = {
+	{"size",       "size", 0, 's', "size of the file (default " DEFAULT_SIZE ")"},
+	{"slab",       "path", 0, 'S', "path to slab file (default is the index path with \"-slab\" suffix)"},
+	{"verbose",    NULL,   0, 'v', "enable verbose messaging"},
+	{"force",      NULL,   0, 'f', "force creation of a new cache file"},
+	{"checksum",   NULL,   0, 'c', "track crc32 checksums"},
+	{"page-align", NULL,   0, 'p', "force file data to be page aligned"},
+	{0, 0, 0, 0, 0}
+};
+
 static int
 new_run(const EdCommand *cmd, int argc, char *const *argv)
 {

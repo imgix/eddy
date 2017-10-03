@@ -1,5 +1,17 @@
 #include "../lib/eddy-private.h"
 
+static const char set_descr[] =
+	"Sets the contents of an object in the cache from stdin or a file.";
+static const char set_usage[] =
+	"usage: eddy set [-e ttl] [-m meta] index key {file | <file}\n"
+	"       eddy set [-e ttl] -u index key\n";
+static EdOption set_opts[] = {
+	{"ttl",     "ttl",  0, 'e', "set the time-to-live in seconds"},
+	{"meta",    "file", 0, 'm', "set the object meta data from the contents of a file"},
+	{"update",  NULL,   0, 'u', "update fields in an existing entry"},
+	{0, 0, 0, 0, 0}
+};
+
 static int
 set_run(const EdCommand *cmd, int argc, char *const *argv)
 {

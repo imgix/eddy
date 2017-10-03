@@ -43,6 +43,9 @@
 #define ED_DB_BLOCKS 1
 #define ED_NDB 2
 
+#define ED_STR2(v) #v
+#define ED_STR(v) ED_STR2(v)
+
 
 
 /** @brief  Seconds from an internal epoch */

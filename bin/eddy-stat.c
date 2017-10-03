@@ -1,5 +1,14 @@
 #include "../lib/eddy-private.h"
 
+static const char stat_descr[] =
+	"Reports on the status of the cache. Outputs information in YAML.";
+static const char stat_usage[] =
+	"usage: eddy stat [-n] index\n";
+static EdOption stat_opts[] = {
+	{"noblock", NULL,   0, 'n', "don't block trying to read the index"},
+	{0, 0, 0, 0, 0}
+};
+
 static int
 stat_run(const EdCommand *cmd, int argc, char *const *argv)
 {

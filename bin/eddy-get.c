@@ -1,5 +1,17 @@
 #include "../lib/eddy-private.h"
 
+static const char get_descr[] =
+	"Sets the contents of an object in the cache from stdin or a file.";
+static const char get_usage[] =
+	"usage: eddy get [-u] [-m] index key [2>meta] >file\n"
+	"       eddy get [-u] -i index key [key ...]\n";
+static EdOption get_opts[] = {
+	{"unlink",  NULL,  0, 'u', "immediately unlink the object"},
+	{"meta",    NULL,  0, 'm', "write the object metadata to stderr"},
+	{"info",    NULL,  0, 'i', "only print header information"},
+	{0, 0, 0, 0, 0}
+};
+
 static int
 get_run(const EdCommand *cmd, int argc, char *const *argv)
 {

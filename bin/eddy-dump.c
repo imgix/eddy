@@ -6,6 +6,71 @@ static EdPgno dump_skip[64], dump_nskip = 0;
 static EdPgno dump_include[64], dump_ninclude = 0;
 static EdTimeUnix dump_epoch;
 
+static EdPgno dump_parse_pgno(const char *arg);
+static int dump_read_raw(void);
+static int dump_trees(int argc, char *const *argv, bool key, bool block);
+static int dump_pages(int argc, char *const *argv);
+
+static const char dump_descr[] =
+	"Prints information about pages in the index. Outputs information in YAML.";
+static const char dump_usage[] =
+	"usage: eddy dump [-rx] index page1 [page2 ...]\n"
+	"       eddy dump [-rx] [-i pgno] [-s pgno] <raw\n"
+	"       eddy dump {-k | -b}\n";
+static EdOption dump_opts[] = {
+	{"include", "pgno", 0, 'i', "include the page number in the output"},
+	{"skip",    "pgno", 0, 's', "skip the page number in the output"},
+	{"raw",     NULL,   0, 'r', "output the raw page(s)"},
+	{"hex",     NULL,   0, 'x', "include a hex dump of the page"},
+	{"keys",    NULL,   0, 'k', "print the key b+tree"},
+	{"blocks",  NULL,   0, 'b', "print the slab block b+tree"},
+	{0, 0, 0, 0, 0}
+};
+
+static int
+dump_run(const EdCommand *cmd, int argc, char *const *argv)
+{
+	int rc, ch;
+	bool key = false, block = false;
+
+	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+		switch (ch) {
+		case 'i':
+			if (dump_ninclude == ed_len(dump_include)) {
+				errx(1, "only %zu include options supported", ed_len(dump_include));
+			}
+			dump_include[dump_ninclude] = dump_parse_pgno(optarg);
+			dump_ninclude++;
+			break;
+		case 's':
+			if (dump_nskip == ed_len(dump_skip)) {
+				errx(1, "only %zu skip options supported", ed_len(dump_skip));
+			}
+			dump_skip[dump_nskip] = dump_parse_pgno(optarg);
+			dump_nskip++;
+			break;
+		case 'r': dump_raw = true; break;
+		case 'k': key = true; break;
+		case 'b': block = true; break;
+		case 'x': dump_hex++; break;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc == 0) {
+		rc = dump_read_raw();
+	}
+	else if (key || block) {
+		rc = dump_trees(argc, argv, key, block);
+	}
+	else {
+		rc = dump_pages(argc, argv);
+	}
+
+	return rc < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
 static bool
 dump_has_pgno(EdPgno no, const EdPgno *list, EdPgno n)
 {
@@ -218,7 +283,7 @@ dump_page(EdPgno no, EdPg *pg)
 	}
 }
 
-static EdPgno
+EdPgno
 dump_parse_pgno(const char *arg)
 {
 	char *end;
@@ -229,7 +294,7 @@ dump_parse_pgno(const char *arg)
 	return (EdPgno)no;
 }
 
-static int
+int
 dump_read_raw(void)
 {
 	EdInput in;
@@ -244,7 +309,7 @@ dump_read_raw(void)
 	return 0;
 }
 
-static int
+int
 dump_pages(int argc, char *const *argv)
 {
 	if (argc == 0) { errx(1, "index file path not provided"); }
@@ -320,7 +385,7 @@ dump_block(const void *ent, char *buf, size_t len)
 			b->no, b->count, ed_ttl_at(dump_epoch, b->exp, ed_now_unix()));
 }
 
-static int
+int
 dump_trees(int argc, char *const *argv, bool key, bool block)
 {
 	if (argc == 0) { errx(1, "index file path not provided"); }
@@ -369,49 +434,5 @@ done:
 	ed_txn_close(&txn, 0);
 	ed_idx_close(&idx);
 	return rc;
-}
-
-static int
-dump_run(const EdCommand *cmd, int argc, char *const *argv)
-{
-	int rc, ch;
-	bool key = false, block = false;
-
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
-		switch (ch) {
-		case 'i':
-			if (dump_ninclude == ed_len(dump_include)) {
-				errx(1, "only %zu include options supported", ed_len(dump_include));
-			}
-			dump_include[dump_ninclude] = dump_parse_pgno(optarg);
-			dump_ninclude++;
-			break;
-		case 's':
-			if (dump_nskip == ed_len(dump_skip)) {
-				errx(1, "only %zu skip options supported", ed_len(dump_skip));
-			}
-			dump_skip[dump_nskip] = dump_parse_pgno(optarg);
-			dump_nskip++;
-			break;
-		case 'r': dump_raw = true; break;
-		case 'k': key = true; break;
-		case 'b': block = true; break;
-		case 'x': dump_hex++; break;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
-	if (argc == 0) {
-		rc = dump_read_raw();
-	}
-	else if (key || block) {
-		rc = dump_trees(argc, argv, key, block);
-	}
-	else {
-		rc = dump_pages(argc, argv);
-	}
-
-	return rc < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 

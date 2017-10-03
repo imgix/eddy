@@ -1,10 +1,287 @@
 #include "../lib/eddy-private.h"
-#include "opt.h"
-#include "size.h"
-#include "input.h"
+#include <ctype.h>
+#include <getopt.h>
+#include <err.h>
 
-#define STR2(v) #v
-#define STR(v) STR2(v)
+/**
+ * @defgroup  options  Command runner and option parser
+ * @{
+ */
+
+#ifndef ED_OPT_MAX
+# define ED_OPT_MAX 32
+#endif
+
+typedef struct {
+	const char *description;
+	const char *usage;
+} EdUsage;
+
+typedef struct {
+	char *name;
+	char *var;
+	int *flag;
+	int val;
+	char *usage;
+} EdOption;
+
+typedef struct EdCommand {
+	const char *name;
+	EdOption *opts;
+	int (*run)(const struct EdCommand *cmd, int argc, char *const *argv);
+	EdUsage usage;
+} EdCommand;
+
+static const EdOption *optcur = NULL;
+
+static void
+ed_usage(const EdOption *opts)
+{
+	int maxname = 0, maxvar = 0;
+	for (const EdOption *o = opts; o->name; o++) {
+		int len = (int)strlen(o->name);
+		if (len > maxname) { maxname = len; }
+		if (o->var) {
+			len = (int)strlen(o->var);
+			if (len > maxvar) { maxvar = len; }
+		}
+	}
+	for (const EdOption *o = opts; o->name; o++) {
+		fprintf(stderr, "  ");
+		if (o->flag == NULL && isprint(o->val)) { fprintf(stderr, "-%c,", o->val); }
+		else { fprintf(stderr, "   "); }
+		fprintf(stderr, "--%-*s %-*s    %s\n",
+				maxname, o->name, maxvar, o->var ? o->var : "", o->usage);
+	}
+}
+
+static int
+ed_opt(int argc, char *const *argv, const EdOption *o, const EdUsage *usage)
+{
+	static struct option copy[ED_OPT_MAX];
+	static const EdOption *set = NULL;
+	static char optshort[ED_OPT_MAX*2 + 2];
+	static int count = 0, help = -1, helpch = 0;
+
+	if (set != o) {
+		char *p = optshort;
+		*p++ = ':';
+
+		for (count = 0, help = -1, helpch = 'h', set = o; o->name; count++, o++) {
+			if (count == ED_OPT_MAX) { errx(1, "too many options"); }
+			copy[count].name = o->name;
+			copy[count].has_arg = o->var ? required_argument : no_argument;
+			copy[count].flag = o->flag;
+			copy[count].val = o->val;
+			if (o->flag == NULL && isprint(o->val)) {
+				*p++ = o->val;
+				if (o->var) { *p++ = ':'; }
+			}
+			if (strcmp(o->name, "help") == 0) {
+				help = count;
+				helpch = o->val;
+			}
+			else if (o->val == 'h') {
+				helpch = 0;
+			}
+		}
+
+		if (help < 0 && count < ED_OPT_MAX) {
+			copy[count].name = "help";
+			copy[count].has_arg = no_argument;
+			copy[count].flag = 0;
+			copy[count].val = helpch;
+			*p++ = copy[count].val;
+			help = count++;
+		}
+
+		*p++ = '\0';
+		memset(&copy[count], 0, sizeof(copy[count]));
+	}
+
+	int idx = 0;
+	int ch = getopt_long(argc, argv, optshort, copy, &idx);
+	if (ch == helpch && (ch || idx == help)) {
+		if (usage) {
+			if (usage->usage) { fprintf(stderr, "%s\n", usage->usage); }
+			if (usage->description) { fprintf(stderr, "about:\n  %s\n\n", usage->description); }
+		}
+		fprintf(stderr, "options:\n");
+		ed_usage(set);
+		exit(0);
+	}
+	optcur = ch ? NULL : &set[idx];
+	switch (ch) {
+	case '?': errx(1, "invalid option: %s", argv[optind-1]);
+	case ':': errx(1, "missing argument for option: %s", argv[optind-1]);
+	}
+	return ch;
+}
+
+static int
+ed_cmd(int argc, char *const *argv, const EdCommand *cmd)
+{
+	if (!optind || optreset) {
+		optreset = 0;
+		optind = 1;
+	}
+	if (optind >= argc || !argv[optind]) {
+		errx(1, "missing command name");
+	}
+
+	const char *name = argv[optind];
+
+	int max = 0;
+	for (const EdCommand *c = cmd; c->name; c++) {
+		if (strcmp(name, c->name) == 0) {
+			optind++;
+			return c->run(c, argc, argv);
+		}
+		int len = strlen(c->name);
+		if (len > max) { max = len; }
+	}
+
+	if (strcmp(name, "help") && strcmp(name, "--help") && strcmp(name, "-h")) {
+		errx(1, "unknown command name: %s", name);
+	}
+
+	const char *prog = strrchr(argv[0], '/');
+	prog = prog ? prog + 1 : argv[0];
+	fprintf(stderr,
+			"usage: %s command [args ...]\n"
+			"       %s command --help\n"
+			"\n"
+			"commands:\n", prog, prog);
+	for (const EdCommand *c = cmd; c->name; c++) {
+		fprintf(stderr, "  %-*s    %s\n", max, c->name, c->usage.description);
+	}
+	exit(0);
+}
+/** @} */
+
+/**
+ * @defgroup  input  File/stdin input interface
+ * @{
+ */
+typedef struct {
+	uint8_t *data;
+	size_t length;
+	bool mapped;
+} EdInput;
+
+#define ed_input_make() ((EdInput){ NULL, 0, false })
+
+static int
+ed_input_new(EdInput *in, size_t size)
+{
+	uint8_t *m = mmap(NULL, size,
+			PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+	if (m == MAP_FAILED) { return ED_ERRNO; }
+	in->data = m;
+	in->length = size;
+	in->mapped = true;
+	return 0;
+}
+
+static int
+ed_input_read(EdInput *in, int fd, off_t max)
+{
+	struct stat sbuf;
+	if (fstat(fd, &sbuf) < 0) { return ED_ERRNO; }
+
+	if (S_ISREG (sbuf.st_mode)) {
+		if (sbuf.st_size > max) { return ed_esys(EFBIG); }
+		void *m = mmap(NULL, sbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+		if (m == MAP_FAILED) { return ED_ERRNO; }
+		in->data = m;
+		in->length = sbuf.st_size;
+		in->mapped = true;
+		return 0;
+	}
+
+	size_t len = 0, cap = 0, next = 4096;
+	uint8_t *p = NULL;
+	int rc;
+	do {
+		if (len == cap) {
+			uint8_t *new = realloc(p, next);
+			if (new == NULL) { goto done_errno; }
+			p = new;
+			cap = next;
+			next *= 2;
+		}
+		ssize_t n = read(fd, p + len, cap - len);
+		if (n < 0) { goto done_errno; }
+		if (n == 0) { break; }
+		len += n;
+		if (max > 0 && len > (size_t)max) {
+			rc = ed_esys(EFBIG);
+			goto done_rc;
+		}
+	} while (1);
+	in->data = p;
+	in->length = len;
+	in->mapped = false;
+	return 0;
+
+done_errno:
+	rc = ED_ERRNO;
+done_rc:
+	free(p);
+	return rc;
+}
+
+static int
+ed_input_fread(EdInput *in, const char *path, off_t max)
+{
+	if (path == NULL || strcmp(path, "-") == 0) {
+		return ed_input_read(in, STDIN_FILENO, max);
+	}
+	int fd = open(path, O_RDONLY);
+	if (fd < 0) { return ED_ERRNO; }
+	int rc = ed_input_read(in, fd, max);
+	close(fd);
+	return rc;
+}
+
+static void
+ed_input_final(EdInput *in)
+{
+	if (in->mapped) { munmap(in->data, in->length); }
+	else { free(in->data); }
+	in->data = NULL;
+	in->length = 0;
+	in->mapped = false;
+}
+/** @} */
+
+/**
+ * @defgroup  parse_size  Parse byte size information
+ * @{
+ */
+#define ED_KiB 1024ll
+#define ED_MiB (ED_KiB*ED_KiB)
+#define ED_GiB (ED_KiB*ED_MiB)
+#define ED_TiB (ED_KiB*ED_GiB)
+
+static bool
+ed_parse_size(const char *val, long long *out)
+{
+	char *end;
+	long long size = strtoll(val, &end, 10);
+	if (size < 0) { return false; }
+	switch(*end) {
+	case 'k': case 'K': size *= ED_KiB; end++; break;
+	case 'm': case 'M': size *= ED_MiB; end++; break;
+	case 'g': case 'G': size *= ED_GiB; end++; break;
+	case 't': case 'T': size *= ED_TiB; end++; break;
+	case 'p': case 'P': size *= PAGESIZE; end++; break;
+	}
+	if (*end != '\0') { return false; }
+	*out = size;
+	return true;
+}
+/** @} */
 
 #include "eddy-new.c"
 #include "eddy-get.c"
@@ -13,91 +290,6 @@
 #include "eddy-dump.c"
 #if ED_MIME
 # include "eddy-mime.c"
-#endif
-
-static const char new_descr[] =
-	"Creates a new cache index and slab.";
-static const char new_usage[] =
-	"usage: eddy new [-v] [-f] [-c] [-s size[k|m|g|t|p]] [-S slab] index\n"
-	"\n"
-	"Sizes are expressed as numbers with optional size modifiers.\n"
-	"Supported size modifiers are:\n"
-	"  k  kibibytes (1024 bytes)\n"
-	"  m  mebibytes (1048576 bytes)\n"
-	"  g  gibibytes (1073741824 bytes)\n"
-	"  t  tebibytes (1099511627776 bytes)\n"
-	"  p  pages (" STR(PAGESIZE) " bytes)\n";
-static EdOption new_opts[] = {
-	{"size",       "size", 0, 's', "size of the file (default " DEFAULT_SIZE ")"},
-	{"slab",       "path", 0, 'S', "path to slab file (default is the index path with \"-slab\" suffix)"},
-	{"verbose",    NULL,   0, 'v', "enable verbose messaging"},
-	{"force",      NULL,   0, 'f', "force creation of a new cache file"},
-	{"checksum",   NULL,   0, 'c', "track crc32 checksums"},
-	{"page-align", NULL,   0, 'p', "force file data to be page aligned"},
-	{0, 0, 0, 0, 0}
-};
-
-static const char get_descr[] =
-	"Sets the contents of an object in the cache from stdin or a file.";
-static const char get_usage[] =
-	"usage: eddy get [-u] [-m] index key [2>meta] >file\n"
-	"       eddy get [-u] -i index key [key ...]\n";
-static EdOption get_opts[] = {
-	{"unlink",  NULL,  0, 'u', "immediately unlink the object"},
-	{"meta",    NULL,  0, 'm', "write the object metadata to stderr"},
-	{"info",    NULL,  0, 'i', "only print header information"},
-	{0, 0, 0, 0, 0}
-};
-
-static const char set_descr[] =
-	"Sets the contents of an object in the cache from stdin or a file.";
-static const char set_usage[] =
-	"usage: eddy set [-e ttl] [-m meta] index key {file | <file}\n"
-	"       eddy set [-e ttl] -u index key\n";
-static EdOption set_opts[] = {
-	{"ttl",     "ttl",  0, 'e', "set the time-to-live in seconds"},
-	{"meta",    "file", 0, 'm', "set the object meta data from the contents of a file"},
-	{"update",  NULL,   0, 'u', "update fields in an existing entry"},
-	{0, 0, 0, 0, 0}
-};
-
-static const char stat_descr[] =
-	"Reports on the status of the cache. Outputs information in YAML.";
-static const char stat_usage[] =
-	"usage: eddy stat [-n] index\n";
-static EdOption stat_opts[] = {
-	{"noblock", NULL,   0, 'n', "don't block trying to read the index"},
-	{0, 0, 0, 0, 0}
-};
-
-static const char dump_descr[] =
-	"Prints information about pages in the index. Outputs information in YAML.";
-static const char dump_usage[] =
-	"usage: eddy dump [-rx] index page1 [page2 ...]\n"
-	"       eddy dump [-rx] [-i pgno] [-s pgno] <raw\n"
-	"       eddy dump {-k | -b}\n";
-static EdOption dump_opts[] = {
-	{"include", "pgno", 0, 'i', "include the page number in the output"},
-	{"skip",    "pgno", 0, 's', "skip the page number in the output"},
-	{"raw",     NULL,   0, 'r', "output the raw page(s)"},
-	{"hex",     NULL,   0, 'x', "include a hex dump of the page"},
-	{"keys",    NULL,   0, 'k', "print the key b+tree"},
-	{"blocks",  NULL,   0, 'b', "print the slab block b+tree"},
-	{0, 0, 0, 0, 0}
-};
-
-#if ED_MIME
-static const char mime_descr[] =
-	"Checks the MIME types of a file or standard input.";
-static const char mime_usage[] =
-	"usage: eddy mime [-p] [-d db] {file [file ...] | <file}\n"
-	"       eddy mime -l\n";
-static EdOption mime_opts[] = {
-	{"db",      "pgno", 0, 'd', "path to mime.cache database file"},
-	{"parents", NULL,   0, 'p', "include parent mime types"},
-	{"list",    NULL,   0, 'l', "list all mime types with magic matches and exit"},
-	{0, 0, 0, 0, 0}
-};
 #endif
 
 static const EdCommand commands[] = {
