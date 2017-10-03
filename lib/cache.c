@@ -487,6 +487,71 @@ done:
 	return rc;
 }
 
+static int
+update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix now)
+{
+	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
+	EdTxn *const txn = cache->txn;
+
+	int rc = 0, set = 0;
+	EdEntryKey *key;
+
+	rc = ed_txn_open(txn, cache->idx.flags);
+	if (rc < 0) { return rc; }
+
+	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key);
+			set == 0 && rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
+			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
+		// First check if the object is expired.
+		if (ed_expired_at(cache->idx.epoch, key->exp, now)) {
+			continue;
+		}
+
+		// Map the slab object.
+		EdObjectHdr *hdr = ed_pg_map(cache->idx.slabfd, key->no, 1, true);
+		if (hdr == MAP_FAILED) {
+			rc = ED_ERRNO;
+			break;
+		}
+
+		// Resolve any hash collisions with a full key comparison. This will *very*
+		// likely match. If it does, set up the object and end the loop.
+		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
+			EdEntryKey keynew = *key;
+			keynew.exp = exp;
+			rc = ed_bpt_set(txn, ED_DB_KEYS, (void *)&keynew, true);
+			if (rc >= 0) { set = 1; }
+		}
+
+		ed_pg_unmap(hdr, key->count);
+	}
+
+	if (set == 1) {
+		ed_txn_commit(&cache->txn, cache->idx.flags|ED_FRESET);
+	}
+	else {
+		ed_txn_close(&cache->txn, cache->idx.flags|ED_FRESET);
+	}
+
+	return rc < 0 ? rc : set;
+}
+
+int
+ed_update_ttl(EdCache *cache, const void *k, size_t klen, EdTimeTTL ttl)
+{
+	EdTimeUnix now = ed_now_unix();
+	EdTime exp = ed_expiry_at(cache->idx.epoch, ttl, now);
+	return update_expiry(cache, k, klen, exp, now);
+}
+
+int
+ed_update_expiry(EdCache *cache, const void *k, size_t klen, EdTimeUnix expiry)
+{
+	EdTimeUnix now = ed_now_unix();
+	EdTime exp = ed_time_from_unix(cache->idx.epoch, expiry);
+	return update_expiry(cache, k, klen, exp, now);
+}
+
 int64_t
 ed_write(EdObject *obj, const void *buf, size_t len)
 {

@@ -85,6 +85,12 @@ ED_EXPORT int
 ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr);
 
 ED_EXPORT int
+ed_update_ttl(EdCache *cache, const void *key, size_t len, EdTimeTTL ttl);
+
+ED_EXPORT int
+ed_update_expiry(EdCache *cache, const void *key, size_t len, EdTimeUnix expiry);
+
+ED_EXPORT int
 ed_unlink(EdCache *cache, const void *key, size_t len);
 
 ED_EXPORT int64_t
