@@ -152,7 +152,7 @@ ed_stat_print(EdStat *stat, FILE *out)
 	fprintf(out,
 		"index:\n"
 		"  path: %s\n"
-		"  inode: %llu\n"
+		"  inode: %" PRIu64 "\n"
 		"  size: %zu\n"
 		"  pages:\n"
 		"    total: %zu\n"

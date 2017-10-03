@@ -134,14 +134,14 @@ slab_init(int fd, const EdConfig *cfg, const struct stat *s)
 		uint64_t size;
 		if (ioctl(fd, BLKGETSIZE64, &size) < 0) { return ED_ERRNO; }
 		if (size == 0 || size > (uint64_t)INT64_MAX) {
-			return ED_ECACHE_SIZE;
+			return ED_ESLAB_SIZE;
 		}
 		return (int64_t)size;
 #elif defined(DIOCGMEDIASIZE)
 		off_t size;
 		if (ioctl(fd, DIOCGMEDIASIZE, &size) < 0) { return ED_ERRNO; }
 		if (size <= 0 || (intmax_t)size > (intmax_t)INT64_MAX) {
-			return ED_ECACHE_SIZE;
+			return ED_ESLAB_SIZE;
 		}
 		return (int64_t)size;
 #elif defined(DKIOCGETBLOCKSIZE) && defined(DKIOCGETBLOCKCOUNT)

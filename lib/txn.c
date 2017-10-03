@@ -2,7 +2,7 @@
 
 #define ED_TXN_FCRIT (ED_FNOTLCK)
 
-#define ed_txn_fclose(f, crit) ((f) & (~(ED_TXN_FCRIT|ED_FNOBLOCK)) | (crit))
+#define ed_txn_fclose(f, crit) ((f) & ((~(ED_TXN_FCRIT|ED_FNOBLOCK)) | (crit)))
 
 /**
  * @brief  Calculates the allocation size for a node array

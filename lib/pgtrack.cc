@@ -1,5 +1,6 @@
 #include <map>
 #include <set>
+#include <memory>
 
 #undef ED_MMAP_DEBUG
 #define ED_MMAP_DEBUG 1

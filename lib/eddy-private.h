@@ -3,7 +3,7 @@
 
 #include "eddy.h"
 
-#include <stdatomic.h>
+#include <stddef.h>
 #include <time.h>
 #include <math.h>
 #include <unistd.h>
@@ -1035,7 +1035,7 @@ ed_power2(unsigned p)
 struct EdCache {
 	EdIdx        idx;
 	EdTxn *      txn;
-	atomic_int   ref;
+	int          ref;
 	size_t       bytes_used;
 	size_t       blocks_used;
 };

@@ -290,7 +290,7 @@ EdCache *
 ed_cache_ref(EdCache *cache)
 {
 	if (cache != NULL) {
-		atomic_fetch_add(&cache->ref, 1);
+		__sync_fetch_and_add(&cache->ref, 1);
 	}
 	return cache;
 }
@@ -301,7 +301,7 @@ ed_cache_close(EdCache **cachep)
 	EdCache *cache = *cachep;
 	if (cache != NULL) {
 		*cachep = NULL;
-		if (atomic_fetch_sub(&cache->ref, 1) == 1) {
+		if (__sync_fetch_and_sub(&cache->ref, 1) == 1) {
 			ed_txn_close(&cache->txn, cache->idx.flags);
 			ed_idx_close(&cache->idx);
 			free(cache);
@@ -323,7 +323,7 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 	fprintf(out,
 		"slab:\n"
 		"  path: %s\n"
-		"  inode: %llu\n"
+		"  inode: %" PRIu64 "\n"
 		"  entries: %zu\n"
 		"  bytes:\n"
 		"    used: %zu\n"

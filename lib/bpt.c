@@ -926,7 +926,7 @@ print_page(int fd, size_t esize, uint8_t *p, FILE *out, EdBptPrint print, bool *
 static int
 print_value(const void *value, char *buf, size_t len)
 {
-	return snprintf(buf, len, "%llu", ed_fetch64(value));
+	return snprintf(buf, len, "%" PRIu64, ed_fetch64(value));
 }
 
 static void
@@ -998,7 +998,7 @@ print_box(FILE *out, uint32_t i, uint32_t n, bool *stack, int top)
 static void
 print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool *stack, int top)
 {
-	fprintf(out, "leaf p%u, xid=%llu, nkeys=%u/%zu",
+	fprintf(out, "leaf p%u, xid=%" PRIu64 ", nkeys=%u/%zu",
 			leaf->base.no, leaf->xid, leaf->nkeys, LEAF_ORDER(esize));
 
 	uint32_t n = leaf->nkeys;
@@ -1023,7 +1023,7 @@ print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool 
 	if (leaf->next != ED_PG_NONE) {
 		EdBpt *next = ed_pg_map(fd, leaf->next, 1, true);
 		print_tree(out, stack, top-1);
-		fprintf(out, "= %llu, ", ed_fetch64(next->data));
+		fprintf(out, "= %" PRIu64 ", ", ed_fetch64(next->data));
 		print_leaf(fd, esize, next, out, print, stack, top);
 		ed_pg_unmap(next, 1);
 	}
@@ -1032,7 +1032,7 @@ print_leaf(int fd, size_t esize, EdBpt *leaf, FILE *out, EdBptPrint print, bool 
 static void
 print_branch(int fd, size_t esize, EdBpt *branch, FILE *out, EdBptPrint print, bool *stack, int top)
 {
-	fprintf(out, "branch p%u, xid=%llu, nkeys=%u/%zu\n",
+	fprintf(out, "branch p%u, xid=%" PRIu64 ", nkeys=%u/%zu\n",
 			branch->base.no, branch->xid, branch->nkeys, BRANCH_ORDER-1);
 
 	uint32_t end = branch->nkeys;
@@ -1040,13 +1040,13 @@ print_branch(int fd, size_t esize, EdBpt *branch, FILE *out, EdBptPrint print, b
 
 	stack[top] = end == 0;
 	print_tree(out, stack, top);
-	fprintf(out, "< %llu, ", ed_fetch64(p));
+	fprintf(out, "< %" PRIu64 ", ", ed_fetch64(p));
 	print_page(fd, esize, p-BRANCH_PTR_SIZE, out, print, stack, top+1);
 
 	for (uint32_t i = 1; i <= end; i++, p += BRANCH_ENTRY_SIZE) {
 		stack[top] = i == end;
 		print_tree(out, stack, top);
-		fprintf(out, "≥ %llu, ", ed_fetch64(p));
+		fprintf(out, "≥ %" PRIu64 ", ", ed_fetch64(p));
 		print_page(fd, esize, p+BRANCH_KEY_SIZE, out, print, stack, top+1);
 	}
 }
@@ -1087,7 +1087,9 @@ verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t ma
 		uint64_t key = ed_fetch64(p);
 		if (key < min || key > max) {
 			if (out != NULL) {
-				fprintf(out, "leaf key out of range: %llu, %llu...%llu\n", key, min, max);
+				fprintf(out,
+						"leaf key out of range: %" PRIu64 ", %" PRIu64 "...%" PRIu64 "\n",
+						key, min, max);
 				bool stack[16] = {0};
 				print_leaf(fd, esize, l, out, print_value, stack, 0);
 			}
@@ -1095,7 +1097,7 @@ verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t ma
 		}
 		if (i > 0 && key < last) {
 			if (out != NULL) {
-				fprintf(out, "leaf key out of order: %llu\n", key);
+				fprintf(out, "leaf key out of order: %" PRIu64 "\n", key);
 				bool stack[16] = {0};
 				print_leaf(fd, esize, l, out, print_value, stack, 0);
 			}
@@ -1122,7 +1124,9 @@ verify_node(int fd, size_t esize, EdBpt *t, FILE *out, uint64_t min, uint64_t ma
 		uint64_t nmax = ed_fetch64(p + BRANCH_PTR_SIZE);
 		if (nmax < min || nmax > max) {
 			if (out != NULL) {
-				fprintf(out, "branch key out of range: %llu, %llu...%llu\n", nmax, min, max);
+				fprintf(out,
+						"branch key out of range: %" PRIu64 ", %" PRIu64 "...%" PRIu64 "\n",
+						nmax, min, max);
 				bool stack[16] = {0};
 				print_branch(fd, esize, t, out, print_value, stack, 0);
 			}

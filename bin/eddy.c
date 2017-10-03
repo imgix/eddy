@@ -3,6 +3,13 @@
 #include <getopt.h>
 #include <err.h>
 
+#if __linux__
+#define errc(eval, code, ...) do { \
+	errno = (code); \
+	err(eval, __VA_ARGS__); \
+} while (0)
+#endif
+
 /**
  * @defgroup  options  Command runner and option parser
  * @{
@@ -121,8 +128,7 @@ ed_opt(int argc, char *const *argv, const EdOption *o, const EdUsage *usage)
 static int
 ed_cmd(int argc, char *const *argv, const EdCommand *cmd)
 {
-	if (!optind || optreset) {
-		optreset = 0;
+	if (!optind) {
 		optind = 1;
 	}
 	if (optind >= argc || !argv[optind]) {
