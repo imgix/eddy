@@ -56,11 +56,11 @@ struct EdObjectAttr {
 	uint16_t     keylen;
 	uint16_t     metalen;
 	uint32_t     datalen;
-	EdTimeTTL    ttl;
 	uint16_t     tag;
 };
 
 #define ed_config_make() ((EdConfig){ .flags = 0 })
+#define ed_object_attr_make() ((EdObjectAttr){ .tag = 0 })
 
 
 
@@ -109,10 +109,10 @@ ED_EXPORT void
 ed_discard(EdObject **objp);
 
 ED_EXPORT int
-ed_set_ttl(EdObject *obj, time_t ttl);
+ed_set_ttl(EdObject *obj, EdTimeTTL ttl);
 
 ED_EXPORT int
-ed_set_tag(EdObject *obj, uint16_t tag);
+ed_set_expiry(EdObject *obj, EdTimeUnix expiry);
 
 ED_EXPORT EdTimeTTL
 ed_ttl(const EdObject *obj, EdTimeUnix from);

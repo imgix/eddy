@@ -3,11 +3,11 @@
 static const char set_descr[] =
 	"Sets the contents of an object in the cache from stdin or a file.";
 static const char set_usage[] =
-	"usage: eddy set [-e ttl] [-m meta] [-t tag] index key {file | <file}\n"
-	"       eddy set [-e ttl] [-t tag] -u index key\n";
+	"usage: eddy set [{-t ttl | -e time}] [-m meta] [-T tag] index key {file | <file}\n";
 static EdOption set_opts[] = {
-	{"tag",     "tag",  0, 't', "user defined 16-bit unsigned integer"},
-	{"ttl",     "ttl",  0, 'e', "set the time-to-live in seconds"},
+	{"tag",     "tag",  0, 'T', "user defined 16-bit unsigned integer"},
+	{"ttl",     "ttl",  0, 't', "set the time-to-live in seconds"},
+	{"expiry",  "time", 0, 'e', "set the expiry as a UNIX timestamp"},
 	{"meta",    "file", 0, 'm', "set the object meta data from the contents of a file"},
 	{"update",  NULL,   0, 'u', "update fields in an existing entry"},
 	{0, 0, 0, 0, 0}
@@ -22,24 +22,34 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	EdInput data = ed_input_make();
 	char *end;
 	int rc;
-	EdObjectAttr attr = { .ttl = -1 };
 	bool update = false;
+	EdObjectAttr attr = ed_object_attr_make();
 	long num;
+	time_t t;
+	bool has_ttl = false, has_expiry = false;
 
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
 		switch (ch) {
 		case 'u': update = true; break;
-		case 't':
+		case 'T':
 			num = strtol(optarg, &end, 10);
 			if (*end != '\0' || num < 0 || num > UINT16_MAX) {
 				errx(1, "invalid number: %s", argv[optind-1]);
 			}
 			attr.tag = (uint16_t)num;
 			break;
-		case 'e':
-			attr.ttl = strtol(optarg, &end, 10);
+		case 't':
+			if (has_expiry) { errx(1, "expiry cannot be combined with TTL"); }
+			t = strtol(optarg, &end, 10);
 			if (*end != '\0') { errx(1, "invalid number: %s", argv[optind-1]); }
+			has_ttl = true;
+			break;
+		case 'e':
+			if (has_ttl) { errx(1, "TTL cannot be combined with expiry"); }
+			t = strtol(optarg, &end, 10);
+			if (*end != '\0') { errx(1, "invalid number: %s", argv[optind-1]); }
+			has_expiry = true;
 			break;
 		case 'm':
 			rc = ed_input_fread(&meta, optarg, UINT16_MAX);
@@ -79,9 +89,16 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	if (rc < 0) {
 		warnx("faild to create object: %s", ed_strerror(rc));
 	}
-
-	ed_write(obj, data.data, data.length);
-	ed_close(&obj);
+	else {
+		if (has_ttl) {
+			ed_set_ttl(obj, t);
+		}
+		else if (has_expiry) {
+			ed_set_expiry(obj, t);
+		}
+		ed_write(obj, data.data, data.length);
+		ed_close(&obj);
+	}
 
 	ed_input_final(&data);
 	ed_input_final(&meta);

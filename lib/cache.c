@@ -429,7 +429,6 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 
 	const EdTimeUnix unow = ed_now_unix();
 	const EdTime now = ed_time_from_unix(cache->idx.epoch, unow);
-	const EdTime exp = ed_expiry_at(cache->idx.epoch, attr->ttl, unow);
 	const uint64_t h = ed_hash(attr->key, attr->keylen, cache->idx.seed);
 	const uint64_t flags = cache->idx.flags;
 	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, flags);
@@ -467,7 +466,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	if (rc < 0) { goto done; }
 
 	obj_hdr_init(hdr, attr, h, nbytes, flags, now);
-	obj_init(obj, cache, hdr, blck, false, exp);
+	obj_init(obj, cache, hdr, blck, false, ED_TIME_INF);
 
 done:
 	// Clean up resources if there was an error.
@@ -584,7 +583,7 @@ ed_discard(EdObject **objp)
 }
 
 int
-ed_set_ttl(EdObject *obj, time_t ttl)
+ed_set_ttl(EdObject *obj, EdTimeTTL ttl)
 {
 	if (obj->rdonly) {
 		return ED_EOBJECT_RDONLY;
@@ -594,12 +593,12 @@ ed_set_ttl(EdObject *obj, time_t ttl)
 }
 
 int
-ed_set_tag(EdObject *obj, uint16_t tag)
+ed_set_expiry(EdObject *obj, EdTimeUnix expiry)
 {
 	if (obj->rdonly) {
 		return ED_EOBJECT_RDONLY;
 	}
-	obj->hdr->tag = tag;
+	obj->exp = ed_time_from_unix(obj->cache->idx.epoch, expiry);
 	return 0;
 }
 
