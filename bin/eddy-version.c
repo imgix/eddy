@@ -22,7 +22,16 @@ version_run(const EdCommand *cmd, int argc, char *const *argv)
 	}
 
 	printf("eddy v" ED_STR(VERSION_MAJOR) "." ED_STR(VERSION_MINOR)
-			" - " ED_STR(BUILD) "@" ED_STR(VERSION_BUILD) "\n");
+			" - " ED_STR(BUILD) "@" ED_STR(VERSION_BUILD));
+
+#if ED_MIME
+	printf(" +mime");
+#endif
+#if ED_MIMEDB
+	printf(" +mimedb");
+#endif
+	printf("\n");
+	fflush(stdout);
 
 	return 0;
 }
