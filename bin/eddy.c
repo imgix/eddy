@@ -6,13 +6,13 @@
 #define STR2(v) #v
 #define STR(v) STR2(v)
 
-#include "new.c"
-#include "get.c"
-#include "set.c"
-#include "stat.c"
-#include "dump.c"
+#include "eddy-new.c"
+#include "eddy-get.c"
+#include "eddy-set.c"
+#include "eddy-stat.c"
+#include "eddy-dump.c"
 #if ED_MIME
-# include "mime.c"
+# include "eddy-mime.c"
 #endif
 
 static const char new_descr[] =
