@@ -34,6 +34,9 @@ else
   DEBUG?= yes
   STRIP:= :
 endif
+ifeq ($(LTO)$(DEBUG),yesyes)
+  LTO:=amalg
+endif
 ifndef $(GDB)
   GDB:=$(shell which lldb)
   ifeq ($(GDB),)
