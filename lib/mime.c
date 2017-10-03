@@ -192,13 +192,14 @@ int
 ed_mime_load(EdMime **dbp, const void *data, size_t size, int flags)
 {
 #if ED_MIMEDB
-	if (data == NULL) {
+	if (data == NULL || data == ed_mimedb_data) {
 		data = ed_mimedb_data;
 		size = ed_mimedb_size;
 		flags |= ED_FMIME_NOVERIFY;
 	}
-	else if (data == ed_mimedb_data) {
-		flags |= ED_FMIME_NOVERIFY;
+#else
+	if (data == NULL) {
+		return ed_esys(EINVAL);
 	}
 #endif
 
@@ -260,7 +261,7 @@ try_open(const char *path, int flags, const void **data, size_t *size)
 
 	int rc = 0;
 	struct stat stat;
-	void *m;
+	void *m = NULL;
 	if (fstat(fd, &stat) < 0 || 
 			(m = mmap(NULL, stat.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
 		rc = ED_ERRNO;
