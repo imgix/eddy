@@ -5,6 +5,7 @@ all: bin lib
 
 VMAJ:= 0
 VMIN:= 2
+VBLD:= $(shell git rev-parse --short HEAD)
 
 # Select default options.
 LIBNAME?= eddy
@@ -97,6 +98,9 @@ ifneq ($(SANITIZE),)
   CFLAGS+= -fsanitize=$(SANITIZE)
   LDFLAGS+= -fsanitize=$(SANITIZE)
 endif
+
+# Append version information.
+CFLAGS += -DVERSION_MAJOR=$(VMAJ) -DVERSION_MINOR=$(VMIN) -DVERSION_BUILD=$(VBLD) -DBUILD=$(BUILD)
 
 # Define build-specific directories.
 TMP:= build/$(BUILD)/tmp

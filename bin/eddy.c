@@ -283,6 +283,7 @@ ed_parse_size(const char *val, long long *out)
 }
 /** @} */
 
+#include "eddy-version.c"
 #include "eddy-new.c"
 #include "eddy-get.c"
 #include "eddy-set.c"
@@ -294,14 +295,15 @@ ed_parse_size(const char *val, long long *out)
 #endif
 
 static const EdCommand commands[] = {
-	{"new",  new_opts,  new_run,  {new_descr,  new_usage}},
-	{"get",  get_opts,  get_run,  {get_descr,  get_usage}},
-	{"set",  set_opts,  set_run,  {set_descr,  set_usage}},
+	{"version", version_opts, version_run, {version_descr, version_usage}},
+	{"new",     new_opts,     new_run,     {new_descr,     new_usage}},
+	{"get",     get_opts,     get_run,     {get_descr,     get_usage}},
+	{"set",     set_opts,     set_run,     {set_descr,     set_usage}},
 	{"update",  update_opts,  update_run,  {update_descr,  update_usage}},
-	{"stat", stat_opts, stat_run, {stat_descr, stat_usage}},
-	{"dump", dump_opts, dump_run, {dump_descr, dump_usage}},
+	{"stat",    stat_opts,    stat_run,    {stat_descr,    stat_usage}},
+	{"dump",    dump_opts,    dump_run,    {dump_descr,    dump_usage}},
 #if ED_MIME
-	{"mime", mime_opts, mime_run, {mime_descr, mime_usage}},
+	{"mime",    mime_opts,    mime_run,    {mime_descr,    mime_usage}},
 #endif
 	{0, 0, 0, {0, 0}},
 };
