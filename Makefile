@@ -5,7 +5,7 @@ all: bin lib
 
 VMAJ:= 0
 VMIN:= 2
-VBLD:= $(shell git rev-parse --short HEAD)
+VBLD:= $(shell git rev-parse HEAD)
 
 # Select default options.
 LIBNAME?= eddy
@@ -14,6 +14,7 @@ BUILD?= release
 PREFIX?= /usr/local
 UNAME?=$(shell uname -s)
 BUILD_MIME?= yes
+BUILD_DUMP?= yes
 PAGESIZE?=$(shell getconf PAGESIZE)
 ifeq ($(BUILD),release)
   OPT?= 3
@@ -72,6 +73,9 @@ endif
 ifeq ($(DEBUG_FAULT),yes)
   LIBSRC+= lib/fault.c
   CFLAGS+= -DED_FAULT=1
+endif
+ifeq ($(BUILD_DUMP),yes)
+  CFLAGS+= -DED_DUMP=1
 endif
 TESTSRC:= $(wildcard test/test-*.c)
 
