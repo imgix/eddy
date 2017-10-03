@@ -9,7 +9,6 @@ static EdOption set_opts[] = {
 	{"ttl",     "ttl",  0, 't', "set the time-to-live in seconds"},
 	{"expiry",  "time", 0, 'e', "set the expiry as a UNIX timestamp"},
 	{"meta",    "file", 0, 'm', "set the object meta data from the contents of a file"},
-	{"update",  NULL,   0, 'u', "update fields in an existing entry"},
 	{0, 0, 0, 0, 0}
 };
 
@@ -22,7 +21,6 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	EdInput data = ed_input_make();
 	char *end;
 	int rc;
-	bool update = false;
 	EdObjectAttr attr = ed_object_attr_make();
 	long num;
 	time_t t;
@@ -31,7 +29,6 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
 		switch (ch) {
-		case 'u': update = true; break;
 		case 'T':
 			num = strtol(optarg, &end, 10);
 			if (*end != '\0' || num < 0 || num > UINT16_MAX) {
@@ -59,10 +56,6 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	}
 	argc -= optind;
 	argv += optind;
-
-	if (update) {
-		errx(1, "-u option not implemented");
-	}
 
 	if (argc == 0) { errx(1, "index file path not provided"); }
 	cfg.index_path = argv[0];
