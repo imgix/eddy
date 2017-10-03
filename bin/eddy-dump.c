@@ -381,8 +381,7 @@ static int
 dump_block(const void *ent, char *buf, size_t len)
 {
 	const EdEntryBlock *b = ent;
-	return snprintf(buf, len, "@%" PRIx64 "#%" PRIx32 " %ld",
-			b->no, b->count, ed_ttl_at(dump_epoch, b->exp, ed_now_unix()));
+	return snprintf(buf, len, "@%" PRIx64 "#%" PRIx32, b->no, b->count);
 }
 
 int

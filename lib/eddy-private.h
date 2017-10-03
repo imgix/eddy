@@ -1229,7 +1229,7 @@ struct EdBpt {
 struct EdEntryBlock {
 	EdBlkno      no;               /**< Block number for the entry */
 	EdPgno       count;            /**< Number of blocks used by the entry */
-	EdTime       exp;              /**< Expiration of the entry */
+	uint32_t     _pad;
 };
 
 /**
