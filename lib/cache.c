@@ -77,7 +77,7 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonl
 	obj->datalen = hdr->datalen;
 	obj->datacrc = hdr->datacrc;
 	obj->hdr = hdr;
-	obj->xid = ed_bpt_xid(cache->txn, ED_DB_KEYS);
+	obj->xid = hdr->xid;
 	obj->blck = no;
 	obj->nblcks = size/PAGESIZE;
 	obj->byte = no*PAGESIZE;
@@ -93,38 +93,6 @@ obj_write(void *dst, const void *src, size_t len, uint32_t *crc, uint64_t flags)
 		*crc = ed_crc32c(*crc, src, len);
 	}
 	memcpy(dst, src, len);
-}
-
-static void
-obj_hdr_init(EdObjectHdr *hdr, const EdObjectAttr *attr, uint64_t h,
-		size_t nbytes, uint64_t flags, EdTime now)
-{
-	madvise(hdr, nbytes, MADV_SEQUENTIAL);
-	hdr->version = 0;
-	hdr->flags = 0;
-	hdr->tag = attr->tag;
-	hdr->created = now;
-	hdr->keylen = attr->keylen;
-	hdr->metalen = attr->metalen;
-	hdr->datalen = attr->datalen;
-	hdr->keyhash = h;
-	hdr->metacrc = 0;
-	hdr->datacrc = 0;
-
-	uint8_t *key = obj_key(hdr), *meta = obj_meta(hdr);
-	memcpy(key, attr->key, attr->keylen);
-	key += attr->keylen;
-
-	// Zero out the end of the key segment.
-	memset(key, 0, obj_meta(hdr) - key);
-
-	if (attr->meta != NULL && attr->metalen > 0) {
-		obj_write(meta, attr->meta, attr->metalen, &hdr->metacrc, flags);
-	}
-	meta += attr->metalen;
-
-	// Zero out the end of the meta segment.
-	memset(meta, 0, obj_data(hdr, flags) - meta);
 }
 
 static void
@@ -232,7 +200,7 @@ obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 		EdBlkno blck, EdBlkno nblcks, EdTime exp)
 {
 	EdTxn *txn = cache->txn;
-	EdEntryBlock blocknew = { blck, nblcks, exp };
+	EdEntryBlock blocknew = { blck, nblcks, exp, txn->xid };
 	EdEntryKey *key, keynew = { h, blck, nblcks, exp };
 	bool replace = false;
 	int rc;
@@ -465,7 +433,37 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
 	if (rc < 0) { goto done; }
 
-	obj_hdr_init(hdr, attr, h, nbytes, flags, now);
+	// Initializse the object header.
+	madvise(hdr, nbytes, MADV_SEQUENTIAL);
+	hdr->version = 0;
+	hdr->flags = 0;
+	hdr->tag = attr->tag;
+	hdr->created = now;
+	hdr->xid = 0;
+	hdr->keylen = attr->keylen;
+	hdr->metalen = attr->metalen;
+	hdr->datalen = attr->datalen;
+	hdr->keyhash = h;
+	hdr->metacrc = 0;
+	hdr->datacrc = 0;
+
+	// Copy the key into the tail of the header segment.
+	uint8_t *key = obj_key(hdr), *meta = obj_meta(hdr);
+	memcpy(key, attr->key, attr->keylen);
+	key += attr->keylen;
+
+	// Zero out the end of the key segment.
+	memset(key, 0, obj_meta(hdr) - key);
+
+	// Write the meta data segment if provided.
+	if (attr->meta != NULL && attr->metalen > 0) {
+		obj_write(meta, attr->meta, attr->metalen, &hdr->metacrc, flags);
+	}
+	meta += attr->metalen;
+
+	// Zero out the end of the meta segment.
+	memset(meta, 0, obj_data(hdr, flags) - meta);
+
 	obj_init(obj, cache, hdr, blck, false, ED_TIME_INF);
 
 done:
@@ -599,11 +597,6 @@ ed_close(EdObject **objp)
 	uint64_t h = obj->hdr->keyhash;
 	bool locked = true;
 
-	ed_pg_unmap(obj->hdr, obj->nblcks);
-	if (!(flags & ED_FNOSYNC)) {
-		fsync(slabfd);
-	}
-
 	if (!obj->rdonly) {
 		if (obj->datalen == obj->dataseek) {
 			rc = ed_txn_open(cache->txn, flags);
@@ -613,10 +606,15 @@ ed_close(EdObject **objp)
 					obj->blck, obj->nblcks, obj->exp);
 			if (rc < 0) { goto done; }
 
+			obj->hdr->xid = cache->txn->xid;
 			ed_flck(slabfd, ED_LCK_UN, obj->byte, obj->nbytes, flags);
 			locked = false;
 
 			rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);
+
+			if (rc >= 0 && !(flags & ED_FNOSYNC)) {
+				fsync(slabfd);
+			}
 		}
 		else {
 			rc = ED_EOBJECT_TOOSMALL;
@@ -624,6 +622,8 @@ ed_close(EdObject **objp)
 	}
 
 done:
+	ed_pg_unmap(obj->hdr, obj->nblcks);
+
 	if (locked) {
 		ed_flck(slabfd, ED_LCK_UN, obj->byte, obj->nbytes, flags);
 	}

@@ -417,7 +417,6 @@ ED_LOCAL      int ed_bpt_last(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_next(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_prev(EdTxn *txn, unsigned db, void **ent);
 ED_LOCAL      int ed_bpt_loop(const EdTxn *txn, unsigned db);
-ED_LOCAL  EdTxnId ed_bpt_xid(const EdTxn *txn, unsigned db);
 ED_LOCAL      int ed_bpt_set(EdTxn *txn, unsigned db, const void *ent, bool replace);
 ED_LOCAL      int ed_bpt_del(EdTxn *txn, unsigned db);
 ED_LOCAL      int ed_bpt_mark(EdIdx *, EdStat *, EdBpt *);
@@ -1187,6 +1186,7 @@ struct EdObjectHdr {
 	uint8_t      flags;            /**< Per-object flags */
 	uint16_t     tag;              /**< User-defined tag */
 	EdTime       created;          /**< Timestamp when the object was created */
+	EdTxnId      xid;              /**< Transaction ID that create this object */
 	uint16_t     keylen;           /**< Number of bytes for the key */
 	uint16_t     metalen;          /**< Number of bytes for the metadata */
 	uint32_t     datalen;          /**< Number of bytes for the data */
@@ -1241,6 +1241,7 @@ struct EdEntryBlock {
 	EdBlkno      no;               /**< Block number for the entry */
 	EdPgno       count;            /**< Number of blocks used by the entry */
 	uint32_t     _pad;
+	EdTxnId      xid;              /**< Transaction ID that created the entry */
 };
 
 /**
