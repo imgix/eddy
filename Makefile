@@ -14,6 +14,7 @@ BUILD?= release
 PREFIX?= /usr/local
 UNAME?=$(shell uname -s)
 BUILD_MIME?= yes
+BUILD_MIMEDB?= yes
 BUILD_DUMP?= yes
 PAGESIZE?=$(shell getconf PAGESIZE)
 ifeq ($(BUILD),release)
@@ -44,6 +45,12 @@ ifndef $(GDB)
   endif
 endif
 
+# Define build-specific directories.
+TMP:= build/$(BUILD)/tmp
+LIB:= build/$(BUILD)/lib
+BIN:= build/$(BUILD)/bin
+TEST:= build/$(BUILD)/test
+
 # Select source files.
 LIBSRC:= lib/cache.c \
 	lib/error.c \
@@ -63,7 +70,7 @@ ifeq ($(BUILD_MIME),yes)
   LIBSRC+= lib/mime.c
   CFLAGS+= -DED_MIME=1
   ifeq ($(BUILD_MIMEDB),yes)
-    LIBSRC+= lib/mimedb.c
+    LIBSRC+= $(TMP)/mimedb.c
     CFLAGS+= -DED_MIMEDB=1
   endif
 endif
@@ -101,7 +108,10 @@ ifeq ($(DEBUG),yes)
   CFLAGS+= -g -DED_DEBUG=1
   LDFLAGS+= -g
 endif
-CFLAGS+= -Ilib -march=native -fvisibility=hidden -pthread -D_GNU_SOURCE -D_BSD_SOURCE -DPAGESIZE=$(PAGESIZE)
+CFLAGS+= -Ilib -I$(TMP) -march=native -fvisibility=hidden -pthread
+CFLAGS+= -D_GNU_SOURCE -D_BSD_SOURCE
+CFLAGS+= -DPAGESIZE=$(PAGESIZE) -DBUILD=$(BUILD)
+CFLAGS+= -DVERSION_MAJOR=$(VMAJ) -DVERSION_MINOR=$(VMIN) -DVERSION_BUILD=$(VBLD)
 ifeq ($(LTO),yes)
   LDFLAGS+= -flto
 endif
@@ -111,20 +121,12 @@ ifneq ($(SANITIZE),)
   LDFLAGS+= -fsanitize=$(SANITIZE)
 endif
 
-# Append version information.
-CFLAGS += -DVERSION_MAJOR=$(VMAJ) -DVERSION_MINOR=$(VMIN) -DVERSION_BUILD=$(VBLD) -DBUILD=$(BUILD)
-
-# Define build-specific directories.
-TMP:= build/$(BUILD)/tmp
-LIB:= build/$(BUILD)/lib
-BIN:= build/$(BUILD)/bin
-TEST:= build/$(BUILD)/test
-
 # Build object file lists. When LTO is enabled, keep the OBJA list referencing
 # non-lto object files. For amalgamated builds, there is a single object file.
 ifeq ($(LTO),yes)
   OBJEXT:=lto.o
   OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
+  OBJ:= $(OBJ:$(TMP)/%.c=$(TMP)/%.$(OBJEXT))
   OBJA:= $(TMP)/$(LIBNAME)-amalg.c.o
 else
   OBJEXT:=o
@@ -132,6 +134,7 @@ else
     OBJ:= $(TMP)/$(LIBNAME)-amalg.c.$(OBJEXT)
   else
     OBJ:= $(LIBSRC:lib/%=$(TMP)/%.$(OBJEXT))
+    OBJ:= $(OBJ:$(TMP)/%.c=$(TMP)/%.$(OBJEXT))
   endif
   OBJA:= $(OBJ)
 endif
@@ -288,6 +291,17 @@ $(TMP)/$(LIBNAME)-amalg.c: $(LIBSRC) | $(TMP)
 	@date +"/*  $(LIBNAME): %Y-%m-%d %T %Z */" > $@
 	@for f in $^; do cat $$f >> $@; done
 
+# Produce mime.cache data.
+$(TMP)/mimedb.c: test/mime.cache | $(TMP)
+	@echo "mimedb\t$@"
+	@date +"/*  $(LIBNAME): %Y-%m-%d %T %Z */" > $@
+	@echo "#include <stdint.h>" >> $@
+	@echo "#include <sys/types.h>" >> $@
+	@echo "const uint8_t ed_mimedb_data[] = {" >> $@
+	@xxd -i < $< >> $@
+	@echo "};" >> $@
+	@echo "const size_t ed_mimedb_size = sizeof(ed_mimedb_data);" >> $@
+
 
 
 # Create build directories.
@@ -331,4 +345,3 @@ $(DESTDIR)$(PREFIX)/include/%.h: lib/%.h | $(DESTDIR)$(PREFIX)/include
 
 -include $(OBJ:%.o=%.d) $(BINSRC:bin/%=$(TMP)/%.d) $(TESTSRC:test/%.c=$(TMP)/%.c.d)
 
-$(TMP)/mimedb.c.$(OBJEXT): lib/mimedb.c test/mime.cache

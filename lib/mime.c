@@ -116,7 +116,7 @@ struct EdMimeIconList {
 
 #if ED_MIMEDB
 extern const uint8_t ed_mimedb_data[];
-extern const unsigned int ed_mimedb_size;
+extern const size_t ed_mimedb_size;
 #endif
 
 ED_INLINE uint32_t
@@ -192,7 +192,7 @@ int
 ed_mime_load(EdMime **dbp, const void *data, size_t size, int flags)
 {
 #if ED_MIMEDB
-	if (data == NULL || data == ed_mimedb_data) {
+	if (data == NULL) {
 		data = ed_mimedb_data;
 		size = ed_mimedb_size;
 		flags |= ED_FMIME_NOVERIFY;
