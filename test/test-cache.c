@@ -5,7 +5,7 @@ static EdConfig cfg = {
 	.index_path = "./test/tmp/test_cache",
 	.slab_path = "./test/tmp/slab",
 	.slab_size = 16*1024*1024,
-	.flags = ED_FNOSYNC|ED_FCREATE|ED_FALLOCATE|ED_FCHECKSUM|ED_FZERO,
+	.flags = ED_FNOSYNC|ED_FCREATE|ED_FALLOCATE|ED_FCHECKSUM,
 };
 
 static void
@@ -31,11 +31,10 @@ test_create(void)
 
 	EdObject *obj = NULL;
 	EdObjectAttr attr = {
-		.object_size = count * 1000,
+		.datalen = count * 1000,
 		.key = "foo",
-		.key_size = 3,
-		.meta_size = 0,
-		.ttl = -1
+		.keylen = 3,
+		.metalen = 0,
 	};
 
 	mu_assert_int_eq(ed_create(cache, &obj, &attr), 0);

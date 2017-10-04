@@ -224,7 +224,9 @@ test_read_snapshot(void)
 		ed_txn_close(&ftxn, ED_FRESET|FCLOSE);
 
 		finish(&ftxn);
+#if ED_MMAP_DEBUG
 		mu_assert_int_eq(ed_pg_check(), 0);
+#endif
 	}
 	else {
 		sleep(1);
@@ -278,7 +280,9 @@ test_write_sequence(void)
 		ed_txn_close(&ftxn, ED_FRESET|FCLOSE);
 
 		finish(&ftxn);
+#if ED_MMAP_DEBUG
 		mu_assert_int_eq(ed_pg_check(), 0);
+#endif
 	}
 	else {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
