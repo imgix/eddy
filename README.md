@@ -26,13 +26,35 @@ make static # build only the static library
 make dynamic # build only the dynamic library and version symlinks
 ```
 
+## Running
+
+The build creates a tool name `eddy. This is used to create caches, but is also capable
+of managing and manipulating contents.
+
+For more information:
+
+```bash
+eddy help
+eddy new --help
+```
+
+### Quick Start
+
+```
+eddy new -v ./stuff
+echo "this is a test" | eddy set ./stuff test -t 200
+eddy get ./stuff test
+eddy get ./stuff test -i
+eddy update ./stuff test -t -1
+```
+
 ### Options
 
 | Option | Description | Default |
 | --- | --- | --- |
 | `BUILD` | Build mode: `release` or `debug`. | `release` |
 | `BUILD_MIME` | Build the MIME module. This is for both the command line tool and internal `mime.cache` database reader. | `yes` |
-| `BUILD_MIMEDB` | Link the MIME database with the MIME module. This allows the MIME module to work without a local database. | `no` |
+| `BUILD_MIMEDB` | Link the MIME database with the MIME module. This allows the MIME module to work without a local database. | `yes` |
 | `BUILD_DUMP` | Build the dump command. This is a debugging tool and will likely be disabled by default in the future. | `yes` |
 | `OPT` | Optimization level of the build. | `3` for `release`, unset for `debug` |
 | `LTO` | Enable link time optimizations. Additionally, this may be set to `amalg` which will produce an amalgamated source build rather than using the compiler LTO. The amalgamated build is always used for the static library any time LTO is enabled. | `yes` for `release`, `no` for `debug` |

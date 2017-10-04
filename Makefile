@@ -14,11 +14,12 @@ BUILD?= release
 PREFIX?= /usr/local
 UNAME?=$(shell uname -s)
 BUILD_MIME?= yes
+BUILD_MIMEDB?= yes
 BUILD_DUMP?= yes
 PAGESIZE?=$(shell getconf PAGESIZE)
 ifeq ($(BUILD),release)
   OPT?= 3
-  LTO?= yes
+  LTO?= amalg
 else
   DEBUG_MMAP?= yes
   DEBUG_FAULT?= yes
