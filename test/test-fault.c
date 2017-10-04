@@ -24,7 +24,7 @@ static int
 print_entry(const void *ent, char *buf, size_t len)
 {
 	const Entry *e = ent;
-	return snprintf(buf, len, "%11llu  %s", e->key, e->name);
+	return snprintf(buf, len, "%11" PRIu64 "  %s", e->key, e->name);
 }
 
 static void

@@ -24,7 +24,7 @@ static int
 print_entry(const void *ent, char *buf, size_t len)
 {
 	const Entry *e = ent;
-	return snprintf(buf, len, "%11llu  %s", e->key, e->name);
+	return snprintf(buf, len, "%11" PRIu64 "  %s", e->key, e->name);
 }
 
 static void
@@ -103,7 +103,7 @@ test_basic(void)
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 
 	ent.key = 10;
-	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
@@ -125,7 +125,7 @@ test_no_key(void)
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 
 	ent.key = 10;
-	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), ED_EINDEX_KEY_MATCH);
 
 	ed_txn_close(&txn, FRESET);
@@ -162,7 +162,7 @@ test_no_commit(void)
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 
 	ent.key = 10;
-	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 
@@ -185,7 +185,7 @@ test_read_snapshot(void)
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 
 	ent.key = 10;
-	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
@@ -193,7 +193,7 @@ test_read_snapshot(void)
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 
 	ent.key = 20;
-	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 
@@ -256,7 +256,7 @@ test_write_sequence(void)
 	mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 
 	ent.key = 10;
-	snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+	snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
@@ -290,7 +290,7 @@ test_write_sequence(void)
 		sleep(1);
 
 		ent.key = 20;
-		snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);

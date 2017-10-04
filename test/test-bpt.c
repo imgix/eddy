@@ -34,7 +34,7 @@ static int
 print_entry(const void *ent, char *buf, size_t len)
 {
 	const Entry *e = ent;
-	return snprintf(buf, len, "%11llu  %s", e->key, e->name);
+	return snprintf(buf, len, "%11" PRIu64 "  %s", e->key, e->name);
 }
 
 static void
@@ -123,14 +123,14 @@ test_basic(void)
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		{
 			Entry ent = { .key = i };
-			snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+			snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		}
 		mu_assert_uint_eq(txn->db[0].root->tree->xid, txn->xid);
 		{
 			Entry ent = { .key = i+1 };
-			snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+			snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 			mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 			mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 		}
@@ -457,7 +457,7 @@ test_split_branch_left0(void)
 	int final = 0;
 	for (int i = 0; i < n; i += 2) {
 		Entry ent = { .key = i };
-		snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -465,7 +465,7 @@ test_split_branch_left0(void)
 	}
 	for (int i = n-1; i > 0; i -= 2) {
 		Entry ent = { .key = i };
-		snprintf(ent.name, sizeof(ent.name), "b%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "b%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -473,7 +473,7 @@ test_split_branch_left0(void)
 	}
 	for (int i = 0; i < n; i += leaf_order) {
 		Entry ent = { .key = i };
-		snprintf(ent.name, sizeof(ent.name), "c%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "c%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -481,7 +481,7 @@ test_split_branch_left0(void)
 	}
 	{
 		Entry ent = { .key = final };
-		snprintf(ent.name, sizeof(ent.name), "d%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "d%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -525,7 +525,7 @@ test_split_branch_right0(void)
 	int final = (branch_order/2) * leaf_order;
 	for (int i = 0; i < n; i += 2) {
 		Entry ent = { .key = i };
-		snprintf(ent.name, sizeof(ent.name), "a%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -533,7 +533,7 @@ test_split_branch_right0(void)
 	}
 	for (int i = n-1; i > 0; i -= 2) {
 		Entry ent = { .key = i };
-		snprintf(ent.name, sizeof(ent.name), "b%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "b%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -541,7 +541,7 @@ test_split_branch_right0(void)
 	}
 	for (int i = 0; i < n; i += leaf_order) {
 		Entry ent = { .key = i };
-		snprintf(ent.name, sizeof(ent.name), "c%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "c%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
@@ -549,7 +549,7 @@ test_split_branch_right0(void)
 	}
 	{
 		Entry ent = { .key = final };
-		snprintf(ent.name, sizeof(ent.name), "d%llu", ent.key);
+		snprintf(ent.name, sizeof(ent.name), "d%" PRIu64, ent.key);
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
 		mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 1);
 		mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
