@@ -254,9 +254,8 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 
 	char index_path[4096];
 	errno = 0;
-	if (realpath(cfg->index_path, index_path) == NULL && errno) {
-		return ED_ERRNO;
-	}
+	realpath(cfg->index_path, index_path);
+}
 
 	EdPgIdx *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
@@ -283,9 +282,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	else {
 		char slab_path[4096];
 		errno = 0;
-		if (realpath(cfg->slab_path, slab_path) == NULL && errno) {
-			return ED_ERRNO;
-		}
+		realpath(cfg->slab_path, slab_path);
 		size_t len = strnlen(slab_path, sizeof(hdrnew.slab_path));
 		if (len >= sizeof(hdrnew.slab_path)) { return ED_ECONFIG_SLAB_NAME; }
 		memcpy(hdrnew.slab_path, slab_path, len);
