@@ -14,7 +14,6 @@ BUILD?= release
 PREFIX?= /usr/local
 UNAME?=$(shell uname -s)
 BUILD_MIME?= yes
-BUILD_MIMEDB?= yes
 BUILD_DUMP?= yes
 PAGESIZE?=$(shell getconf PAGESIZE)
 ifeq ($(BUILD),release)
@@ -82,6 +81,10 @@ ifeq ($(BUILD_DUMP),yes)
   CFLAGS+= -DED_DUMP=1
 endif
 TESTSRC:= $(wildcard test/test-*.c)
+
+ifneq ($(UNAME),Darwin)
+  LDFLAGS+= -lm -pthread
+endif
 
 # Select compiler and linker.
 ifeq ($(findstring .cc,$(suffix $(LIBSRC))),.cc)
@@ -220,9 +223,9 @@ clean:
 
 # Executable linking template.
 ifeq ($(DEBUG)-$(UNAME),yes-Darwin)
-  LINK= $(LINK_PREFIX)$(LD) $(LDFLAGS) $(1) -o $(2) && dsymutil $(2)
+  LINK= $(LINK_PREFIX)$(LD) $(1) -o $(2) $(LDFLAGS) && dsymutil $(2)
 else
-  LINK= $(LINK_PREFIX)$(LD) $(LDFLAGS) $(1) -o $(2)
+  LINK= $(LINK_PREFIX)$(LD) $(1) -o $(2) $(LDFLAGS)
 endif
 
 # Generate and strip statically linked executable.
@@ -237,7 +240,7 @@ $(TEST)/test-%: $(TMP)/test-%.c.$(OBJEXT) $(OBJ) | $(TEST)
 
 
 # Static library archiving template.
-STATIC= $(STATIC_PREFIX)$(AR) rcus $(2) $(1)
+STATIC= $(STATIC_PREFIX)$(AR) rcs $(2) $(1)
 
 # Generate static library from non-lto object(s).
 $(LIB)/$(A): $(OBJA) | $(LIB)

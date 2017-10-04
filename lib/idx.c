@@ -253,7 +253,10 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	ed_lck_init(&idx->lck, ED_IDX_LCK_WRITE_OFF, ED_IDX_LCK_WRITE_LEN);
 
 	char index_path[4096];
-	realpath(cfg->index_path, index_path);
+	errno = 0;
+	if (realpath(cfg->index_path, index_path) == NULL && errno) {
+		return ED_ERRNO;
+	}
 
 	EdPgIdx *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
@@ -279,7 +282,10 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	}
 	else {
 		char slab_path[4096];
-		realpath(cfg->slab_path, slab_path);
+		errno = 0;
+		if (realpath(cfg->slab_path, slab_path) == NULL && errno) {
+			return ED_ERRNO;
+		}
 		size_t len = strnlen(slab_path, sizeof(hdrnew.slab_path));
 		if (len >= sizeof(hdrnew.slab_path)) { return ED_ECONFIG_SLAB_NAME; }
 		memcpy(hdrnew.slab_path, slab_path, len);
@@ -325,7 +331,10 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 			hdrnew.slab_block_count = (EdBlkno)(slab_size/hdrnew.slab_block_size);
 			hdrnew.slab_ino = (uint64_t)stat.st_ino;
 
-			ftruncate(fd, 0);
+			if (ftruncate(fd, 0) < 0){
+				rc = ED_ERRNO;
+				break;
+			}
 
 			size_t size = PG_NINIT(nconns) * PAGESIZE;
 			rc = allocate_file(flags, fd, size + (ED_ALLOC_COUNT * PAGESIZE), "index");

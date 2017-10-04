@@ -105,10 +105,14 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 		else {
 			size_t len;
 			const void *data = ed_value(obj, &len);
-			write(STDOUT_FILENO, data, len);
+			if (write(STDOUT_FILENO, data, len) < 0) {
+				warn("write failed");
+			}
 			if (meta) {
 				data = ed_meta(obj, &len);
-				write(STDERR_FILENO, data, len);
+				if (write(STDERR_FILENO, data, len) < 0) {
+					warn("write failed");
+				}
 			}
 			ed_close(&obj);
 		}
