@@ -70,7 +70,7 @@ ifeq ($(DEBUG_MMAP),yes)
   LIBSRC+= lib/pgtrack.cc lib/backtrace.cc
   CFLAGS+= -DED_MMAP_DEBUG=1 -DED_BACKTRACE=1
   ifneq ($(UNAME),Darwin)
-    LDFLAGS+= -lexecinfo -ldl
+    LDFLAGS+= -lunwind -ldl
   endif
 endif
 ifeq ($(DEBUG_FAULT),yes)

@@ -17,54 +17,100 @@ extern "C" {
 
 struct EdBacktrace {
 	struct Symbol {
-		const void *frame;
-		const void *addr;
+		uintptr_t ip, offset;
 		char *name;
-		const char *fname;
-		char *source;
+		char *source = nullptr;
+		const char *fname = nullptr;
 
-		Symbol(const void *frm)
-			: frame(frm), addr(nullptr), name(nullptr), fname(nullptr), source(nullptr) {}
+		Symbol(uintptr_t instr, uintptr_t instroff, char *sym) noexcept :
+			ip(instr), offset(instroff), name(sym) {}
 		~Symbol();
 
+		Symbol(Symbol &&other) noexcept :
+			ip(other.ip),
+			offset(other.offset),
+			name(other.name),
+			source(other.source),
+			fname(other.fname)
+		{
+			other.name = nullptr;
+			other.source = nullptr;
+			other.fname = nullptr;
+		}
+
+		Symbol &operator=(Symbol &&other) noexcept
+		{
+			ip = other.ip;
+			offset = other.offset;
+			name = other.name;
+			source = other.source;
+			fname = other.fname;
+			other.name = nullptr;
+			other.source = nullptr;
+			other.fname = nullptr;
+			return *this;
+		}
+
+		Symbol(const Symbol &other) = delete;
+		Symbol &operator=(const Symbol &other) = delete;
+
 		void Print(int idx, FILE *out);
-		void SetInfo(Dl_info &info);
 		void SetSource(const char *line, size_t len);
 	};
-	std::vector<Symbol> syms;
 
 	struct Image {
 		std::vector<Symbol *> syms;
-		const void *base;
-		const char *path;
-		FILE *proc;
-		bool has_debug;
+		uintptr_t base = 0;
+		const char *path = nullptr;
+		FILE *proc = nullptr;
+		bool has_debug = false;
 
 		Image() : syms() {}
 		Image(Dl_info &info);
 		~Image();
+
+		Image(Image &&other) noexcept :
+			syms(std::move(other.syms)),
+			base(other.base),
+			path(other.path),
+			proc(other.proc),
+			has_debug(other.has_debug)
+		{
+			other.proc = nullptr;
+		}
+
+		Image &operator=(Image &&other) noexcept
+		{
+			syms = std::move(other.syms);
+			base = other.base;
+			path = other.path;
+			proc = other.proc;
+			has_debug = other.has_debug;
+			other.proc = nullptr;
+			return *this;
+		}
+
+		Image(const Image &other) = delete;
+		Image &operator=(const Image &other) = delete;
 
 		void Add(Symbol *);
 		bool Open(void);
 		void Close(void);
 		void Apply(void);
 	};
-	std::unordered_map<const char *, Image> images;
 
-	bool has_symbols;
+	std::vector<Symbol> syms;
+	std::unordered_map<const char *, Image> images;
+	bool has_images;
 	bool has_source;
 
-	EdBacktrace() : syms(), images(), has_symbols(false), has_source(false) {}
-	EdBacktrace(void **frames, int nframes);
+	EdBacktrace() : syms(), images(), has_images(false), has_source(false) {}
 
 	int Load();
-	void Load(void **frames, int nframes);
-
 	void Print(int skip, FILE *out);
 	int Find(const char *name);
 
 private:
-	void CollectSymbols();
 	void CollectSource();
 };
 
