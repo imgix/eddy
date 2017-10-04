@@ -989,6 +989,17 @@ ed_hash(const uint8_t *val, size_t len, uint64_t seed);
 ED_LOCAL uint32_t
 ed_crc32c(uint32_t crc, const void *bytes, size_t len);
 
+ED_LOCAL ssize_t
+ed_path_join(char *out, size_t len,
+		const char *a, size_t alen,
+		const char *b, size_t blen);
+
+ED_LOCAL size_t
+ed_path_clean(char *path, size_t len);
+
+ED_LOCAL ssize_t
+ed_path_abs(char *out, size_t len, const char *path, size_t plen);
+
 static inline uint32_t __attribute__((unused))
 ed_fetch32(const void *p)
 {

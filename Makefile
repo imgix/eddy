@@ -56,6 +56,7 @@ LIBSRC:= lib/cache.c \
 	lib/idx.c \
 	lib/stat.c \
 	lib/mkfile.c \
+	lib/path.c \
 	lib/time.c
 BINSRC:= bin/eddy.c
 ifeq ($(BUILD_MIME),yes)

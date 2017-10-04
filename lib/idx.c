@@ -252,11 +252,6 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	ed_idx_clear(idx);
 	ed_lck_init(&idx->lck, ED_IDX_LCK_WRITE_OFF, ED_IDX_LCK_WRITE_LEN);
 
-	char index_path[4096];
-	errno = 0;
-	realpath(cfg->index_path, index_path);
-}
-
 	EdPgIdx *hdr = MAP_FAILED, hdrnew = INDEX_DEFAULT;
 	struct stat stat;
 	int fd = -1, sfd = -1, rc = 0, pid = getpid();
@@ -264,6 +259,12 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	unsigned nconns = cfg->max_conns;
 	if (nconns == 0) { nconns = hdrnew.nconns; }
 	else if (nconns > 256) { nconns = 512; }
+
+	char index_path[4096];
+	ssize_t index_len = ed_path_abs(index_path, sizeof(index_path)-1,
+			cfg->index_path, strnlen(cfg->index_path, sizeof(index_path)));
+	if (index_len < 0) { return ED_ECONFIG_INDEX_NAME; }
+	index_path[index_len] = '\0';
 
 	if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
 	hdrnew.epoch = ed_now_unix();
@@ -273,19 +274,18 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	hdrnew.tail_start = PG_NINIT(nconns);
 	hdrnew.tail_count = ED_ALLOC_COUNT;
 	if (cfg->slab_path == NULL) {
-		int len = snprintf(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1, "%s-slab", index_path);
+		int len = snprintf(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1,
+				"%.*s-slab", (int)index_len, index_path);
 		if (len < 0) { return ED_ERRNO; }
 		if (len >= (int)sizeof(hdrnew.slab_path)) {
 			return ED_ECONFIG_SLAB_NAME;
 		}
 	}
 	else {
-		char slab_path[4096];
-		errno = 0;
-		realpath(cfg->slab_path, slab_path);
-		size_t len = strnlen(slab_path, sizeof(hdrnew.slab_path));
-		if (len >= sizeof(hdrnew.slab_path)) { return ED_ECONFIG_SLAB_NAME; }
-		memcpy(hdrnew.slab_path, slab_path, len);
+		ssize_t slab_len = ed_path_abs(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1,
+				cfg->slab_path, strnlen(cfg->slab_path, sizeof(hdrnew.slab_path)));
+		if (slab_len < 0) { return ED_ECONFIG_SLAB_NAME; }
+		hdrnew.slab_path[slab_len] = '\0';
 	}
 	hdrnew.nconns = nconns;
 
