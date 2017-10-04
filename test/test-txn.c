@@ -178,6 +178,7 @@ test_read_snapshot(void)
 	unlink(cfg.index_path);
 
 	EdTxn *txn;
+	setup(&txn);
 
 	Entry ent;
 
@@ -195,9 +196,6 @@ test_read_snapshot(void)
 	snprintf(ent.name, sizeof(ent.name), "a%" PRIu64, ent.key);
 	mu_assert_int_eq(ed_bpt_find(txn, 0, ent.key, NULL), 0);
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
-
-	ed_txn_close(&txn, FRESET);
-	finish(&txn);
 
 	pid_t pid = fork();
 	if (pid < 0) {
@@ -231,7 +229,6 @@ test_read_snapshot(void)
 #endif
 	}
 	else {
-		setup(&txn);
 		sleep(1);
 
 		mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
@@ -264,8 +261,6 @@ test_write_sequence(void)
 	mu_assert_int_eq(ed_bpt_set(txn, 0, &ent, false), 0);
 	mu_assert_int_eq(ed_txn_commit(&txn, FRESET), 0);
 
-	finish(&txn);
-
 	pid_t pid = fork();
 	if (pid < 0) {
 		mu_fail("fork failed '%s'\n", strerror(errno));
@@ -291,7 +286,6 @@ test_write_sequence(void)
 	}
 	else {
 		mu_assert_int_eq(ed_txn_open(txn, FOPEN), 0);
-		setup(&txn);
 
 		sleep(1);
 
