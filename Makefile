@@ -108,7 +108,7 @@ ifeq ($(DEBUG),yes)
   CFLAGS+= -g -DED_DEBUG=1
   LDFLAGS+= -g
 endif
-CFLAGS+= -Ilib -I$(TMP) -march=native -fvisibility=hidden -pthread
+CFLAGS+= -fPIC -Ilib -I$(TMP) -march=native -fvisibility=hidden -pthread
 CFLAGS+= -D_GNU_SOURCE -D_BSD_SOURCE
 CFLAGS+= -DPAGESIZE=$(PAGESIZE) -DBUILD=$(BUILD)
 CFLAGS+= -DVERSION_MAJOR=$(VMAJ) -DVERSION_MINOR=$(VMIN) -DVERSION_BUILD=$(VBLD)
