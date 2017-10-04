@@ -24,7 +24,9 @@ else
   DEBUG_MMAP?= yes
   DEBUG_FAULT?= yes
   LTO?= no
-  SANITIZE?= address
+  ifneq ($(UNAME),Darwin)
+    SANITIZE?= address
+  endif
 endif
 ifdef OPT
   CFLAGS?= -O$(OPT) -DNDEBUG
@@ -202,7 +204,7 @@ test: $(TESTSRC:test/test-%.c=test-%)
 
 # Build and run a single test.
 test-%: $(TEST)/test-% | ./test/tmp
-	@./$<
+	@ASAN_OPTIONS=detect_leaks=1 ASAN_OPTIONS=suppressions=supp.txt ./$<
 
 ./test/tmp:
 	./test/setup.sh $@
