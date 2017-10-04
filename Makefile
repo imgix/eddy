@@ -289,7 +289,7 @@ $(TMP)/%.c.o: $(TMP)/%.c | $(TMP)
 $(TMP)/$(LIBNAME)-amalg.c: $(LIBSRC) | $(TMP)
 	@echo "amalg\t$@"
 	@date +"/*  $(LIBNAME): %Y-%m-%d %T %Z */" > $@
-	@for f in $^; do cat $$f >> $@; done
+	@for f in $^; do echo "#line 1 \"$$f\"" >> $@ && cat $$f >> $@; done
 
 # Produce mime.cache data.
 $(TMP)/mimedb.c: test/mime.cache | $(TMP)
