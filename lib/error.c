@@ -42,6 +42,7 @@ static const char *const eobject[] = {
 	[ed_ecode(ED_EOBJECT_TOOBIG)]        = "write exceeds allocated object size",
 	[ed_ecode(ED_EOBJECT_TOOSMALL)]      = "too few bytes were written to the object",
 	[ed_ecode(ED_EOBJECT_RDONLY)]        = "object is read-only",
+	[ed_ecode(ED_EOBJECT_ID)]            = "object id is invalid",
 };
 
 static const char *const emime[] = {

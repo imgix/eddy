@@ -61,6 +61,7 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 				}
 
 				printf(
+						"id: %s\n"
 						"ttl: %ld\n"
 						"expiry: %s"
 						"expiry timestamp: %ld\n"
@@ -68,9 +69,9 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 						"created timestamp: %ld\n"
 						"meta length: %u\n"
 						"data length: %u\n"
-						"xid: %" PRIu64 "\n"
 						"key hash: %" PRIu64 "\n"
 						,
+						obj->id,
 						ttl,
 						expiry_timestamp < 0 ? "~\n" : expiry,
 						expiry_timestamp,
@@ -78,15 +79,12 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 						created_timestamp,
 						obj->metalen,
 						obj->datalen,
-						obj->xid,
 						obj->hdr->keyhash);
 
 				if (cache->idx.flags & ED_FCHECKSUM) {
 					printf("meta crc: %u\ndata crc: %u\n",
 							obj->hdr->metacrc, obj->hdr->datacrc);
 				}
-				printf("tag: %u\nversion: %u\n",
-						obj->hdr->tag, obj->hdr->version);
 				ed_close(&obj);
 			}
 		}

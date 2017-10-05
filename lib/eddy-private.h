@@ -1068,6 +1068,7 @@ struct EdObject {
 	size_t       nbytes;
 	EdTime       exp;
 	bool         rdonly;
+	char         id[18];
 	uint8_t      newkey[1];
 };
 
@@ -1182,11 +1183,9 @@ struct EdPgIdx {
  * @brief  On-disk value for an entry in the slab
  */
 struct EdObjectHdr {
-	uint8_t      version;          /**< Object-specific header version */
-	uint8_t      flags;            /**< Per-object flags */
-	uint16_t     tag;              /**< User-defined tag */
-	EdTime       created;          /**< Timestamp when the object was created */
 	EdTxnId      xid;              /**< Transaction ID that create this object */
+	EdTime       created;          /**< Timestamp when the object was created */
+	EdTime       exp;              /**< Timestamp when the object was created */
 	uint16_t     keylen;           /**< Number of bytes for the key */
 	uint16_t     metalen;          /**< Number of bytes for the metadata */
 	uint32_t     datalen;          /**< Number of bytes for the data */
@@ -1244,6 +1243,9 @@ struct EdEntryBlock {
 	EdTxnId      xid;              /**< Transaction ID that created the entry */
 };
 
+#define ed_entry_block_make(n, c, x) \
+	((EdEntryBlock){ n, c, 0, x })
+
 /**
  * @brief  B+Tree value type for indexing the slab by key
  */
@@ -1253,6 +1255,9 @@ struct EdEntryKey {
 	EdPgno       count;            /**< Number of blocks used by the entry */
 	EdTime       exp;              /**< Expiration of the entry */
 };
+
+#define ed_entry_key_make(h, n, c, e) \
+	((EdEntryKey){ h, n, c, e })
 
 #pragma GCC diagnostic pop
 

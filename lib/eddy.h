@@ -56,11 +56,10 @@ struct EdObjectAttr {
 	uint16_t     keylen;
 	uint16_t     metalen;
 	uint32_t     datalen;
-	uint16_t     tag;
 };
 
 #define ed_config_make() ((EdConfig){ .flags = 0 })
-#define ed_object_attr_make() ((EdObjectAttr){ .tag = 0 })
+#define ed_object_attr_make() ((EdObjectAttr){ .keylen = 0 })
 
 
 
@@ -129,8 +128,8 @@ ed_expiry(const EdObject *obj);
 ED_EXPORT EdTimeUnix
 ed_created_at(const EdObject *obj);
 
-ED_EXPORT uint16_t
-ed_tag(const EdObject *obj);
+ED_EXPORT const char *
+ed_id(const EdObject *obj);
 
 
 
@@ -252,6 +251,7 @@ ed_tag(const EdObject *obj);
 #define ED_EOBJECT_TOOBIG        ed_eobject(0) /** Error code when too many bytes are written to an object. */
 #define ED_EOBJECT_TOOSMALL      ed_eobject(1) /** Error code when too few bytes are written to an object. */
 #define ED_EOBJECT_RDONLY        ed_eobject(2) /** Error code when attempting to modify a read-only object. */
+#define ED_EOBJECT_ID            ed_eobject(3) /** Error code for invalid object ids */
 
 #define ED_EMIME_FILE            ed_emime(0)   /** Error code when the mime.cache file can't be loaded. */
 

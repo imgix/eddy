@@ -200,8 +200,8 @@ obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 		EdBlkno blck, EdBlkno nblcks, EdTime exp)
 {
 	EdTxn *txn = cache->txn;
-	EdEntryBlock blocknew = { blck, nblcks, exp, txn->xid };
-	EdEntryKey *key, keynew = { h, blck, nblcks, exp };
+	EdEntryBlock blocknew = ed_entry_block_make(blck, nblcks, txn->xid);
+	EdEntryKey *key, keynew = ed_entry_key_make(h, blck, nblcks, exp);
 	bool replace = false;
 	int rc;
 
@@ -435,11 +435,9 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 
 	// Initializse the object header.
 	madvise(hdr, nbytes, MADV_SEQUENTIAL);
-	hdr->version = 0;
-	hdr->flags = 0;
-	hdr->tag = attr->tag;
-	hdr->created = now;
 	hdr->xid = 0;
+	hdr->created = now;
+	hdr->exp = 0;
 	hdr->keylen = attr->keylen;
 	hdr->metalen = attr->metalen;
 	hdr->datalen = attr->datalen;
@@ -606,6 +604,7 @@ ed_close(EdObject **objp)
 					obj->blck, obj->nblcks, obj->exp);
 			if (rc < 0) { goto done; }
 
+			obj->hdr->exp = obj->exp;
 			obj->hdr->xid = cache->txn->xid;
 			ed_flck(slabfd, ED_LCK_UN, obj->byte, obj->nbytes, flags);
 			locked = false;
@@ -686,9 +685,9 @@ ed_created_at(const EdObject *obj)
 	return ed_time_to_unix(obj->cache->idx.epoch, obj->hdr->created);
 }
 
-uint16_t
-ed_tag(const EdObject *obj)
+const char *
+ed_id(const EdObject *obj)
 {
-	return obj->hdr->tag;
+	return obj->id;
 }
 

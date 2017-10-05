@@ -5,7 +5,6 @@ static const char set_descr[] =
 static const char set_usage[] =
 	"usage: eddy set [{-t ttl | -e time}] [-m meta] [-T tag] index key {file | <file}\n";
 static EdOption set_opts[] = {
-	{"tag",     "tag",  0, 'T', "user defined 16-bit unsigned integer"},
 	{"ttl",     "ttl",  0, 't', "set the time-to-live in seconds"},
 	{"expiry",  "time", 0, 'e', "set the expiry as a UNIX timestamp"},
 	{"meta",    "file", 0, 'm', "set the object meta data from the contents of a file"},
@@ -22,20 +21,12 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	char *end;
 	int rc;
 	EdObjectAttr attr = ed_object_attr_make();
-	long num;
 	time_t t;
 	bool has_ttl = false, has_expiry = false;
 
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
 		switch (ch) {
-		case 'T':
-			num = strtol(optarg, &end, 10);
-			if (*end != '\0' || num < 0 || num > UINT16_MAX) {
-				errx(1, "invalid number: %s", argv[optind-1]);
-			}
-			attr.tag = (uint16_t)num;
-			break;
 		case 't':
 			if (has_expiry) { errx(1, "expiry cannot be combined with TTL"); }
 			t = strtol(optarg, &end, 10);
