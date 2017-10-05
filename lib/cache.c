@@ -440,6 +440,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	hdr->xid = 0;
 	hdr->created = now;
 	hdr->exp = 0;
+	hdr->flags = 0;
 	hdr->keylen = attr->keylen;
 	hdr->metalen = attr->metalen;
 	hdr->datalen = attr->datalen;

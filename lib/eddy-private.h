@@ -1185,7 +1185,8 @@ struct EdPgIdx {
 struct EdObjectHdr {
 	EdTxnId      xid;              /**< Transaction ID that create this object */
 	EdTime       created;          /**< Timestamp when the object was created */
-	EdTime       exp;              /**< Timestamp when the object was created */
+	EdTime       exp;              /**< Timestamp when the object expires */
+	uint64_t     flags;            /**< Flags for the object, currently unused */
 	uint16_t     keylen;           /**< Number of bytes for the key */
 	uint16_t     metalen;          /**< Number of bytes for the metadata */
 	uint32_t     datalen;          /**< Number of bytes for the data */
