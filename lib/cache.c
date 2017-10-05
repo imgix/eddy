@@ -84,6 +84,8 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonl
 	obj->nbytes = size;
 	obj->exp = exp;
 	obj->rdonly = rdonly;
+	snprintf(obj->id, sizeof(obj->id), "%" PRIx64 ":%" PRIx64,
+			obj->xid, obj->blck);
 }
 
 static void
