@@ -244,6 +244,7 @@ ed_idx_clear(EdIdx *idx)
 	idx->seed = 0;
 	idx->epoch = -1;
 	idx->slab_block_count = 0;
+	idx->slab_block_size = 0;
 }
 
 int
@@ -273,6 +274,9 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	hdrnew.gc_tail = PG_ROOT_GC;
 	hdrnew.tail_start = PG_NINIT(nconns);
 	hdrnew.tail_count = ED_ALLOC_COUNT;
+	if (cfg->slab_block_size > 0) {
+		hdrnew.slab_block_size = cfg->slab_block_size;
+	}
 	if (cfg->slab_path == NULL) {
 		int len = snprintf(hdrnew.slab_path, sizeof(hdrnew.slab_path)-1,
 				"%.*s-slab", (int)index_len, index_path);
@@ -365,6 +369,7 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	idx->seed = hdr->seed;
 	idx->epoch = hdr->epoch;
 	idx->slab_block_count = hdr->slab_block_count;
+	idx->slab_block_size = hdr->slab_block_size;
 
 	return 0;
 

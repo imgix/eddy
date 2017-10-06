@@ -261,6 +261,8 @@ ed_flck(int fd, EdLckType type, off_t start, off_t len, uint64_t flags);
 #define ED_PG_MAX (UINT32_MAX-1)
 #define ED_BLK_NONE UINT64_MAX
 
+ED_LOCAL   void * ed_blk_map(int fd, EdBlkno no, EdBlkno count, uint16_t size, bool need);
+ED_LOCAL      int ed_blk_unmap(void *p, EdBlkno count, uint16_t size);
 ED_LOCAL   void * ed_pg_map(int fd, EdPgno no, EdPgno count, bool need);
 ED_LOCAL      int ed_pg_unmap(void *p, EdPgno count);
 ED_LOCAL   void * ed_pg_load(int fd, EdPg **pgp, EdPgno no, bool need);
@@ -752,6 +754,7 @@ struct EdIdx {
 	uint64_t     seed;             /**< Randomized seed */
 	EdTimeUnix   epoch;            /**< Epoch adjustment in seconds */
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
+	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
 };
 
 #define ED_IDX_PAGES(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)

@@ -10,7 +10,7 @@
 
 #define ED_EXPORT extern __attribute__((visibility ("default")))
 
-#define ED_MAX_KEY 4032
+#define ED_MAX_KEY 2048
 
 /** @defgroup  flags  EdConfig and ed_cache_open flags
  * @{
@@ -46,8 +46,9 @@ struct EdConfig {
 	const char * index_path;
 	const char * slab_path;
 	unsigned     max_conns;
-	long long    slab_size;
 	uint64_t     flags;
+	long long    slab_size;
+	uint16_t     slab_block_size;
 };
 
 struct EdObjectAttr {

@@ -40,9 +40,9 @@ obj_data_offset(uint16_t keylen, uint16_t metalen, uint64_t flags)
 }
 
 static size_t
-obj_slab_size(uint16_t keylen, uint16_t metalen, uint32_t datalen, uint64_t flags)
+obj_slab_size(uint16_t keylen, uint16_t metalen, uint32_t datalen, uint16_t block_size, uint64_t flags)
 {
-	return ed_align_pg(obj_data_offset(keylen, metalen, flags) + datalen);
+	return ED_ALIGN_SIZE(obj_data_offset(keylen, metalen, flags) + datalen, block_size);
 }
 
 static uint8_t *
@@ -64,10 +64,11 @@ obj_data(EdObjectHdr *hdr, uint64_t flags)
 }
 
 static void
-obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly, EdTime exp)
+obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly, EdTime exp,
+		uint16_t block_size)
 {
 	const uint64_t flags = cache->idx.flags;
-	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen, flags);
+	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen, block_size, flags);
 	obj->cache = cache;
 	obj->key = obj_key(hdr);
 	obj->keylen = hdr->keylen;
@@ -79,8 +80,8 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonl
 	obj->hdr = hdr;
 	obj->xid = hdr->xid;
 	obj->blck = no;
-	obj->nblcks = size/PAGESIZE;
-	obj->byte = no*PAGESIZE;
+	obj->nblcks = size/block_size;
+	obj->byte = no*block_size;
 	obj->nbytes = size;
 	obj->exp = exp;
 	obj->rdonly = rdonly;
@@ -105,10 +106,11 @@ obj_hdr_final(EdObjectHdr *hdr, size_t nbytes, uint64_t flags)
 }
 
 static int
-obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck, size_t len)
+obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck, size_t len, uint16_t block_size)
 {
+	const EdBlkno nmin = ED_ALIGN_SIZE(sizeof(EdObjectHdr) + ED_MAX_KEY + 1, block_size);
 	EdBlkno pos = *posp, end;
-	size_t start = pos * PAGESIZE;
+	size_t start = pos * block_size;
 	bool searched = false;
 	bool locked = false;
 	EdEntryBlock *block;
@@ -120,7 +122,7 @@ obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck
 		// If the range sticks out past the end of the file, search at the beginning.
 		// I was creating a wrapped mmap here previously. For simplicity, that has
 		// been removed, but it could come back without any file format changes.
-		if (start + len > nblck*PAGESIZE) {
+		if (start + len > nblck*block_size) {
 			start = 0;
 			pos = 0;
 			searched = false;
@@ -139,7 +141,7 @@ obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck
 			rc = ed_bpt_next(txn, ED_DB_BLOCKS, (void **)&block);
 			if (rc < 0) { goto done; }
 			pos = block->no;
-			start = pos * PAGESIZE;
+			start = pos * block_size;
 		}
 		else {
 			locked = true;
@@ -148,7 +150,7 @@ obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck
 	} while(1);
 
 	// Determine the first page number after the write region.
-	end = pos + len/PAGESIZE;
+	end = pos + len/block_size;
 
 	// If the original find didn't match and we never iterated to the next
 	// position, load the next entry.
@@ -161,7 +163,7 @@ obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck
 	// entries in the index.
 	while (block && block->no < end && block->no >= pos) {
 		// Only the first page of the object is needed.
-		EdObjectHdr *old = ed_pg_map(slabfd, block->no, 1, true);
+		EdObjectHdr *old = ed_blk_map(slabfd, block->no, nmin, block_size, true);
 		if (old == MAP_FAILED) { rc = ED_ERRNO; goto done; }
 
 		// Loop through each key entry to resolve collisions. Key comparison is not
@@ -178,7 +180,7 @@ obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck
 				break;
 			}
 		}
-		ed_pg_unmap(old, 1);
+		ed_blk_unmap(old, nmin, block_size);
 		if (rc < 0) { goto done; }
 
 		rc = ed_bpt_del(txn, ED_DB_BLOCKS);
@@ -202,6 +204,8 @@ obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 		EdBlkno blck, EdBlkno nblcks, EdTime exp)
 {
 	EdTxn *txn = cache->txn;
+	const uint16_t block_size = cache->idx.slab_block_size;
+	const EdBlkno nmin = ED_ALIGN_SIZE(sizeof(EdObjectHdr) + ED_MAX_KEY + 1, block_size);
 	EdEntryBlock blocknew = ed_entry_block_make(blck, nblcks, txn->xid);
 	EdEntryKey *key, keynew = ed_entry_key_make(h, blck, nblcks, exp);
 	bool replace = false;
@@ -217,11 +221,11 @@ obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key); rc == 1;
 			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 		// Map the slab object.
-		EdObjectHdr *old = ed_pg_map(cache->idx.slabfd, key->no, 1, true);
+		EdObjectHdr *old = ed_blk_map(cache->idx.slabfd, key->no, nmin, block_size, true);
 		if (old == MAP_FAILED) { return ED_ERRNO; }
 
 		replace = old->keylen == klen && memcmp(obj_key(old), k, klen) == 0;
-		ed_pg_unmap(old, 1);
+		ed_blk_unmap(old, nmin, block_size);
 		if (replace) { break; }
 	}
 	if (rc >= 0) {
@@ -328,6 +332,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 	assert(obj != NULL);
 
 	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
+	const uint16_t block_size = cache->idx.slab_block_size;
 	const EdTimeUnix now = ed_now_unix();
 	EdTxn *const txn = cache->txn;
 
@@ -345,8 +350,8 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 			continue;
 		}
 
-		off_t off = key->no * PAGESIZE;
-		off_t len = key->count * PAGESIZE;
+		off_t off = key->no * block_size;
+		off_t len = key->count * block_size;
 
 		// Try to get a shared lock on the slab region. If it cannot be locked, a
 		// writer is replacing this slab location.
@@ -355,7 +360,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		}
 
 		// Map the slab object.
-		EdObjectHdr *hdr = ed_pg_map(cache->idx.slabfd, key->no, key->count, false);
+		EdObjectHdr *hdr = ed_blk_map(cache->idx.slabfd, key->no, key->count, block_size, false);
 		if (hdr == MAP_FAILED) {
 			rc = ED_ERRNO;
 			ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
@@ -366,14 +371,14 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		// likely match. If it does, set up the object and end the loop.
 		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
 			set = 1;
-			obj_init(obj, cache, hdr, key->no, true, key->exp);
+			obj_init(obj, cache, hdr, key->no, true, key->exp, block_size);
 			break;
 		}
 
 		// We have a hash collision so unlock and unmap the slab region and continue
 		// searching with the next entry.
 		ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
-		ed_pg_unmap(hdr, key->count);
+		ed_blk_unmap(hdr, key->count, block_size);
 	}
 
 done:
@@ -401,8 +406,9 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	const EdTime now = ed_time_from_unix(cache->idx.epoch, unow);
 	const uint64_t h = ed_hash(attr->key, attr->keylen, cache->idx.seed);
 	const uint64_t flags = cache->idx.flags;
-	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, flags);
-	const EdBlkno nblcks = nbytes/PAGESIZE;
+	const uint16_t block_size = cache->idx.slab_block_size;
+	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, block_size, flags);
+	const EdBlkno nblcks = nbytes/block_size;
 	const EdBlkno nslab = cache->idx.slab_block_count;
 	const int slabfd = cache->idx.slabfd;
 	EdTxn *const txn = cache->txn;
@@ -418,11 +424,11 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	if (rc < 0) { goto done; }
 
 	blck = ed_txn_block(txn);
-	rc = obj_reserve(txn, slabfd, flags, &blck, nslab, nbytes);
+	rc = obj_reserve(txn, slabfd, flags, &blck, nslab, nbytes, block_size);
 	if (rc < 0) { goto done; }
 
 	// Map the new object header in the slab.
-	hdr = ed_pg_map(slabfd, blck, nblcks, true);
+	hdr = ed_blk_map(slabfd, blck, nblcks, block_size, true);
 	if (hdr == MAP_FAILED) {
 		rc = ED_ERRNO;
 		goto done;
@@ -465,16 +471,16 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	// Zero out the end of the meta segment.
 	memset(meta, 0, obj_data(hdr, flags) - meta);
 
-	obj_init(obj, cache, hdr, blck, false, ED_TIME_INF);
+	obj_init(obj, cache, hdr, blck, false, ED_TIME_INF, block_size);
 
 done:
 	// Clean up resources if there was an error.
 	if (rc < 0) {
 		if (hdr != MAP_FAILED) {
-			ed_pg_unmap(hdr, nblcks);
+			ed_blk_unmap(hdr, nblcks, block_size);
 		}
 		if (locked) {
-			ed_flck(slabfd, ED_LCK_UN, blck*PAGESIZE, nbytes, flags);
+			ed_flck(slabfd, ED_LCK_UN, blck*block_size, nbytes, flags);
 		}
 		if (ed_txn_isopen(txn)) {
 			ed_txn_close(&cache->txn, flags|ED_FRESET);
@@ -489,6 +495,7 @@ done:
 static int
 update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix now, bool restore)
 {
+	const uint16_t block_size = cache->idx.slab_block_size;
 	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
 	EdTxn *const txn = cache->txn;
 
@@ -507,7 +514,7 @@ update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix
 		}
 
 		// Map the slab object.
-		EdObjectHdr *hdr = ed_pg_map(cache->idx.slabfd, key->no, 1, true);
+		EdObjectHdr *hdr = ed_blk_map(cache->idx.slabfd, key->no, 1, block_size, true);
 		if (hdr == MAP_FAILED) {
 			rc = ED_ERRNO;
 			break;
@@ -522,7 +529,7 @@ update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix
 			if (rc >= 0) { set = 1; }
 		}
 
-		ed_pg_unmap(hdr, key->count);
+		ed_blk_unmap(hdr, key->count, block_size);
 	}
 
 	if (set == 1) {
@@ -624,7 +631,7 @@ ed_close(EdObject **objp)
 	}
 
 done:
-	ed_pg_unmap(obj->hdr, obj->nblcks);
+	ed_blk_unmap(obj->hdr, obj->nblcks, cache->idx.slab_block_size);
 
 	if (locked) {
 		ed_flck(slabfd, ED_LCK_UN, obj->byte, obj->nbytes, flags);
@@ -644,7 +651,7 @@ ed_discard(EdObject **objp)
 	*objp = NULL;
 
 	EdCache *cache = obj->cache;
-	ed_pg_unmap(obj->hdr, obj->nblcks);
+	ed_blk_unmap(obj->hdr, obj->nblcks, cache->idx.slab_block_size);
 	ed_flck(cache->idx.slabfd, ED_LCK_UN, obj->byte, obj->nbytes, cache->idx.flags);
 	free(obj);
 }

@@ -6,6 +6,26 @@ _Static_assert(offsetof(EdPgGc, data) % ed_alignof(EdPgGcList) == 0,
 		"EdPgGc data not properly aligned");
 
 void *
+ed_blk_map(int fd, EdBlkno no, EdBlkno count, uint16_t size, bool need)
+{
+	off_t off = no * size;
+	EdPgno pgno = off / PAGESIZE;
+	off_t diff = off - (pgno * PAGESIZE);
+	EdPgno pgcount = ed_count_pg((count * size) + diff);
+	uint8_t *p = ed_pg_map(fd, pgno, pgcount, need);
+	if (p != MAP_FAILED) { p += diff; }
+	return p;
+}
+
+int
+ed_blk_unmap(void *p, EdBlkno count, uint16_t size)
+{
+	uint8_t *m = (uint8_t *)p - ((uintptr_t)p % PAGESIZE);
+	EdPgno pgcount = ed_count_pg((count * size) + ((uint8_t *)p - m));
+	return ed_pg_unmap(m, pgcount);
+}
+
+void *
 ed_pg_map(int fd, EdPgno no, EdPgno count, bool need)
 {
 	if (no == ED_PG_NONE) {
