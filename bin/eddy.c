@@ -271,7 +271,7 @@ ed_input_final(EdInput *in)
 #define ED_TiB (ED_KiB*ED_GiB)
 
 static bool
-ed_parse_size(const char *val, long long *out)
+ed_parse_size(const char *val, long long *out, size_t block)
 {
 	char *end;
 	long long size = strtoll(val, &end, 10);
@@ -282,6 +282,7 @@ ed_parse_size(const char *val, long long *out)
 	case 'g': case 'G': size *= ED_GiB; end++; break;
 	case 't': case 'T': size *= ED_TiB; end++; break;
 	case 'p': case 'P': size *= PAGESIZE; end++; break;
+	case 'b': case 'B': size *= block; end++; break;
 	}
 	if (*end != '\0') { return false; }
 	*out = size;

@@ -11,7 +11,8 @@ static const char new_usage[] =
 	"  m  mebibytes (1048576 bytes)\n"
 	"  g  gibibytes (1073741824 bytes)\n"
 	"  t  tebibytes (1099511627776 bytes)\n"
-	"  p  pages (" ED_STR(PAGESIZE) " bytes)\n";
+	"  p  pages (" ED_STR(PAGESIZE) " bytes)\n"
+	"  b  blocks (multiple of --block-size)\n";
 static EdOption new_opts[] = {
 	{"size",       "size", 0, 's', "size of the file (default " DEFAULT_SIZE ")"},
 	{"block-size", "size", 0, 'b', "byte size of the blocks in the slab (default 1p)"},
@@ -40,7 +41,7 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 		case 's': size_arg = optarg; break;
 		case 'S': cfg.slab_path = optarg; break;
 		case 'b':
-			if (!ed_parse_size(optarg, &val)) {
+			if (!ed_parse_size(optarg, &val, PAGESIZE)) {
 				errx(1, "%s must be a valid positive number", argv[optind-1]);
 			}
 			if (val < 16 || val > UINT16_MAX) {
@@ -53,7 +54,7 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 	argc -= optind;
 	argv += optind;
 
-	if (!ed_parse_size(size_arg, &cfg.slab_size)) {
+	if (!ed_parse_size(size_arg, &cfg.slab_size, cfg.slab_block_size)) {
 		errx(1, "-s must be a valid positive number");
 	}
 
