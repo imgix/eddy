@@ -243,8 +243,6 @@ ed_idx_clear(EdIdx *idx)
 	idx->pid = -1;
 	idx->seed = 0;
 	idx->epoch = -1;
-	idx->slab_block_count = 0;
-	idx->slab_block_size = 0;
 }
 
 int
@@ -368,8 +366,6 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	idx->path = strdup(index_path);
 	idx->seed = hdr->seed;
 	idx->epoch = hdr->epoch;
-	idx->slab_block_count = hdr->slab_block_count;
-	idx->slab_block_size = hdr->slab_block_size;
 
 	return 0;
 

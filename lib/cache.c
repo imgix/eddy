@@ -64,10 +64,10 @@ obj_data(EdObjectHdr *hdr, uint64_t flags)
 }
 
 static void
-obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly, EdTime exp,
-		uint16_t block_size)
+obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonly, EdTime exp)
 {
 	const uint64_t flags = cache->idx.flags;
+	const uint16_t block_size = cache->slab_block_size;
 	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen, block_size, flags);
 	obj->cache = cache;
 	obj->key = obj_key(hdr);
@@ -106,8 +106,10 @@ obj_hdr_final(EdObjectHdr *hdr, size_t nbytes, uint64_t flags)
 }
 
 static int
-obj_reserve(EdTxn *txn, int slabfd, uint64_t flags, EdBlkno *posp, EdBlkno nblck, size_t len, uint16_t block_size)
+obj_reserve(EdCache *cache, EdTxn *txn, uint64_t flags, EdBlkno *posp, EdBlkno nblck, size_t len)
 {
+	const int slabfd = cache->idx.slabfd;
+	const uint16_t block_size = cache->slab_block_size;
 	const EdBlkno nmin = ED_ALIGN_SIZE(sizeof(EdObjectHdr) + ED_MAX_KEY + 1, block_size);
 	EdBlkno pos = *posp, end;
 	size_t start = pos * block_size;
@@ -204,7 +206,7 @@ obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 		EdBlkno blck, EdBlkno nblcks, EdTime exp)
 {
 	EdTxn *txn = cache->txn;
-	const uint16_t block_size = cache->idx.slab_block_size;
+	const uint16_t block_size = cache->slab_block_size;
 	const EdBlkno nmin = ED_ALIGN_SIZE(sizeof(EdObjectHdr) + ED_MAX_KEY + 1, block_size);
 	EdEntryBlock blocknew = ed_entry_block_make(blck, nblcks, txn->xid);
 	EdEntryKey *key, keynew = ed_entry_key_make(h, blck, nblcks, exp);
@@ -250,6 +252,8 @@ ed_cache_open(EdCache **cachep, const EdConfig *cfg)
 	cache->ref = 1;
 	cache->bytes_used = 0;
 	cache->blocks_used = 0;
+	cache->slab_block_count = cache->idx.hdr->slab_block_count;
+	cache->slab_block_size = cache->idx.hdr->slab_block_size;
 	*cachep = cache;
 	return 0;
 
@@ -332,7 +336,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 	assert(obj != NULL);
 
 	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
-	const uint16_t block_size = cache->idx.slab_block_size;
+	const uint16_t block_size = cache->slab_block_size;
 	const EdTimeUnix now = ed_now_unix();
 	EdTxn *const txn = cache->txn;
 
@@ -371,7 +375,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		// likely match. If it does, set up the object and end the loop.
 		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
 			set = 1;
-			obj_init(obj, cache, hdr, key->no, true, key->exp, block_size);
+			obj_init(obj, cache, hdr, key->no, true, key->exp);
 			break;
 		}
 
@@ -406,10 +410,10 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	const EdTime now = ed_time_from_unix(cache->idx.epoch, unow);
 	const uint64_t h = ed_hash(attr->key, attr->keylen, cache->idx.seed);
 	const uint64_t flags = cache->idx.flags;
-	const uint16_t block_size = cache->idx.slab_block_size;
+	const uint16_t block_size = cache->slab_block_size;
 	const size_t nbytes = obj_slab_size(attr->keylen, attr->metalen, attr->datalen, block_size, flags);
 	const EdBlkno nblcks = nbytes/block_size;
-	const EdBlkno nslab = cache->idx.slab_block_count;
+	const EdBlkno nslab = cache->slab_block_count;
 	const int slabfd = cache->idx.slabfd;
 	EdTxn *const txn = cache->txn;
 
@@ -424,7 +428,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	if (rc < 0) { goto done; }
 
 	blck = ed_txn_block(txn);
-	rc = obj_reserve(txn, slabfd, flags, &blck, nslab, nbytes, block_size);
+	rc = obj_reserve(cache, txn, flags, &blck, nslab, nbytes);
 	if (rc < 0) { goto done; }
 
 	// Map the new object header in the slab.
@@ -471,7 +475,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	// Zero out the end of the meta segment.
 	memset(meta, 0, obj_data(hdr, flags) - meta);
 
-	obj_init(obj, cache, hdr, blck, false, ED_TIME_INF, block_size);
+	obj_init(obj, cache, hdr, blck, false, ED_TIME_INF);
 
 done:
 	// Clean up resources if there was an error.
@@ -495,7 +499,7 @@ done:
 static int
 update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix now, bool restore)
 {
-	const uint16_t block_size = cache->idx.slab_block_size;
+	const uint16_t block_size = cache->slab_block_size;
 	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
 	EdTxn *const txn = cache->txn;
 
@@ -631,7 +635,7 @@ ed_close(EdObject **objp)
 	}
 
 done:
-	ed_blk_unmap(obj->hdr, obj->nblcks, cache->idx.slab_block_size);
+	ed_blk_unmap(obj->hdr, obj->nblcks, cache->slab_block_size);
 
 	if (locked) {
 		ed_flck(slabfd, ED_LCK_UN, obj->byte, obj->nbytes, flags);
@@ -651,7 +655,7 @@ ed_discard(EdObject **objp)
 	*objp = NULL;
 
 	EdCache *cache = obj->cache;
-	ed_blk_unmap(obj->hdr, obj->nblcks, cache->idx.slab_block_size);
+	ed_blk_unmap(obj->hdr, obj->nblcks, cache->slab_block_size);
 	ed_flck(cache->idx.slabfd, ED_LCK_UN, obj->byte, obj->nbytes, cache->idx.flags);
 	free(obj);
 }

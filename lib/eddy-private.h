@@ -753,8 +753,6 @@ struct EdIdx {
 	int          pid;              /**< Process ID that opened the index */
 	uint64_t     seed;             /**< Randomized seed */
 	EdTimeUnix   epoch;            /**< Epoch adjustment in seconds */
-	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
-	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
 };
 
 #define ED_IDX_PAGES(nconns) ed_count_pg(offsetof(EdPgIdx, conns) + sizeof(EdConn)*nconns)
@@ -1051,6 +1049,8 @@ struct EdCache {
 	int          ref;
 	size_t       bytes_used;
 	size_t       blocks_used;
+	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
+	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
 };
 
 struct EdObject {
