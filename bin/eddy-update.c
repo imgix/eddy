@@ -7,6 +7,7 @@ static const char update_usage[] =
 static EdOption update_opts[] = {
 	{"ttl",     "ttl",  0, 't', "set the time-to-live in seconds"},
 	{"expiry",  "time", 0, 'e', "set the expiry as a UNIX timestamp"},
+	{"restore", NULL,   0, 'r', "restore an expired object"},
 	{0, 0, 0, 0, 0}
 };
 
@@ -18,11 +19,12 @@ update_run(const EdCommand *cmd, int argc, char *const *argv)
 	char *end;
 	int rc = 1;
 	time_t t;
-	bool has_ttl = false, has_expiry = false;
+	bool restore = false, has_ttl = false, has_expiry = false;
 
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
 		switch (ch) {
+		case 'r': restore = true; break;
 		case 't':
 			if (has_expiry) { errx(1, "expiry cannot be combined with TTL"); }
 			t = strtol(optarg, &end, 10);
@@ -49,10 +51,10 @@ update_run(const EdCommand *cmd, int argc, char *const *argv)
 	if (rc < 0) { errx(1, "failed to open index '%s': %s", cfg.index_path, ed_strerror(rc)); }
 
 	if (has_ttl) {
-		rc = ed_update_ttl(cache, argv[1], strlen(argv[1]), t);
+		rc = ed_update_ttl(cache, argv[1], strlen(argv[1]), t, restore);
 	}
 	else if (has_expiry) {
-		rc = ed_update_expiry(cache, argv[1], strlen(argv[1]), t);
+		rc = ed_update_expiry(cache, argv[1], strlen(argv[1]), t, restore);
 	}
 
 	if (rc < 0) {

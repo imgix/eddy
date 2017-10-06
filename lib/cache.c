@@ -487,7 +487,7 @@ done:
 }
 
 static int
-update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix now)
+update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix now, bool restore)
 {
 	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
 	EdTxn *const txn = cache->txn;
@@ -502,7 +502,7 @@ update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix
 			set == 0 && rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
 			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 		// First check if the object is expired.
-		if (ed_expired_at(cache->idx.epoch, key->exp, now)) {
+		if (!restore && ed_expired_at(cache->idx.epoch, key->exp, now)) {
 			continue;
 		}
 
@@ -536,19 +536,19 @@ update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix
 }
 
 int
-ed_update_ttl(EdCache *cache, const void *k, size_t klen, EdTimeTTL ttl)
+ed_update_ttl(EdCache *cache, const void *k, size_t klen, EdTimeTTL ttl, bool restore)
 {
 	EdTimeUnix now = ed_now_unix();
 	EdTime exp = ed_expiry_at(cache->idx.epoch, ttl, now);
-	return update_expiry(cache, k, klen, exp, now);
+	return update_expiry(cache, k, klen, exp, now, restore);
 }
 
 int
-ed_update_expiry(EdCache *cache, const void *k, size_t klen, EdTimeUnix expiry)
+ed_update_expiry(EdCache *cache, const void *k, size_t klen, EdTimeUnix expiry, bool restore)
 {
 	EdTimeUnix now = ed_now_unix();
 	EdTime exp = ed_time_from_unix(cache->idx.epoch, expiry);
-	return update_expiry(cache, k, klen, exp, now);
+	return update_expiry(cache, k, klen, exp, now, restore);
 }
 
 int64_t
