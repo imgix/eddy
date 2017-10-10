@@ -5,6 +5,7 @@ static bool dump_raw = false;
 static EdPgno dump_skip[64], dump_nskip = 0;
 static EdPgno dump_include[64], dump_ninclude = 0;
 static EdTimeUnix dump_epoch;
+static EdBlkno dump_block_count;
 
 static EdPgno dump_parse_pgno(const char *arg);
 static int dump_read_raw(void);
@@ -373,15 +374,15 @@ static int
 dump_key(const void *ent, char *buf, size_t len)
 {
 	const EdEntryKey *k = ent;
-	return snprintf(buf, len, "%016" PRIx64 "@%" PRIx64 "#%" PRIx32,
-			k->hash, k->no, k->count);
+	return snprintf(buf, len, "%08x %" PRIu64 "#%" PRIu32,
+			(uint32_t)(k->hash >> 32), k->vno % dump_block_count, k->count);
 }
 
 static int
 dump_block(const void *ent, char *buf, size_t len)
 {
 	const EdEntryBlock *b = ent;
-	return snprintf(buf, len, "@%" PRIx64 "#%" PRIx32, b->no, b->count);
+	return snprintf(buf, len, "%" PRIu64 "#%" PRIu32, b->no, b->count);
 }
 
 int
@@ -397,6 +398,7 @@ dump_trees(int argc, char *const *argv, bool key, bool block)
 	rc = ed_idx_open(&idx, &cfg);
 	if (rc < 0) { errx(1, "failed to open: %s", ed_strerror(rc)); }
 	dump_epoch = idx.epoch;
+	dump_block_count = idx.hdr->slab_block_count;
 
 	rc = ed_txn_new(&txn, &idx);
 	if (rc < 0) {
@@ -416,15 +418,17 @@ dump_trees(int argc, char *const *argv, bool key, bool block)
 			rc = ED_ERRNO;
 			goto done;
 		}
+		printf("key b+tree: |\n");
 		ed_bpt_print(bt, idx.fd, sizeof(EdEntryKey), stdout, dump_key);
 		ed_pg_unload((EdPg **)&bt);
 	}
-	else if (block) {
+	if (block) {
 		EdBpt *bt = NULL;
 		if (ed_pg_load(idx.fd, (EdPg **)&bt, idx.hdr->tree[ED_DB_BLOCKS], true) == MAP_FAILED) {
 			rc = ED_ERRNO;
 			goto done;
 		}
+		printf("slab block b+tree: |\n");
 		ed_bpt_print(bt, idx.fd, sizeof(EdEntryBlock), stdout, dump_block);
 		ed_pg_unload((EdPg **)&bt);
 	}

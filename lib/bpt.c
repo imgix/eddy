@@ -927,11 +927,11 @@ print_tree_branches(FILE *out, bool *stack, int top)
 {
 	for (int i = 0; i < top; i++) {
 		if (stack[i]) {
-			static const char s[] = "    ";
+			static const char s[] = "   ";
 			fwrite(s, 1, sizeof(s)-1, out);
 		}
 		else {
-			static const char s[] = "│   ";
+			static const char s[] = "│  ";
 			fwrite(s, 1, sizeof(s)-1, out);
 		}
 	}
@@ -942,11 +942,11 @@ print_tree(FILE *out, bool *stack, int top)
 {
 	print_tree_branches(out, stack, top);
 	if (stack[top]) {
-		static const char s[] = "└── ";
+		static const char s[] = "└─ ";
 		fwrite(s, 1, sizeof(s)-1, out);
 	}
 	else {
-		static const char s[] = "├── ";
+		static const char s[] = "├─ ";
 		fwrite(s, 1, sizeof(s)-1, out);
 	}
 }
@@ -1146,19 +1146,13 @@ verify_node(int fd, size_t esize, EdBpt *t, FILE *out, uint64_t min, uint64_t ma
 void
 ed_bpt_print(EdBpt *t, int fd, size_t esize, FILE *out, EdBptPrint print)
 {
+	if (t == NULL) { return; }
 	if (out == NULL) { out = stdout; }
 	if (print == NULL) { print = print_value; }
 
-	if (t == NULL) {
-		fprintf(out, "#<Eddy:BTree:(null)>\n");
-		return;
-	}
-
-	fprintf(out, "#<Eddy:BTree:%p> {\n", (void *)t);
 	bool stack[16] = {1};
-	fwrite(space, 1, 4, out);
+	fwrite(space, 1, 3, out);
 	print_node(fd, esize, t, out, print, stack, 1);
-	fprintf(out, "}\n");
 }
 
 int
