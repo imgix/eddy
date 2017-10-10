@@ -46,6 +46,7 @@ struct EdConfig {
 	const char * index_path;
 	const char * slab_path;
 	unsigned     max_conns;
+	uint64_t     seed;
 	uint64_t     flags;
 	long long    slab_size;
 	uint16_t     slab_block_size;

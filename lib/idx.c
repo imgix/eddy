@@ -265,7 +265,12 @@ ed_idx_open(EdIdx *idx, const EdConfig *cfg)
 	if (index_len < 0) { return ED_ECONFIG_INDEX_NAME; }
 	index_path[index_len] = '\0';
 
-	if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) { return ED_EINDEX_RANDOM; }
+	if (cfg->seed > 0) {
+		hdrnew.seed = cfg->seed;
+	}
+	else if (ed_rnd_u64(-1, &hdrnew.seed) <= 0) {
+		return ED_EINDEX_RANDOM;
+	}
 	hdrnew.epoch = ed_now_unix();
 	hdrnew.flags = ed_fsave(flags);
 	hdrnew.gc_head = PG_ROOT_GC;

@@ -17,6 +17,7 @@ static EdOption new_opts[] = {
 	{"size",       "size", 0, 's', "size of the file (default " DEFAULT_SIZE ")"},
 	{"block-size", "size", 0, 'b', "byte size of the blocks in the slab (default 1p)"},
 	{"slab",       "path", 0, 'S', "path to slab file (default is the index path with \"-slab\" suffix)"},
+	{"seed",       "num",  0, 'D', "use and explicit (0 will create a random seed)"},
 	{"verbose",    NULL,   0, 'v', "enable verbose messaging"},
 	{"force",      NULL,   0, 'f', "force creation of a new cache file"},
 	{"checksum",   NULL,   0, 'c', "track crc32 checksums"},
@@ -28,7 +29,9 @@ static int
 new_run(const EdCommand *cmd, int argc, char *const *argv)
 {
 	char *size_arg = DEFAULT_SIZE;
+	char *end;
 	long long val;
+	unsigned long long uval;
 	EdConfig cfg = { .flags = ED_FCREATE|ED_FALLOCATE };
 
 	int ch;
@@ -48,6 +51,13 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 				errx(1, "%s must be be >= 16 and <= %u", argv[optind-1], UINT16_MAX);
 			}
 			cfg.slab_block_size = (uint16_t)val;
+			break;
+		case 'D':
+			uval = strtoull(optarg, &end, 10);
+			if (*end != '\0') {
+				errx(1, "%s must be a valid number", argv[optind-1]);
+			}
+			cfg.seed = uval;
 			break;
 		}
 	}
