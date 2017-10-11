@@ -274,8 +274,6 @@ ed_cache_open(EdCache **cachep, const EdConfig *cfg)
 	if (rc < 0) { goto error_txn; }
 
 	cache->ref = 1;
-	cache->bytes_used = 0;
-	cache->blocks_used = 0;
 	cache->slab_block_count = cache->idx.hdr->slab_block_count;
 	cache->slab_block_size = cache->idx.hdr->slab_block_size;
 	*cachep = cache;
@@ -326,24 +324,18 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 		"slab:\n"
 		"  path: %s\n"
 		"  inode: %" PRIu64 "\n"
-		"  entries: %zu\n"
-		"  bytes:\n"
-		"    used: %zu\n"
-		"    wasted: %zu\n"
 		"  blocks:\n"
-		"    used: %zu\n"
 		"    size: %zu\n"
 		"    count: %zu\n"
-		"    cursor: %zu\n",
+		"    cursor: %zu\n"
+		"    current: %zu\n"
+		,
 		cache->idx.hdr->slab_path,
 		cache->idx.hdr->slab_ino,
-		(size_t)0,
-		(size_t)cache->bytes_used,
-		(size_t)0,
-		(size_t)cache->blocks_used,
-		(size_t)cache->idx.hdr->slab_block_size,
-		(size_t)cache->idx.hdr->slab_block_count,
-		(size_t)cache->idx.hdr->vno
+		(size_t)cache->slab_block_size,
+		(size_t)cache->slab_block_count,
+		(size_t)cache->idx.hdr->vno,
+		(size_t)(cache->idx.hdr->vno % cache->slab_block_count)
 	);
 
 	funlockfile(out);

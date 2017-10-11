@@ -1047,8 +1047,6 @@ struct EdCache {
 	EdIdx        idx;
 	EdTxn *      txn;
 	int          ref;
-	size_t       bytes_used;
-	size_t       blocks_used;
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
 	uint16_t     slab_block_size;  /**< Size of the blocks in the slab */
 };

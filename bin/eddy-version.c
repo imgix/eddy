@@ -50,19 +50,6 @@ version_run(const EdCommand *cmd, int argc, char *const *argv)
 #if ED_FAULT
 		printf("- fault\n");
 #endif
-		printf(
-				"sizes:\n"
-				"  key entry: %zu\n"
-				"  block entry: %zu\n"
-				"  object header: %zu\n"
-				"  page size: %zu\n"
-				"  max align: %zu\n"
-				,
-				sizeof(EdEntryKey),
-				sizeof(EdEntryBlock),
-				sizeof(EdObjectHdr),
-				(size_t)PAGESIZE,
-				(size_t)ED_MAX_ALIGN);
 	}
 	else {
 		printf("eddy v" ED_STR(VERSION_MAJOR) "." ED_STR(VERSION_MINOR)

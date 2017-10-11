@@ -17,7 +17,7 @@ static EdOption new_opts[] = {
 	{"size",       "size", 0, 's', "size of the file (default " DEFAULT_SIZE ")"},
 	{"block-size", "size", 0, 'b', "byte size of the blocks in the slab (default 1p)"},
 	{"slab",       "path", 0, 'S', "path to slab file (default is the index path with \"-slab\" suffix)"},
-	{"seed",       "num",  0, 'D', "use and explicit (0 will create a random seed)"},
+	{"seed",       "num",  0, 'D', "use an explicit (0 will create a random seed)"},
 	{"verbose",    NULL,   0, 'v', "enable verbose messaging"},
 	{"force",      NULL,   0, 'f', "force creation of a new cache file"},
 	{"checksum",   NULL,   0, 'c', "track crc32 checksums"},

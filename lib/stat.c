@@ -154,6 +154,11 @@ ed_stat_print(EdStat *stat, FILE *out)
 		"  path: %s\n"
 		"  inode: %" PRIu64 "\n"
 		"  size: %zu\n"
+		"  key entry size: %zu\n"
+		"  block entry size: %zu\n"
+		"  object header size: %zu\n"
+		"  page size: %zu\n"
+		"  max align: %zu\n"
 		"  pages:\n"
 		"    total: %zu\n"
 		"    header: %zu\n"
@@ -166,6 +171,11 @@ ed_stat_print(EdStat *stat, FILE *out)
 		stat->index_path,
 		stat->index.st_ino,
 		(size_t)stat->index.st_size,
+		sizeof(EdEntryKey),
+		sizeof(EdEntryBlock),
+		sizeof(EdObjectHdr),
+		(size_t)PAGESIZE,
+		(size_t)ED_MAX_ALIGN,
 		(size_t)stat->no,
 		(size_t)stat->header,
 		(size_t)stat->nbpt,
