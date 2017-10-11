@@ -64,6 +64,9 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 
 				printf(
 						"id: %s\n"
+						"no: %" PRIu64 "\n"
+						"vno: %" PRIu64 "\n"
+						"blocks: %" PRIu64 "\n"
 						"ttl: %ld\n"
 						"expiry: %s"
 						"expiry timestamp: %ld\n"
@@ -74,6 +77,9 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 						"key hash: %" PRIu64 "\n"
 						,
 						obj->id,
+						obj->vno %cache->slab_block_count,
+						obj->vno,
+						obj->nblcks,
 						ttl,
 						expiry_timestamp < 0 ? "~\n" : expiry,
 						expiry_timestamp,
