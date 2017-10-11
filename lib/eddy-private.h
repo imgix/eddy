@@ -1066,7 +1066,7 @@ struct EdObject {
 	uint32_t     datacrc;
 	EdObjectHdr *hdr;
 	EdTxnId      xid;
-	EdBlkno      blck;
+	EdBlkno      vno;
 	EdBlkno      nblcks;
 	size_t       byte;
 	size_t       nbytes;
@@ -1242,27 +1242,41 @@ struct EdBpt {
  * @brief  B+Tree value type for indexing the slab by position
  */
 struct EdEntryBlock {
-	EdBlkno      no;               /**< Block number for the entry */
+	EdBlkno      no;               /**< Physical block number for the entry */
 	EdPgno       count;            /**< Number of blocks used by the entry */
 	uint32_t     _pad;
 	EdTxnId      xid;              /**< Transaction ID that created the entry */
 };
 
-#define ed_entry_block_make(n, c, x) \
-	((EdEntryBlock){ n, c, 0, x })
+/**
+ * @brief  Creates a new entry block value
+ * @param  n  Virtual block number
+ * @param  c  Number of blocks in the entry
+ * @param  t  Total number of blocks in the slab
+ * @param  x  Transaction ID
+ */
+#define ed_entry_block_make(n, c, t, x) \
+	((EdEntryBlock){ ((n) % (t)), (c), 0, (x) })
 
 /**
  * @brief  B+Tree value type for indexing the slab by key
  */
 struct EdEntryKey {
 	uint64_t     hash;             /**< Hash of the key */
-	EdBlkno      no;               /**< Block number for the entry */
+	EdBlkno      vno;              /**< Virtual block number for the entry */
 	EdPgno       count;            /**< Number of blocks used by the entry */
 	EdTime       exp;              /**< Expiration of the entry */
 };
 
+/**
+ * @brief  Creates a new entry key value
+ * @param  h  Hash value of the key
+ * @param  n  Virtual block number
+ * @param  c  Number of blocks in the entry
+ * @param  e  Internal expiration time
+ */
 #define ed_entry_key_make(h, n, c, e) \
-	((EdEntryKey){ h, n, c, e })
+	((EdEntryKey){ (h), (n), (c), (e) })
 
 #pragma GCC diagnostic pop
 
