@@ -1,0 +1,90 @@
+﻿<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Eddy</title>  
+  <style>
+    body { font-family: "Helvetica Neue", sans-serif; }
+    code, input { font-family: Menlo, monospace; }
+    input { font-size: 100%; }
+    pre { white-space: pre-wrap; line-height: 8pt; }
+	p { padding-bottom: 8px; }
+    .hidden, .hiddenh1, .hiddenh2, .hiddenh3, .hiddenh4 { color: #BCBCBC; font-weight: normal; }
+    .ans { background-color: #ECECEC; padding: 0 0.25em 0 0.25em;}
+    .err { border-bottom: 2px solid #FFB2B2; }
+    .incl { border-bottom: 2px solid #FFD700; }
+    .c { color: #A6A6A6; }
+    .n { color: #1472F0; }
+    .t { font-weight: bold; }
+    .d { font-weight: bold; }		
+    .k { color: #9400D3; }
+    .s { color: #8888E6; }
+    .u { color: #8888E6; }
+    .r { font-size: 75%; }
+    .xml { color: #8888E6; }
+    .hidden, .hiddenh1, .hiddenh2, .hiddenh3, .hiddenh4 { display: none; }
+    .c { display: none; }
+  </style>
+</head>
+<body><div class="calca">
+<h2>Page Pointer</h2>
+
+<p><pre><code><span class="d">page size</span> = <span class="n">4096</span>
+</code></pre><pre><code><span class="d">max size</span>(pointer size) = (<span class="n">2</span> ^ (pointer size * <span class="n">8</span>) - <span class="n">1</span>) * page size <span class="k">in</span> <span class="u">bytes</span>
+</code></pre>
+<p><pre><code>max size(<span class="n">3</span>) <span class="k">in</span> <span class="u">GiB</span> <span class="t">=&gt;</span> <span class="ans"><span class="n">64</span> <span class="u">GiB</span></span>
+</code></pre><pre><code>max size(<span class="n">4</span>) <span class="k">in</span> <span class="u">TiB</span> <span class="t">=&gt;</span> <span class="ans"><span class="n">16</span> <span class="u">TiB</span></span>
+</code></pre>
+<p>
+<h2>Branching Factor</h2>
+
+<p><pre><code><span class="d">node header</span> = <span class="n">24</span>
+</code></pre><pre><code><span class="d">data size</span> = page size - node header <span class="t">=&gt;</span> <span class="n ans">4,072</span>
+</code></pre><pre><code><span class="d">page pointer</span> = <span class="n">4</span>
+</code></pre><pre><code><span class="d">entry size</span> = <span class="n">24</span>
+</code></pre><pre><code><span class="d">branch order</span>(<span class="u">s</span>) = <span class="k">floor</span>((data size - page pointer) / <span class="u">s</span>) + <span class="n">1</span>
+</code></pre><pre><code><span class="d">leaf order</span>(<span class="u">s</span>) = <span class="k">floor</span>(data size / <span class="u">s</span>)
+</code></pre><pre><code><span class="d">leaf count</span>(bsz, depth) = branch order(bsz) ^ (depth-<span class="n">1</span>)
+</code></pre><pre><code><span class="d">capacity</span>(bsz, lsz, depth) = leaf count(bsz, depth) * leaf order(lsz)
+</code></pre><pre><code><span class="d">excess</span>(bsz) = data size - (branch order(bsz) - <span class="n">1</span>) * bsz + page pointer
+</code></pre>
+<p><pre><code><span class="d">branch size</span> = <span class="n">16</span>
+</code></pre><pre><code>excess(branch size) <span class="t">=&gt;</span> <span class="n ans">12</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">1</span>) <span class="t">=&gt;</span> <span class="n ans">169</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">2</span>) <span class="t">=&gt;</span> <span class="n ans">43,095</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">3</span>) <span class="t">=&gt;</span> <span class="n ans">10,989,225</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">4</span>) <span class="t">=&gt;</span> <span class="n ans">2,802,252,375</span>
+</code></pre>
+<p><pre><code><span class="d">branch size</span> = <span class="n">12</span>
+</code></pre><pre><code>excess(branch size) <span class="t">=&gt;</span> <span class="n ans">8</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">1</span>) <span class="t">=&gt;</span> <span class="n ans">169</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">2</span>) <span class="t">=&gt;</span> <span class="n ans">57,460</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">3</span>) <span class="t">=&gt;</span> <span class="n ans">19,536,400</span>
+</code></pre><pre><code>capacity(branch size, entry size, <span class="n">4</span>) <span class="t">=&gt;</span> <span class="n ans">6,642,376,000</span>
+</code></pre>
+<p>
+<h2>Collision Probability</h2>
+
+<p><pre><code><span class="d">E</span> = <span class="n">2.71828182846</span>
+</code></pre><pre><code><span class="d">collision</span>(k, b) = <span class="n">1</span> - E^(-k*(k-<span class="n">1</span>)/(<span class="n">2</span>*<span class="n">2</span>^b))
+</code></pre>
+<p><pre><code>collision(capacity(branch size, entry size, <span class="n">1</span>), <span class="n">64</span>) <span class="t">=&gt;</span> <span class="n ans">7.7716e-16</span>
+</code></pre><pre><code>collision(capacity(branch size, entry size, <span class="n">2</span>), <span class="n">64</span>) <span class="t">=&gt;</span> <span class="n ans">8.949e-11</span>
+</code></pre><pre><code>collision(capacity(branch size, entry size, <span class="n">3</span>), <span class="n">64</span>) <span class="t">=&gt;</span> <span class="n ans">1.0345e-5</span>
+</code></pre><pre><code>collision(capacity(branch size, entry size, <span class="n">4</span>), <span class="n">64</span>) <span class="t">=&gt;</span> <span class="n ans">0.6976</span>
+</code></pre>
+<p>
+<h2>Transaction ID</h2>
+
+<p><pre><code><span class="d">txn</span>(size, npersec) = ((<span class="n">2</span> ^ size - <span class="n">1</span>) / npersec) <span class="k">in</span> <span class="u">seconds</span>
+</code></pre>
+<p><pre><code>txn(<span class="n">32</span>, <span class="n">1,000</span>) <span class="k">in</span> <span class="u">days</span> <span class="t">=&gt;</span> <span class="ans"><span class="n">49.7103</span> <span class="u">days</span></span>
+</code></pre><pre><code>txn(<span class="n">64</span>, <span class="n">1,000,000</span>) <span class="k">in</span> <span class="u">years</span> <span class="t">=&gt;</span> <span class="ans"><span class="n">584,554.0493</span> <span class="u">years</span></span>
+</code></pre>
+<p>
+<h2>Slab Position</h2>
+
+<p><pre><code><span class="d">slab</span>(size, npersec) = (((<span class="n">2</span> ^ <span class="n">64</span> - <span class="n">1</span>) * size) / npersec) <span class="k">in</span> <span class="u">seconds</span>
+</code></pre>
+<p><pre><code>slab(<span class="n">16</span>, <span class="n">1,000,000,000</span>) <span class="k">in</span> <span class="u">years</span> <span class="t">=&gt;</span> <span class="ans"><span class="n">9,352.8648</span> <span class="u">years</span></span>
+</code>
+</div></body></html>
