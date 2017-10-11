@@ -28,6 +28,7 @@
 #define ED_FNOTLCK       UINT64_C(0x0000080000000000) /** Disable thread locking. */
 #define ED_FNOBLOCK      UINT64_C(0x0000100000000000) /** May return EAGAIN for open or create. */
 #define ED_FRDONLY       UINT64_C(0x0000200000000000) /** The operation does not need to write. */
+#define ED_FNOVERIFY     UINT64_C(0x0000400000000000) /** Disable verifying checksums if they are enabled. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /** Reset the transaction when closing. */
 /** @} */
 
@@ -41,6 +42,7 @@ typedef struct EdConfig EdConfig;
 typedef struct EdCache EdCache;
 typedef struct EdObject EdObject;
 typedef struct EdObjectAttr EdObjectAttr;
+typedef struct EdList EdList;
 
 struct EdConfig {
 	const char * index_path;
@@ -132,6 +134,15 @@ ed_created_at(const EdObject *obj);
 
 ED_EXPORT const char *
 ed_id(const EdObject *obj);
+
+ED_EXPORT int
+ed_list_open(EdCache *cache, EdList **listp, const char *id);
+
+ED_EXPORT int
+ed_list_next(EdList *list, const EdObject **objp);
+
+ED_EXPORT void
+ed_list_close(EdList *list, EdObject **objp);
 
 
 
@@ -254,6 +265,8 @@ ed_id(const EdObject *obj);
 #define ED_EOBJECT_TOOSMALL      ed_eobject(1) /** Error code when too few bytes are written to an object. */
 #define ED_EOBJECT_RDONLY        ed_eobject(2) /** Error code when attempting to modify a read-only object. */
 #define ED_EOBJECT_ID            ed_eobject(3) /** Error code for invalid object ids */
+#define ED_EOBJECT_METACRC       ed_eobject(4) /** Error code when meta data crc doesn't match */
+#define ED_EOBJECT_DATACRC       ed_eobject(5) /** Error code when body data crc doesn't match */
 
 #define ED_EMIME_FILE            ed_emime(0)   /** Error code when the mime.cache file can't be loaded. */
 

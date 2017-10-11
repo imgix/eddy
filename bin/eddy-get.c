@@ -6,9 +6,10 @@ static const char get_usage[] =
 	"usage: eddy get [-u] [-m] index key [2>meta] >file\n"
 	"       eddy get [-u] -i index key [key ...]\n";
 static EdOption get_opts[] = {
-	{"unlink",  NULL,  0, 'u', "immediately unlink the object"},
-	{"meta",    NULL,  0, 'm', "write the object metadata to stderr"},
-	{"info",    NULL,  0, 'i', "only print header information"},
+	{"no-verify", NULL,  0, 'V', "disable checksum verification"},
+	{"unlink",    NULL,  0, 'u', "immediately unlink the object"},
+	{"meta",      NULL,  0, 'm', "write the object metadata to stderr"},
+	{"info",      NULL,  0, 'i', "only print header information"},
 	{0, 0, 0, 0, 0}
 };
 
@@ -22,6 +23,7 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
 		switch (ch) {
+		case 'V': cfg.flags |= ED_FNOVERIFY; break;
 		case 'u': unlink = true; break;
 		case 'm': meta = true; break;
 		case 'i': info = true; break;

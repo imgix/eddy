@@ -74,6 +74,7 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonl
 	obj->keylen = hdr->keylen;
 	obj->meta = obj_meta(hdr);
 	obj->metalen = hdr->metalen;
+	obj->metacrc = hdr->metacrc;
 	obj->data = obj_data(hdr, flags);
 	obj->datalen = hdr->datalen;
 	obj->datacrc = hdr->datacrc;
@@ -87,6 +88,20 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno no, bool rdonl
 	obj->rdonly = rdonly;
 	snprintf(obj->id, sizeof(obj->id), "%" PRIx64 ":%" PRIx64,
 			obj->xid, obj->blck);
+}
+
+static int
+obj_verify(const EdObject *obj, const uint64_t flags)
+{
+	if ((flags & ED_FCHECKSUM) && !(flags & ED_FNOVERIFY)) {
+		if (obj->metalen && ed_crc32c(0, obj->meta, obj->metalen) != obj->metacrc) {
+			return ED_EOBJECT_METACRC;
+		}
+		if (obj->datalen && ed_crc32c(0, obj->data, obj->datalen) != obj->datacrc) {
+			return ED_EOBJECT_DATACRC;
+		}
+	}
+	return 0;
 }
 
 static void
@@ -337,13 +352,14 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 
 	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
 	const uint16_t block_size = cache->slab_block_size;
+	const uint64_t flags = cache->idx.flags;
 	const EdTimeUnix now = ed_now_unix();
 	EdTxn *const txn = cache->txn;
 
 	int set = 0;
 	EdEntryKey *key;
 
-	rc = ed_txn_open(txn, cache->idx.flags|ED_FRDONLY);
+	rc = ed_txn_open(txn, flags|ED_FRDONLY);
 	if (rc < 0) { goto done; }
 
 	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key);
@@ -359,7 +375,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 
 		// Try to get a shared lock on the slab region. If it cannot be locked, a
 		// writer is replacing this slab location.
-		if (ed_flck(cache->idx.slabfd, ED_LCK_SH, off, len, cache->idx.flags|ED_FNOBLOCK) < 0) {
+		if (ed_flck(cache->idx.slabfd, ED_LCK_SH, off, len, flags|ED_FNOBLOCK) < 0) {
 			continue;
 		}
 
@@ -367,7 +383,7 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		EdObjectHdr *hdr = ed_blk_map(cache->idx.slabfd, key->no, key->count, block_size, false);
 		if (hdr == MAP_FAILED) {
 			rc = ED_ERRNO;
-			ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
+			ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, flags);
 			break;
 		}
 
@@ -381,16 +397,18 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 
 		// We have a hash collision so unlock and unmap the slab region and continue
 		// searching with the next entry.
-		ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, cache->idx.flags);
+		ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, flags);
 		ed_blk_unmap(hdr, key->count, block_size);
 	}
 
 done:
-	ed_txn_close(&cache->txn, cache->idx.flags|ED_FRESET);
-	if (rc == 1) {
+	ed_txn_close(&cache->txn, flags|ED_FRESET);
+	if (set == 1) {
 		madvise(obj->hdr, obj->nbytes, MADV_SEQUENTIAL);
+		int vrc = obj_verify(obj, flags);
+		if (vrc < 0) { rc = vrc; }
 	}
-	else {
+	if (rc < 0) {
 		free(obj);
 		obj = NULL;
 	}

@@ -43,6 +43,8 @@ static const char *const eobject[] = {
 	[ed_ecode(ED_EOBJECT_TOOSMALL)]      = "too few bytes were written to the object",
 	[ed_ecode(ED_EOBJECT_RDONLY)]        = "object is read-only",
 	[ed_ecode(ED_EOBJECT_ID)]            = "object id is invalid",
+	[ed_ecode(ED_EOBJECT_METACRC)]       = "object meta-data CRC32c doesn't match",
+	[ed_ecode(ED_EOBJECT_DATACRC)]       = "object data CRC32c doesn't match",
 };
 
 static const char *const emime[] = {

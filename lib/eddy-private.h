@@ -1060,6 +1060,7 @@ struct EdObject {
 	uint8_t *    meta;
 	uint16_t     keylen;
 	uint16_t     metalen;
+	uint32_t     metacrc;
 	uint32_t     datalen;
 	uint32_t     dataseek;
 	uint32_t     datacrc;
