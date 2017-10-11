@@ -304,12 +304,12 @@ ed_parse_size(const char *val, long long *out, size_t block)
 #endif
 
 static const EdCommand commands[] = {
-	{"version", version_opts, version_run, {version_descr, version_usage}},
 	{"new",     new_opts,     new_run,     {new_descr,     new_usage}},
 	{"get",     get_opts,     get_run,     {get_descr,     get_usage}},
 	{"set",     set_opts,     set_run,     {set_descr,     set_usage}},
 	{"update",  update_opts,  update_run,  {update_descr,  update_usage}},
 	{"stat",    stat_opts,    stat_run,    {stat_descr,    stat_usage}},
+	{"version", version_opts, version_run, {version_descr, version_usage}},
 #if ED_DUMP
 	{"dump",    dump_opts,    dump_run,    {dump_descr,    dump_usage}},
 #endif
