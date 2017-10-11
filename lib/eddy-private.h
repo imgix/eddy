@@ -535,7 +535,7 @@ struct EdTxn {
 	unsigned     ngcslot;          /**< Number of page slots in the #gc array */
 	EdTxnNode *  nodes;            /**< Linked list of node arrays */
 	EdTxnId      xid;              /**< Transaction ID or 0 for read-only */
-	EdBlkno      pos;              /**< Current slab write block */
+	EdBlkno      vno;              /**< Current slab write block */
 	uint64_t     cflags;           /**< Critical flags required during #ed_txn_commit() or #ed_txn_close() */
 	EdTxnState   state;            /**< Current transaction state */
 	int          error;            /**< Error code during transaction */
@@ -632,16 +632,16 @@ ed_txn_close(EdTxn **txnp, uint64_t flags);
  * @return  slab block number
  */
 ED_LOCAL EdBlkno
-ed_txn_block(const EdTxn *txn);
+ed_txn_vno(const EdTxn *txn);
 
 /**
  * @brief  Sets the slab position to write on commit
  * @param  txn  Transaction object
- * @param  pos  New slab write position
+ * @param  vno  New slab virtual write position
  * @return  0 on success <0 on error
  */
 ED_LOCAL int
-ed_txn_set_block(EdTxn *txn, EdBlkno pos);
+ed_txn_set_vno(EdTxn *txn, EdBlkno vno);
 
 /**
  * @brief  Checks if a transaction is in read-only mode
@@ -1165,7 +1165,7 @@ struct EdPgIdx {
 		EdPgno   tree[4];          /**< Page pointer for the key and slab b+trees */
 	};
 	EdTxnIdV     xid;              /**< Global transaction ID */
-	EdBlknoV     pos;              /**< Current slab write block */
+	EdBlknoV     vno;              /**< Current slab write block */
 	EdBlkno      slab_block_count; /**< Number of blocks in the slab */
 	uint64_t     slab_ino;         /**< Inode number of the slab */
 	char         slab_path[912];   /**< Path to the slab */

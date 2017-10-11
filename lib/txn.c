@@ -129,7 +129,7 @@ ed_txn_open(EdTxn *txn, uint64_t flags)
 	if (!rdonly) {
 		EdPgIdx *hdr = txn->idx->hdr;
 		txn->xid = hdr->xid + 1;
-		txn->pos = txn->idx->hdr->pos;
+		txn->vno = txn->idx->hdr->vno;
 
 		// Any active pages at this point are a result from an abandoned transaction.
 		// These could be reused right away, but for simlicity they are moved into
@@ -232,7 +232,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	hdr->vtree = update.vtree;
 	ed_fault_trigger(UPDATE_TREE);
 	hdr->xid = txn->xid;
-	hdr->pos = txn->pos;
+	hdr->vno = txn->vno;
 
 	// Pass all replaced pages to be reused. If this fails they are leaked.
 	ed_free_pgno(txn->idx, txn->xid, txn->gc, txn->ngcused);
@@ -377,25 +377,25 @@ ed_txn_close(EdTxn **txnp, uint64_t flags)
 }
 
 EdBlkno
-ed_txn_block(const EdTxn *txn)
+ed_txn_vno(const EdTxn *txn)
 {
 	ED_TXN_CHECK_RD(txn);
 
 	if (ed_txn_isrdonly(txn)) {
-		return txn->idx->hdr->pos;
+		return txn->idx->hdr->vno;
 	}
-	return txn->pos;
+	return txn->vno;
 }
 
 int
-ed_txn_set_block(EdTxn *txn, EdBlkno pos)
+ed_txn_set_vno(EdTxn *txn, EdBlkno vno)
 {
 	ED_TXN_CHECK_WR(txn);
 
 	if (ed_txn_isrdonly(txn)) {
 		return ED_EINDEX_RDONLY;
 	}
-	txn->pos = pos;
+	txn->vno = vno;
 	return 0;
 }
 

@@ -343,7 +343,7 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 		(size_t)cache->blocks_used,
 		(size_t)cache->idx.hdr->slab_block_size,
 		(size_t)cache->idx.hdr->slab_block_count,
-		(size_t)cache->idx.hdr->pos
+		(size_t)cache->idx.hdr->vno
 	);
 
 	funlockfile(out);
@@ -455,7 +455,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	rc = ed_txn_open(txn, flags);
 	if (rc < 0) { goto done; }
 
-	vno = ed_txn_block(txn);
+	vno = ed_txn_vno(txn);
 	rc = obj_reserve(cache, txn, flags, &vno, nbytes);
 	if (rc < 0) { goto done; }
 
@@ -467,7 +467,7 @@ ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr)
 	}
 
 	// Add the next write position to the transaction.
-	ed_txn_set_block(txn, vno + nblcks);
+	ed_txn_set_vno(txn, vno + nblcks);
 
 	// Commit changes and initialize the new header.
 	rc = ed_txn_commit(&cache->txn, flags|ED_FRESET);

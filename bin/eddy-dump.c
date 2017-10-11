@@ -126,7 +126,7 @@ dump_index(EdPgIdx *idx)
 	printf("gc_tail: %u\n", idx->gc_tail);
 	printf("tree: "); dump_page_array(idx->tree, ed_len(idx->tree));
 	printf("xid: %" PRIu64 "\n", idx->xid);
-	printf("pos: %" PRIu64 "\n", idx->pos);
+	printf("vno: %" PRIu64 "\n", idx->vno);
 	printf("slab_block_count: %" PRIu64 "\n", idx->slab_block_count);
 	printf("slab_ino: %" PRIu64 "\n", idx->slab_ino);
 	printf("slab_path: %s\n", idx->slab_path);
