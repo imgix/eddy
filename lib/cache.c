@@ -64,18 +64,16 @@ obj_data(EdObjectHdr *hdr, uint64_t flags)
 }
 
 static void
-obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno vno, bool rdonly, EdTime exp)
+obj_init_basic(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno vno, bool rdonly, EdTime exp)
 {
-	const uint64_t flags = cache->idx.flags;
 	const uint16_t block_size = cache->slab_block_size;
-	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen, block_size, flags);
+	size_t size = obj_slab_size(hdr->keylen, hdr->metalen, hdr->datalen, block_size,
+			cache->idx.flags);
 	obj->cache = cache;
 	obj->key = obj_key(hdr);
 	obj->keylen = hdr->keylen;
-	obj->meta = obj_meta(hdr);
 	obj->metalen = hdr->metalen;
 	obj->metacrc = hdr->metacrc;
-	obj->data = obj_data(hdr, flags);
 	obj->datalen = hdr->datalen;
 	obj->datacrc = hdr->datacrc;
 	obj->hdr = hdr;
@@ -87,6 +85,14 @@ obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno vno, bool rdon
 	obj->exp = exp;
 	obj->rdonly = rdonly;
 	snprintf(obj->id, sizeof(obj->id), "%" PRIx64 ":%" PRIx64, obj->xid, vno);
+}
+
+static void
+obj_init(EdObject *obj, EdCache *cache, EdObjectHdr *hdr, EdBlkno vno, bool rdonly, EdTime exp)
+{
+	obj_init_basic(obj, cache, hdr, vno, rdonly, exp);
+	obj->meta = obj_meta(hdr);
+	obj->data = obj_data(hdr, cache->idx.flags);
 }
 
 static int
@@ -727,5 +733,126 @@ const char *
 ed_id(const EdObject *obj)
 {
 	return obj->id;
+}
+
+int
+ed_list_open(EdCache *cache, EdList **listp, const char *id)
+{
+	EdTxnId xmin = 0, xmax;
+	EdBlkno vmin = 0, vmax;
+	const EdBlkno block_count = cache->slab_block_count;
+
+	if (id != NULL) {
+		char *end;
+		xmin = strtoul(id, &end, 16);
+		if (*end != ':') { return ED_EOBJECT_ID; }
+		vmin = strtoul(end+1, &end, 16);
+		if (*end != '\0') { return ED_EOBJECT_ID; }
+	}
+
+	EdList *list = calloc(1, sizeof(*list));
+	if (list == NULL) { return ED_ERRNO; }
+
+	int rc = ed_txn_new(&list->txn, &cache->idx);
+	if (rc < 0) { goto error; }
+
+	rc = ed_txn_open(list->txn, cache->idx.flags|ED_FRDONLY);
+	if (rc < 0) { goto error; }
+
+	xmax = cache->idx.conn->xid;
+	vmax = ed_txn_vno(list->txn);
+	if (id == NULL) {
+		xmin = 0;
+		vmin = vmax > block_count ? vmax - block_count : 0;
+	}
+
+	EdEntryBlock *block;
+	rc = ed_bpt_find(list->txn, ED_DB_BLOCKS, vmin % block_count, (void **)&block);
+	if (rc == 0) {
+		rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, NULL);
+	}
+	if (rc < 0) { goto error; }
+
+	list->cache = cache;
+	list->now = ed_now_unix();
+	list->xmin = list->xcur = xmin;
+	list->xmax = xmax;
+	list->vmin = list->vcur = vmin;
+	list->vmax = vmax;
+	*listp = list;
+	return 0;
+
+error:
+	ed_txn_close(&list->txn, cache->idx.flags);
+	free(list);
+	return rc;
+}
+
+static void
+list_clear(EdList *list, const uint16_t block_size, const EdBlkno block_need)
+{
+	if (list->obj.hdr != NULL) {
+		ed_blk_unmap(list->obj.hdr, block_need, block_size);
+		memset(&list->obj, 0, sizeof(list->obj));
+	}
+}
+
+int
+ed_list_next(EdList *list, const EdObject **objp)
+{
+	// TODO: optimize unmap/map when its the same page
+
+	int rc = 0;
+	const EdCache *const cache = list->cache;
+	const uint16_t block_size = cache->slab_block_size;
+	const EdBlkno block_count = cache->slab_block_count;
+	const EdBlkno block_need = ED_COUNT_SIZE(sizeof(EdObjectHdr) + ED_MAX_KEY, block_size);
+	EdObjectHdr *hdr = MAP_FAILED;
+
+	for (;;) {
+		list_clear(list, block_size, block_need);
+
+		const EdBlkno vcur = list->vcur;
+
+		if (vcur >= list->vmax) {
+			goto done;
+		}
+
+		hdr = ed_blk_map(cache->idx.slabfd,
+				vcur % block_count, block_need, block_size, true);
+
+		if (hdr == MAP_FAILED) {
+			rc = ED_ERRNO;
+			goto done;
+		}
+
+		obj_init_basic(&list->obj, list->cache, hdr, vcur, true, hdr->exp);
+		list->vcur += list->obj.nblcks;
+
+		if (!ed_expired_at(cache->idx.epoch, hdr->exp, list->now)) {
+			*objp = &list->obj;
+			return 1;
+		}
+	}
+
+done:
+	*objp = NULL;
+	ed_txn_close(&list->txn, list->cache->idx.flags);
+	return rc;
+}
+
+void
+ed_list_close(EdList **listp)
+{
+	EdList *list = *listp;
+	if (list == NULL) { return; }
+	*listp = NULL;
+
+	const uint16_t block_size = list->cache->slab_block_size;
+	const EdBlkno block_need = ED_COUNT_SIZE(sizeof(EdObjectHdr) + ED_MAX_KEY, block_size);
+	list_clear(list, block_size, block_need);
+
+	ed_txn_close(&list->txn, list->cache->idx.flags);
+	free(list);
 }
 

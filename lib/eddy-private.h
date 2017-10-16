@@ -1074,6 +1074,19 @@ struct EdObject {
 	uint8_t      newkey[1];
 };
 
+struct EdList {
+	EdCache *    cache;            /**< Reference to the cache handle */
+	EdTxn *      txn;              /**< Open read transaction */
+	EdTimeUnix   now;              /**< Timestamp from the creation of the list */
+	EdTxnId      xmin;             /**< Starting transaction id */
+	EdTxnId      xmax;             /**< Stopping transaction id */
+	EdTxnId      xcur;             /**< Current transaction id */
+	EdBlkno      vmin;             /**< Starting virtual block number */
+	EdBlkno      vmax;             /**< Stopping virtual block number */
+	EdBlkno      vcur;             /**< Current virtual block number */
+	EdObject     obj;              /**< Object value returned when iterating */
+};
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic error "-Wpadded"
 
@@ -1099,7 +1112,7 @@ struct EdPgGc {
 	EdPg         base;             /**< Page number and type */
 	EdPgGcState  state;            /**< State information for the first active list object */
 	EdPgno       next;             /**< Linked list of furthur gc pages */
-	uint8_t      _pad[4];
+	uint32_t     _pad;
 #define ED_GC_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdPgGcState) - sizeof(EdPgno) - 4)
 	uint8_t      data[ED_GC_DATA]; /**< Array for #EdPgGcList values */
 };
@@ -1197,6 +1210,12 @@ struct EdObjectHdr {
 	uint32_t     datacrc;          /**< Optional CRC-32c of the object body data */
 };
 
+struct EdObjectMsg {
+	EdBlkno blck;
+	EdObjectHdr hdr;
+	uint8_t key[1];
+};
+
 /**
  * @brief  Page type for b+tree branches and leaves
  *
@@ -1231,7 +1250,7 @@ struct EdBpt {
 	EdTxnId      xid;              /**< Transaction ID that allocated this page */
 	EdPgno       next;             /**< Overflow leaf pointer */
 	uint16_t     nkeys;            /**< Number of keys in the node */
-	uint8_t      _pad[2];
+	uint16_t     _pad;
 #define ED_BPT_DATA (PAGESIZE - sizeof(EdPg) - sizeof(EdTxnId) - sizeof(EdPgno) - 4)
 	uint8_t      data[ED_BPT_DATA];/**< Tree-specific data for nodes (8-byte aligned) */
 };

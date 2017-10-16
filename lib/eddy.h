@@ -10,7 +10,7 @@
 
 #define ED_EXPORT extern __attribute__((visibility ("default")))
 
-#define ED_MAX_KEY 2048
+#define ED_MAX_KEY 1024
 
 /** @defgroup  flags  EdConfig and ed_cache_open flags
  * @{
@@ -143,7 +143,7 @@ ED_EXPORT int
 ed_list_next(EdList *list, const EdObject **objp);
 
 ED_EXPORT void
-ed_list_close(EdList *list, EdObject **objp);
+ed_list_close(EdList **list);
 
 
 
