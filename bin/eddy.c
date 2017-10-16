@@ -295,6 +295,7 @@ ed_parse_size(const char *val, long long *out, size_t block)
 #include "eddy-get.c"
 #include "eddy-set.c"
 #include "eddy-update.c"
+#include "eddy-ls.c"
 #include "eddy-stat.c"
 #if ED_DUMP
 # include "eddy-dump.c"
@@ -308,6 +309,8 @@ static const EdCommand commands[] = {
 	{"get",     get_opts,     get_run,     {get_descr,     get_usage}},
 	{"set",     set_opts,     set_run,     {set_descr,     set_usage}},
 	{"update",  update_opts,  update_run,  {update_descr,  update_usage}},
+	{"list",    ls_opts,      ls_run,      {ls_descr,      ls_usage}},
+	{"ls",      ls_opts,      ls_run,      {ls_descr,      ls_usage}},
 	{"stat",    stat_opts,    stat_run,    {stat_descr,    stat_usage}},
 	{"version", version_opts, version_run, {version_descr, version_usage}},
 #if ED_DUMP
