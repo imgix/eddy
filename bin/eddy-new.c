@@ -21,6 +21,7 @@ static EdOption new_opts[] = {
 	{"verbose",    NULL,   0, 'v', "enable verbose messaging"},
 	{"force",      NULL,   0, 'f', "force creation of a new cache file"},
 	{"checksum",   NULL,   0, 'c', "track crc32 checksums"},
+	{"keep-old",   NULL,   0, 'k', "don't mark replaced objects as expired"},
 	{"page-align", NULL,   0, 'p', "force file data to be page aligned"},
 	{0, 0, 0, 0, 0}
 };
@@ -40,6 +41,7 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 		case 'v': cfg.flags |= ED_FVERBOSE; break;
 		case 'f': cfg.flags |= ED_FREPLACE; break;
 		case 'c': cfg.flags |= ED_FCHECKSUM; break;
+		case 'k': cfg.flags |= ED_FKEEPOLD; break;
 		case 'p': cfg.flags |= ED_FPAGEALIGN; break;
 		case 's': size_arg = optarg; break;
 		case 'S': cfg.slab_path = optarg; break;

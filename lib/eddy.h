@@ -17,6 +17,7 @@
  */
 #define ED_FCHECKSUM     UINT32_C(        0x00000001) /** Calculate checksums for entries. */
 #define ED_FPAGEALIGN    UINT32_C(        0x00000002) /** Force file data to a page boundary. */
+#define ED_FKEEPOLD      UINT32_C(        0x00000004) /** Don't mark replaced objects as expired. */
 #define ED_FVERBOSE      UINT64_C(0x0000000800000000) /** Print informational messages to stderr. */
 #define ED_FCREATE       UINT64_C(0x0000001000000000) /** Create a new index if missing. */
 #define ED_FALLOCATE     UINT64_C(0x0000002000000000) /** Allocate slab space when opening. */

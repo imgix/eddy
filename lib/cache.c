@@ -251,6 +251,9 @@ obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 		if (old == MAP_FAILED) { return ED_ERRNO; }
 
 		replace = old->keylen == klen && memcmp(obj_key(old), k, klen) == 0;
+		if (replace && !(cache->idx.flags & ED_FKEEPOLD)) {
+			old->exp = ED_TIME_DELETE;
+		}
 		ed_blk_unmap(old, nmin, block_size);
 		if (replace) { break; }
 	}

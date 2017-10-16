@@ -117,6 +117,7 @@ dump_index(EdPgIdx *idx)
 	printf("flags:\n");
 	if (idx->flags & ED_FCHECKSUM) { printf("- ED_FCHECKSUM\n"); }
 	if (idx->flags & ED_FPAGEALIGN) { printf("- ED_FPAGEALIGN\n"); }
+	if (idx->flags & ED_FKEEPOLD) { printf("- ED_FKEEPOLD\n"); }
 	printf("size_page: %u\n", idx->size_page);
 	printf("slab_block_size: %u\n", idx->slab_block_size);
 	printf("nconns: %u\n", idx->nconns);
