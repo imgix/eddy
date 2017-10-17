@@ -34,7 +34,7 @@ ls_run(const EdCommand *cmd, int argc, char *const *argv)
 
 	rc = ed_list_open(cache, &list, id);
 	if (rc < 0) {
-		warn("failed to start list: %s", ed_strerror(rc));
+		warnx("failed to start list: %s", ed_strerror(rc));
 		goto done;
 	}
 
@@ -47,7 +47,7 @@ ls_run(const EdCommand *cmd, int argc, char *const *argv)
 	}
 
 	if (rc < 0) {
-		warn("failed to iterate list: %s", ed_strerror(rc));
+		warnx("failed to iterate list: %s", ed_strerror(rc));
 	}
 
 done:
