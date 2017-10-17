@@ -72,6 +72,16 @@ ed_usage(const EdOption *opts, const EdUsage *usage)
 }
 
 static int
+ed_opt_check(int ch, char *const *argv)
+{
+	switch (ch) {
+	case '?': errx(1, "invalid option: %s", argv[optind-1]);
+	case ':': errx(1, "missing argument for option: %s", argv[optind-1]);
+	}
+	return ch;
+}
+
+static int
 ed_opt(int argc, char *const *argv, const EdOption *o, const EdUsage *usage)
 {
 	static struct option copy[ED_OPT_MAX];
@@ -122,15 +132,46 @@ ed_opt(int argc, char *const *argv, const EdOption *o, const EdUsage *usage)
 		exit(0);
 	}
 	optcur = ch ? NULL : &set[idx];
-	switch (ch) {
-	case '?': errx(1, "invalid option: %s", argv[optind-1]);
-	case ':': errx(1, "missing argument for option: %s", argv[optind-1]);
+	return ed_opt_check(ch, argv);
+}
+
+static void
+ed_help(int argc, char *const *argv, const EdCommand *cmds)
+{
+	const char *prog = strrchr(argv[0], '/');
+	prog = prog ? prog + 1 : argv[0];
+
+	argc -= optind;
+	argv += optind;
+
+	if (argc > 0) {
+		for (const EdCommand *c = cmds; c->name; c++) {
+			if (strcmp(argv[0], c->name) == 0) {
+				ed_usage(c->opts, &c->usage);
+				exit(0);
+			}
+		}
+		errx(1, "unknown command name: %s", argv[0]);
 	}
-	return ch;
+	else {
+		int max = 0;
+		for (const EdCommand *c = cmds; c->name; c++) {
+			int len = strlen(c->name);
+			if (len > max) { max = len; }
+		}
+		fprintf(stderr,
+				"usage: %s command [args ...]\n"
+				"       %s help command\n"
+				"\n"
+				"commands:\n", prog, prog);
+		for (const EdCommand *c = cmds; c->name; c++) {
+			fprintf(stderr, "  %-*s    %s\n", max, c->name, c->usage.description);
+		}
+	}
 }
 
 static int
-ed_cmd(int argc, char *const *argv, const EdCommand *cmd)
+ed_cmd(int argc, char *const *argv, const EdCommand *cmds)
 {
 	if (!optind) {
 		optind = 1;
@@ -140,41 +181,20 @@ ed_cmd(int argc, char *const *argv, const EdCommand *cmd)
 	}
 
 	const char *name = argv[optind];
-	const char *helpname = argv[optind+1];
-	const EdCommand *helpfor = NULL;
 
-	int max = 0;
-	for (const EdCommand *c = cmd; c->name; c++) {
+	for (const EdCommand *c = cmds; c->name; c++) {
 		if (strcmp(name, c->name) == 0) {
 			optind++;
 			return c->run(c, argc, argv);
 		}
-		if (helpname && strcmp(helpname, c->name) == 0) {
-			helpfor = c;
-		}
-		int len = strlen(c->name);
-		if (len > max) { max = len; }
 	}
 
 	if (strcmp(name, "help") && strcmp(name, "--help") && strcmp(name, "-h")) {
 		errx(1, "unknown command name: %s", name);
 	}
 
-	if (helpfor) {
-		ed_usage(helpfor->opts, &helpfor->usage);
-	}
-	else {
-		const char *prog = strrchr(argv[0], '/');
-		prog = prog ? prog + 1 : argv[0];
-		fprintf(stderr,
-				"usage: %s command [args ...]\n"
-				"       %s help command\n"
-				"\n"
-				"commands:\n", prog, prog);
-		for (const EdCommand *c = cmd; c->name; c++) {
-			fprintf(stderr, "  %-*s    %s\n", max, c->name, c->usage.description);
-		}
-	}
+	optind++;
+	ed_help(argc, argv, cmds);
 	exit(0);
 }
 /** @} */
