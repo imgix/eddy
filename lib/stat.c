@@ -62,6 +62,9 @@ ed_stat_new(EdStat **statp, EdIdx *idx, uint64_t flags)
 
 		if (rc == 0) {
 			EdConn *conn = idx->hdr->conns;
+			stat->flags = idx->flags;
+			stat->seed = idx->seed;
+			stat->epoch = idx->epoch;
 			stat->xid = conn->xid;
 			stat->mark = &stat->npending;
 			for (int i = 0; i < idx->nconns; i++, conn++) {
@@ -149,6 +152,9 @@ ed_stat_print(EdStat *stat, FILE *out)
 {
 	if (out == NULL) { out = stdout; }
 
+	char created_at[64];
+	ctime_r(&stat->epoch, created_at);
+
 	fprintf(out,
 		"index:\n"
 		"  path: %s\n"
@@ -159,14 +165,10 @@ ed_stat_print(EdStat *stat, FILE *out)
 		"  object header size: %zu\n"
 		"  page size: %zu\n"
 		"  max align: %zu\n"
-		"  pages:\n"
-		"    total: %zu\n"
-		"    header: %zu\n"
-		"    btree: %zu\n"
-		"    active: %zu\n"
-		"    pending: %zu\n"
-		"    gc: %zu\n"
-		"    tail: %zu\n"
+		"  seed: %" PRIu64 "\n"
+		"  created at: %s"
+		"  xid: %" PRIu64 "\n"
+		"  flags:\n"
 		,
 		stat->index_path,
 		stat->index.st_ino,
@@ -176,6 +178,22 @@ ed_stat_print(EdStat *stat, FILE *out)
 		sizeof(EdObjectHdr),
 		(size_t)PAGESIZE,
 		(size_t)ED_MAX_ALIGN,
+		stat->seed,
+		created_at,
+		stat->xid);
+	if (stat->flags & ED_FCHECKSUM) { fprintf(out, "  - ED_FCHECKSUM\n"); }
+	if (stat->flags & ED_FPAGEALIGN) { fprintf(out, "  - ED_FPAGEALIGN\n"); }
+	if (stat->flags & ED_FKEEPOLD) { fprintf(out, "  - ED_FKEEPOLD\n"); }
+	fprintf(out,
+		"  pages:\n"
+		"    total: %zu\n"
+		"    header: %zu\n"
+		"    btree: %zu\n"
+		"    active: %zu\n"
+		"    pending: %zu\n"
+		"    gc: %zu\n"
+		"    tail: %zu\n"
+		,
 		(size_t)stat->no,
 		(size_t)stat->header,
 		(size_t)stat->nbpt,

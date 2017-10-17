@@ -787,6 +787,9 @@ ED_LOCAL      int ed_idx_repair_leaks(EdIdx *, EdStat *, uint64_t flags);
 struct EdStat {
 	struct stat  index;
 	char *       index_path;
+	uint64_t     flags;
+	uint64_t     seed;
+	EdTimeUnix   epoch;
 	EdTxnId      xid;
 	EdPgno *     mult;
 	size_t       nmultused;
