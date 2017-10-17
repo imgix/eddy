@@ -39,7 +39,11 @@ ls_run(const EdCommand *cmd, int argc, char *const *argv)
 	}
 
 	while ((rc = ed_list_next(list, &obj)) == 1) {
-		printf("%s\t%ld\t%.*s\n", obj->id, ed_ttl(obj, -1), (int)obj->keylen, obj->key);
+		EdTimeUnix at = ed_created_at(obj);
+		char buf[64];
+		ctime_r(&at, buf);
+		buf[19] = '\0';
+		printf("%-8s  %s  %8ld  %8u  %.*s\n", obj->id, buf, ed_ttl(obj, -1), obj->datalen, (int)obj->keylen, obj->key);
 	}
 
 	if (rc < 0) {
