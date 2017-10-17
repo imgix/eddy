@@ -42,8 +42,14 @@ typedef struct EdCommand {
 static const EdOption *optcur = NULL;
 
 static void
-ed_usage(const EdOption *opts)
+ed_usage(const EdOption *opts, const EdUsage *usage)
 {
+	if (usage) {
+		if (usage->usage) { fprintf(stderr, "%s\n", usage->usage); }
+		if (usage->description) { fprintf(stderr, "about:\n  %s\n\n", usage->description); }
+	}
+	fprintf(stderr, "options:\n");
+
 	int maxname = 0, maxvar = 0;
 	for (const EdOption *o = opts; o->name; o++) {
 		int len = (int)strlen(o->name);
@@ -109,12 +115,7 @@ ed_opt(int argc, char *const *argv, const EdOption *o, const EdUsage *usage)
 	int idx = 0;
 	int ch = getopt_long(argc, argv, optshort, copy, &idx);
 	if (ch == helpch && (ch || idx == help)) {
-		if (usage) {
-			if (usage->usage) { fprintf(stderr, "%s\n", usage->usage); }
-			if (usage->description) { fprintf(stderr, "about:\n  %s\n\n", usage->description); }
-		}
-		fprintf(stderr, "options:\n");
-		ed_usage(set);
+		ed_usage(set, usage);
 		exit(0);
 	}
 	optcur = ch ? NULL : &set[idx];
@@ -136,12 +137,17 @@ ed_cmd(int argc, char *const *argv, const EdCommand *cmd)
 	}
 
 	const char *name = argv[optind];
+	const char *helpname = argv[optind+1];
+	const EdCommand *helpfor = NULL;
 
 	int max = 0;
 	for (const EdCommand *c = cmd; c->name; c++) {
 		if (strcmp(name, c->name) == 0) {
 			optind++;
 			return c->run(c, argc, argv);
+		}
+		if (helpname && strcmp(helpname, c->name) == 0) {
+			helpfor = c;
 		}
 		int len = strlen(c->name);
 		if (len > max) { max = len; }
@@ -151,15 +157,20 @@ ed_cmd(int argc, char *const *argv, const EdCommand *cmd)
 		errx(1, "unknown command name: %s", name);
 	}
 
-	const char *prog = strrchr(argv[0], '/');
-	prog = prog ? prog + 1 : argv[0];
-	fprintf(stderr,
-			"usage: %s command [args ...]\n"
-			"       %s command --help\n"
-			"\n"
-			"commands:\n", prog, prog);
-	for (const EdCommand *c = cmd; c->name; c++) {
-		fprintf(stderr, "  %-*s    %s\n", max, c->name, c->usage.description);
+	if (helpfor) {
+		ed_usage(helpfor->opts, &helpfor->usage);
+	}
+	else {
+		const char *prog = strrchr(argv[0], '/');
+		prog = prog ? prog + 1 : argv[0];
+		fprintf(stderr,
+				"usage: %s command [args ...]\n"
+				"       %s help command\n"
+				"\n"
+				"commands:\n", prog, prog);
+		for (const EdCommand *c = cmd; c->name; c++) {
+			fprintf(stderr, "  %-*s    %s\n", max, c->name, c->usage.description);
+		}
 	}
 	exit(0);
 }
