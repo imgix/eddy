@@ -22,7 +22,7 @@ update_run(const EdCommand *cmd, int argc, char *const *argv)
 	bool restore = false, has_ttl = false, has_expiry = false;
 
 	int ch;
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
 		switch (ch) {
 		case 'r': restore = true; break;
 		case 't':

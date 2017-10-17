@@ -18,7 +18,7 @@ ls_run(const EdCommand *cmd, int argc, char *const *argv)
 	const char *id = NULL;
 
 	int ch;
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {}
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {}
 	argc -= optind;
 	argv += optind;
 

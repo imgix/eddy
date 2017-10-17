@@ -29,7 +29,7 @@ mime_run(const EdCommand *cmd, int argc, char *const *argv)
 	const char *path = NULL;
 
 	int ch;
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
 		switch (ch) {
 		case 'p': parents = true; break;
 		case 'l': list = true; break;

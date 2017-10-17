@@ -25,7 +25,7 @@ set_run(const EdCommand *cmd, int argc, char *const *argv)
 	bool has_ttl = false, has_expiry = false;
 
 	int ch;
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
 		switch (ch) {
 		case 't':
 			if (has_expiry) { errx(1, "expiry cannot be combined with TTL"); }

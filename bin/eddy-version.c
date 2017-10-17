@@ -16,7 +16,7 @@ version_run(const EdCommand *cmd, int argc, char *const *argv)
 	bool yaml = false;
 
 	int ch;
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
 		switch (ch) {
 		case 'y': yaml = true; break;
 		case 'b':

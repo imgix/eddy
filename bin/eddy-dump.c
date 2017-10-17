@@ -34,7 +34,7 @@ dump_run(const EdCommand *cmd, int argc, char *const *argv)
 	int rc, ch;
 	bool key = false, block = false;
 
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
 		switch (ch) {
 		case 'i':
 			if (dump_ninclude == ed_len(dump_include)) {

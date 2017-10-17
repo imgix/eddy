@@ -42,8 +42,11 @@ typedef struct EdCommand {
 static const EdOption *optcur = NULL;
 
 static void
-ed_usage(const EdOption *opts, const EdUsage *usage)
+ed_usage(const EdCommand *cmd)
 {
+	const EdOption *opts = cmd->opts;
+	const EdUsage *usage = &cmd->usage;
+
 	if (usage) {
 		if (usage->usage) { fprintf(stderr, "%s\n", usage->usage); }
 		if (usage->description) { fprintf(stderr, "about:\n  %s\n", usage->description); }
@@ -82,12 +85,14 @@ ed_opt_check(int ch, char *const *argv)
 }
 
 static int
-ed_opt(int argc, char *const *argv, const EdOption *o, const EdUsage *usage)
+ed_opt(int argc, char *const *argv, const EdCommand *cmd)
 {
 	static struct option copy[ED_OPT_MAX];
 	static const EdOption *set = NULL;
 	static char optshort[ED_OPT_MAX*2 + 2];
 	static int count = 0, help = -1, helpch = 0;
+
+	const EdOption *o = cmd->opts;
 
 	if (set != o) {
 		char *p = optshort;
@@ -128,7 +133,7 @@ ed_opt(int argc, char *const *argv, const EdOption *o, const EdUsage *usage)
 	int idx = 0;
 	int ch = getopt_long(argc, argv, optshort, copy, &idx);
 	if (ch == helpch && (ch || idx == help)) {
-		ed_usage(set, usage);
+		ed_usage(cmd);
 		exit(0);
 	}
 	optcur = ch ? NULL : &set[idx];
@@ -147,7 +152,7 @@ ed_help(int argc, char *const *argv, const EdCommand *cmds)
 	if (argc > 0) {
 		for (const EdCommand *c = cmds; c->name; c++) {
 			if (strcmp(argv[0], c->name) == 0) {
-				ed_usage(c->opts, &c->usage);
+				ed_usage(c);
 				exit(0);
 			}
 		}

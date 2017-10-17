@@ -36,7 +36,7 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 	EdConfig cfg = { .flags = ED_FCREATE|ED_FALLOCATE };
 
 	int ch;
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
 		switch (ch) {
 		case 'v': cfg.flags |= ED_FVERBOSE; break;
 		case 'f': cfg.flags |= ED_FREPLACE; break;

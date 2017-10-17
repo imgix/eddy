@@ -21,7 +21,7 @@ get_run(const EdCommand *cmd, int argc, char *const *argv)
 	bool unlink = false, meta = false, info = false;
 
 	int ch;
-	while ((ch = ed_opt(argc, argv, cmd->opts, &cmd->usage)) != -1) {
+	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
 		switch (ch) {
 		case 'V': cfg.flags |= ED_FNOVERIFY; break;
 		case 'u': unlink = true; break;
