@@ -764,12 +764,14 @@ ed_list_open(EdCache *cache, EdList **listp, const char *id)
 	if (id == NULL) {
 		xmin = 0;
 		vmin = vmax > block_count ? vmax - block_count : 0;
+		list->inc = true;
 	}
 
 	EdEntryBlock *block;
 	rc = ed_bpt_find(list->txn, ED_DB_BLOCKS, vmin % block_count, (void **)&block);
 	if (rc == 0) {
 		rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, NULL);
+		list->inc = true;
 	}
 	if (rc < 0) { goto error; }
 
@@ -828,6 +830,11 @@ ed_list_next(EdList *list, const EdObject **objp)
 
 		obj_init_basic(&list->obj, list->cache, hdr, vcur, true, hdr->exp);
 		list->vcur += list->obj.nblcks;
+
+		if (!list->inc) {
+			list->inc = true;
+			continue;
+		}
 
 		if (!ed_expired_at(cache->idx.epoch, hdr->exp, list->now)) {
 			*objp = &list->obj;

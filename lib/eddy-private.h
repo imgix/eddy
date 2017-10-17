@@ -1084,6 +1084,7 @@ struct EdList {
 	EdBlkno      vmin;             /**< Starting virtual block number */
 	EdBlkno      vmax;             /**< Stopping virtual block number */
 	EdBlkno      vcur;             /**< Current virtual block number */
+	bool         inc;
 	EdObject     obj;              /**< Object value returned when iterating */
 };
 
