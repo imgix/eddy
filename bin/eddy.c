@@ -40,6 +40,7 @@ typedef struct EdCommand {
 } EdCommand;
 
 static const EdOption *optcur = NULL;
+static const char *prog = NULL;
 
 static void
 ed_usage(const EdCommand *cmd)
@@ -143,7 +144,7 @@ ed_opt(int argc, char *const *argv, const EdCommand *cmd)
 static void
 ed_help(int argc, char *const *argv, const EdCommand *cmds)
 {
-	const char *prog = strrchr(argv[0], '/');
+	prog = strrchr(argv[0], '/');
 	prog = prog ? prog + 1 : argv[0];
 
 	argc -= optind;
