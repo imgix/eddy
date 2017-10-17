@@ -1101,7 +1101,7 @@ verify_leaf(int fd, size_t esize, EdBpt *l, FILE *out, uint64_t min, uint64_t ma
 	return 0;
 }
 
-int
+static int
 verify_node(int fd, size_t esize, EdBpt *t, FILE *out, uint64_t min, uint64_t max)
 {
 	if (t->base.type == ED_PG_LEAF) {
