@@ -46,25 +46,28 @@ ed_usage(const EdOption *opts, const EdUsage *usage)
 {
 	if (usage) {
 		if (usage->usage) { fprintf(stderr, "%s\n", usage->usage); }
-		if (usage->description) { fprintf(stderr, "about:\n  %s\n\n", usage->description); }
+		if (usage->description) { fprintf(stderr, "about:\n  %s\n", usage->description); }
 	}
-	fprintf(stderr, "options:\n");
 
-	int maxname = 0, maxvar = 0;
-	for (const EdOption *o = opts; o->name; o++) {
-		int len = (int)strlen(o->name);
-		if (len > maxname) { maxname = len; }
-		if (o->var) {
-			len = (int)strlen(o->var);
-			if (len > maxvar) { maxvar = len; }
+	if (opts->name) {
+		fprintf(stderr, "\noptions:\n");
+
+		int maxname = 0, maxvar = 0;
+		for (const EdOption *o = opts; o->name; o++) {
+			int len = (int)strlen(o->name);
+			if (len > maxname) { maxname = len; }
+			if (o->var) {
+				len = (int)strlen(o->var);
+				if (len > maxvar) { maxvar = len; }
+			}
 		}
-	}
-	for (const EdOption *o = opts; o->name; o++) {
-		fprintf(stderr, "  ");
-		if (o->flag == NULL && isprint(o->val)) { fprintf(stderr, "-%c,", o->val); }
-		else { fprintf(stderr, "   "); }
-		fprintf(stderr, "--%-*s %-*s    %s\n",
-				maxname, o->name, maxvar, o->var ? o->var : "", o->usage);
+		for (const EdOption *o = opts; o->name; o++) {
+			fprintf(stderr, "  ");
+			if (o->flag == NULL && isprint(o->val)) { fprintf(stderr, "-%c,", o->val); }
+			else { fprintf(stderr, "   "); }
+			fprintf(stderr, "--%-*s %-*s    %s\n",
+					maxname, o->name, maxvar, o->var ? o->var : "", o->usage);
+		}
 	}
 }
 
@@ -320,7 +323,6 @@ static const EdCommand commands[] = {
 	{"get",     get_opts,     get_run,     {get_descr,     get_usage}},
 	{"set",     set_opts,     set_run,     {set_descr,     set_usage}},
 	{"update",  update_opts,  update_run,  {update_descr,  update_usage}},
-	{"list",    ls_opts,      ls_run,      {ls_descr,      ls_usage}},
 	{"ls",      ls_opts,      ls_run,      {ls_descr,      ls_usage}},
 	{"stat",    stat_opts,    stat_run,    {stat_descr,    stat_usage}},
 	{"version", version_opts, version_run, {version_descr, version_usage}},

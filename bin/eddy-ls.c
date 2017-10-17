@@ -1,7 +1,7 @@
 #include "../lib/eddy-private.h"
 
 static const char ls_descr[] =
-	"List keys in the cache.";
+	"List keys in the cache with an optional start id.";
 static const char ls_usage[] =
 	"usage: eddy ls index [id]\n";
 static EdOption ls_opts[] = {
