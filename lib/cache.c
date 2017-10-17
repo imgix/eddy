@@ -560,7 +560,10 @@ update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix
 			EdEntryKey keynew = *key;
 			keynew.exp = exp;
 			rc = ed_bpt_set(txn, ED_DB_KEYS, (void *)&keynew, true);
-			if (rc >= 0) { set = 1; }
+			if (rc >= 0) {
+				hdr->exp = exp;
+				set = 1;
+			}
 		}
 
 		ed_blk_unmap(hdr, key->count, block_size);
