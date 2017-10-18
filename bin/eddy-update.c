@@ -2,7 +2,7 @@
 
 static const EdUsage update_usage = {
 	"Update information about an object.",
-	(const char *[2]) {
+	(const char *[]) {
 		"{-t ttl | -e time} index key",
 		NULL
 	},

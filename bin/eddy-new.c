@@ -3,7 +3,7 @@
 
 static const EdUsage new_usage = {
 	"Creates a new cache index and slab.",
-	(const char *[2]) {
+	(const char *[]) {
 		"[-v] [-f] [-c] [-s size] [-b size] [-S slab] index",
 		NULL
 	},

@@ -2,7 +2,7 @@
 
 static const EdUsage version_usage = {
 	"Show version information.",
-	(const char *[2]) {
+	(const char *[]) {
 		"[-b] [-y] index",
 		NULL
 	},

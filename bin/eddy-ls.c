@@ -2,7 +2,7 @@
 
 static const EdUsage ls_usage = {
 	"List keys in the cache with an optional start id.",
-	(const char *[2]) {
+	(const char *[]) {
 		"index [id]",
 		NULL
 	},

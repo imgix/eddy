@@ -2,7 +2,7 @@
 
 static const EdUsage stat_usage = {
 	"Reports on the status of the cache. Outputs information in YAML.",
-	(const char *[2]) {
+	(const char *[]) {
 		"[-n] index",
 		NULL
 	},

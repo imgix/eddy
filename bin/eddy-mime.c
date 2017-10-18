@@ -9,7 +9,7 @@ mime_print_name(const char *name, void *data);
 
 static const EdUsage mime_usage = {
 	"Checks the MIME types of a file or standard input.",
-	(const char *[3]) {
+	(const char *[]) {
 		"[-p] [-d db] {file [file ...] | <file}",
 		"-l",
 		NULL

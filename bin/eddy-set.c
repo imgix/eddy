@@ -2,7 +2,7 @@
 
 static const EdUsage set_usage = {
 	"Sets the contents of an object in the cache from stdin or a file.",
-	(const char *[2]) {
+	(const char *[]) {
 		"[{-t ttl | -e time}] [-m meta] [-T tag] index key {file | <file}",
 		NULL
 	},

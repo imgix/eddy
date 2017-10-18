@@ -14,7 +14,7 @@ static int dump_pages(int argc, char *const *argv);
 
 static const EdUsage dump_usage = {
 	"Prints information about pages in the index. Outputs information in YAML.",
-	(const char *[4]) {
+	(const char *[]) {
 		"[-rx] index page1 [page2 ...]",
 		"[-rx] [-i pgno] [-s pgno] <raw",
 		"{-k | -b}",
