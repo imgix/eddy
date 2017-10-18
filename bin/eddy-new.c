@@ -1,18 +1,22 @@
 #include "../lib/eddy-private.h"
 #define DEFAULT_SIZE "4096p"
 
-static const char new_descr[] =
-	"Creates a new cache index and slab.";
-static const char new_usage[] =
-	"usage: eddy new [-v] [-f] [-c] [-s size] [-b size] [-S slab] index\n"
-	"\n"
-	"Sizes are expressed as a number with an optional size modifier:\n"
-	"  k  kibibytes (1024 bytes)\n"
-	"  m  mebibytes (1048576 bytes)\n"
-	"  g  gibibytes (1073741824 bytes)\n"
-	"  t  tebibytes (1099511627776 bytes)\n"
-	"  p  pages (" ED_STR(PAGESIZE) " bytes)\n"
-	"  b  blocks (multiple of --block-size)\n";
+static const EdUsage new_usage = {
+	"Creates a new cache index and slab.",
+	(const char *[2]) {
+		"[-v] [-f] [-c] [-s size] [-b size] [-S slab] index",
+		NULL
+	},
+	"size:\n"
+	"  Sizes are expressed as a number with an optional size modifier.\n"
+	"  Supported modifiers:\n"
+	"    k  kibibytes (1024 bytes)\n"
+	"    m  mebibytes (1048576 bytes)\n"
+	"    g  gibibytes (1073741824 bytes)\n"
+	"    t  tebibytes (1099511627776 bytes)\n"
+	"    p  pages (" ED_STR(PAGESIZE) " bytes)\n"
+	"    b  blocks (multiple of --block-size)"
+};
 static EdOption new_opts[] = {
 	{"size",       "size", 0, 's', "size of the file (default " DEFAULT_SIZE ")"},
 	{"block-size", "size", 0, 'b', "byte size of the blocks in the slab (default 1p)"},

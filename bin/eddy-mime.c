@@ -7,11 +7,15 @@ mime_print(const EdMime *db, bool parents, const char *name, const char *mime);
 static void
 mime_print_name(const char *name, void *data);
 
-static const char mime_descr[] =
-	"Checks the MIME types of a file or standard input.";
-static const char mime_usage[] =
-	"usage: eddy mime [-p] [-d db] {file [file ...] | <file}\n"
-	"       eddy mime -l\n";
+static const EdUsage mime_usage = {
+	"Checks the MIME types of a file or standard input.",
+	(const char *[3]) {
+		"[-p] [-d db] {file [file ...] | <file}",
+		"-l",
+		NULL
+	},
+	NULL
+};
 static EdOption mime_opts[] = {
 	{"db",      "pgno", 0, 'd', "path to mime.cache database file"},
 	{"parents", NULL,   0, 'p', "include parent mime types"},

@@ -1,9 +1,13 @@
 #include "../lib/eddy-private.h"
 
-static const char set_descr[] =
-	"Sets the contents of an object in the cache from stdin or a file.";
-static const char set_usage[] =
-	"usage: eddy set [{-t ttl | -e time}] [-m meta] [-T tag] index key {file | <file}\n";
+static const EdUsage set_usage = {
+	"Sets the contents of an object in the cache from stdin or a file.",
+	(const char *[2]) {
+		"[{-t ttl | -e time}] [-m meta] [-T tag] index key {file | <file}",
+		NULL
+	},
+	NULL
+};
 static EdOption set_opts[] = {
 	{"ttl",     "ttl",  0, 't', "set the time-to-live in seconds"},
 	{"expiry",  "time", 0, 'e', "set the expiry as a UNIX timestamp"},

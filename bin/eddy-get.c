@@ -1,10 +1,14 @@
 #include "../lib/eddy-private.h"
 
-static const char get_descr[] =
-	"Sets the contents of an object in the cache from stdin or a file.";
-static const char get_usage[] =
-	"usage: eddy get [-u] [-m] index key [2>meta] >file\n"
-	"       eddy get [-u] -i index key [key ...]\n";
+static const EdUsage get_usage = {
+	"Sets the contents of an object in the cache from stdin or a file.",
+	(const char *[3]) {
+		"[-u] [-m] index key [2>meta] >file",
+		"[-u] -i index key [key ...]",
+		NULL
+	},
+	NULL
+};
 static EdOption get_opts[] = {
 	{"no-verify", NULL,  0, 'V', "disable checksum verification"},
 	{"unlink",    NULL,  0, 'u', "immediately unlink the object"},

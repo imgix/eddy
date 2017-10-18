@@ -1,9 +1,13 @@
 #include "../lib/eddy-private.h"
 
-static const char update_descr[] =
-	"Update information about an object.";
-static const char update_usage[] =
-	"usage: eddy update {-t ttl | -e time} index key\n";
+static const EdUsage update_usage = {
+	"Update information about an object.",
+	(const char *[2]) {
+		"{-t ttl | -e time} index key",
+		NULL
+	},
+	NULL
+};
 static EdOption update_opts[] = {
 	{"ttl",     "ttl",  0, 't', "set the time-to-live in seconds"},
 	{"expiry",  "time", 0, 'e', "set the expiry as a UNIX timestamp"},

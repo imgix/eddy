@@ -12,12 +12,16 @@ static int dump_read_raw(void);
 static int dump_trees(int argc, char *const *argv, bool key, bool block);
 static int dump_pages(int argc, char *const *argv);
 
-static const char dump_descr[] =
-	"Prints information about pages in the index. Outputs information in YAML.";
-static const char dump_usage[] =
-	"usage: eddy dump [-rx] index page1 [page2 ...]\n"
-	"       eddy dump [-rx] [-i pgno] [-s pgno] <raw\n"
-	"       eddy dump {-k | -b}\n";
+static const EdUsage dump_usage = {
+	"Prints information about pages in the index. Outputs information in YAML.",
+	(const char *[4]) {
+		"[-rx] index page1 [page2 ...]",
+		"[-rx] [-i pgno] [-s pgno] <raw",
+		"{-k | -b}",
+		NULL
+	},
+	NULL
+};
 static EdOption dump_opts[] = {
 	{"include", "pgno", 0, 'i', "include the page number in the output"},
 	{"skip",    "pgno", 0, 's', "skip the page number in the output"},

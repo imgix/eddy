@@ -21,7 +21,8 @@
 
 typedef struct {
 	const char *description;
-	const char *usage;
+	const char **usage;
+	const char *extra;
 } EdUsage;
 
 typedef struct {
@@ -36,7 +37,7 @@ typedef struct EdCommand {
 	const char *name;
 	EdOption *opts;
 	int (*run)(const struct EdCommand *cmd, int argc, char *const *argv);
-	EdUsage usage;
+	const EdUsage *usage;
 } EdCommand;
 
 static const EdOption *optcur = NULL;
@@ -46,11 +47,18 @@ static void
 ed_usage(const EdCommand *cmd)
 {
 	const EdOption *opts = cmd->opts;
-	const EdUsage *usage = &cmd->usage;
+	const char **usage = cmd->usage->usage;
+	int i;
 
-	if (usage) {
-		if (usage->usage) { fprintf(stderr, "%s\n", usage->usage); }
-		if (usage->description) { fprintf(stderr, "about:\n  %s\n", usage->description); }
+	for (i = 0; usage[i] != NULL; i++) {
+		if (i == 0) { fprintf(stderr, "usage: "); }
+		else        { fprintf(stderr, "       "); }
+		fprintf(stderr, "%s %s %s\n", prog, cmd->name, usage[i]);
+	}
+	if (i > 0) { fputc('\n', stderr); }
+
+	if (cmd->usage->description) {
+		fprintf(stderr, "about:\n  %s\n", cmd->usage->description);
 	}
 
 	if (opts->name) {
@@ -72,6 +80,10 @@ ed_usage(const EdCommand *cmd)
 			fprintf(stderr, "--%-*s %-*s    %s\n",
 					maxname, o->name, maxvar, o->var ? o->var : "", o->usage);
 		}
+	}
+
+	if (cmd->usage->extra) {
+		fprintf(stderr, "\n%s\n", cmd->usage->extra);
 	}
 }
 
@@ -171,7 +183,7 @@ ed_help(int argc, char *const *argv, const EdCommand *cmds)
 				"\n"
 				"commands:\n", prog, prog);
 		for (const EdCommand *c = cmds; c->name; c++) {
-			fprintf(stderr, "  %-*s    %s\n", max, c->name, c->usage.description);
+			fprintf(stderr, "  %-*s    %s\n", max, c->name, c->usage->description);
 		}
 	}
 }
@@ -345,20 +357,20 @@ ed_parse_size(const char *val, long long *out, size_t block)
 #endif
 
 static const EdCommand commands[] = {
-	{"new",     new_opts,     new_run,     {new_descr,     new_usage}},
-	{"get",     get_opts,     get_run,     {get_descr,     get_usage}},
-	{"set",     set_opts,     set_run,     {set_descr,     set_usage}},
-	{"update",  update_opts,  update_run,  {update_descr,  update_usage}},
-	{"ls",      ls_opts,      ls_run,      {ls_descr,      ls_usage}},
-	{"stat",    stat_opts,    stat_run,    {stat_descr,    stat_usage}},
-	{"version", version_opts, version_run, {version_descr, version_usage}},
+	{"new",     new_opts,     new_run,     &new_usage},
+	{"get",     get_opts,     get_run,     &get_usage},
+	{"set",     set_opts,     set_run,     &set_usage},
+	{"update",  update_opts,  update_run,  &update_usage},
+	{"ls",      ls_opts,      ls_run,      &ls_usage},
+	{"stat",    stat_opts,    stat_run,    &stat_usage},
+	{"version", version_opts, version_run, &version_usage},
 #if ED_DUMP
-	{"dump",    dump_opts,    dump_run,    {dump_descr,    dump_usage}},
+	{"dump",    dump_opts,    dump_run,    &dump_usage},
 #endif
 #if ED_MIME
-	{"mime",    mime_opts,    mime_run,    {mime_descr,    mime_usage}},
+	{"mime",    mime_opts,    mime_run,    &mime_usage},
 #endif
-	{0, 0, 0, {0, 0}},
+	{0, 0, 0, 0},
 };
 
 int

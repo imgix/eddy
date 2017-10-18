@@ -1,9 +1,13 @@
 #include "../lib/eddy-private.h"
 
-static const char version_descr[] =
-	"Show version information.";
-static const char version_usage[] =
-	"usage: eddy version [-b] [-y] index\n";
+static const EdUsage version_usage = {
+	"Show version information.",
+	(const char *[2]) {
+		"[-b] [-y] index",
+		NULL
+	},
+	NULL
+};
 static EdOption version_opts[] = {
 	{"yaml",  NULL,   0, 'y', "output in YAML format"},
 	{"build", NULL,   0, 'b', "only output the build version"},

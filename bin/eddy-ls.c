@@ -1,9 +1,13 @@
 #include "../lib/eddy-private.h"
 
-static const char ls_descr[] =
-	"List keys in the cache with an optional start id.";
-static const char ls_usage[] =
-	"usage: eddy ls index [id]\n";
+static const EdUsage ls_usage = {
+	"List keys in the cache with an optional start id.",
+	(const char *[2]) {
+		"index [id]",
+		NULL
+	},
+	NULL
+};
 static EdOption ls_opts[] = {
 	{0, 0, 0, 0, 0}
 };
@@ -55,3 +59,4 @@ done:
 	ed_cache_close(&cache);
 	return rc < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
+
