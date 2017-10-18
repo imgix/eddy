@@ -195,7 +195,9 @@ ed_cmd(int argc, char *const *argv, const EdCommand *cmds)
 		optind = 1;
 	}
 	if (optind >= argc || !argv[optind]) {
-		errx(1, "missing command name");
+		warnx("missing command name");
+		ed_help(argc, argv, cmds);
+		exit(1);
 	}
 
 	const char *name = argv[optind];
