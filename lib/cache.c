@@ -201,7 +201,8 @@ obj_reserve(EdCache *cache, EdTxn *txn, uint64_t flags, EdBlkno *vnop, size_t le
 		// rquireds for this resolution. We are looking for the key that maps to
 		// current block number.
 		EdEntryKey *key;
-		for (rc = ed_bpt_find(txn, ED_DB_KEYS, old->keyhash, (void **)&key); rc == 1;
+		for (rc = ed_bpt_find(txn, ED_DB_KEYS, old->keyhash, (void **)&key);
+				rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
 				rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 			if ((key->vno % block_count) == block->no) {
 				rc = ed_bpt_del(txn, ED_DB_KEYS);
@@ -250,7 +251,8 @@ obj_upsert(EdCache *cache, const void *k, size_t klen, uint64_t h,
 	}
 
 	// Insert the key into the db.
-	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key); rc == 1;
+	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key);
+			rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
 			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 		// Map the slab object.
 		EdObjectHdr *old = ed_blk_map(cache->idx.slabfd, key->vno % block_count, nmin, block_size, true);
@@ -540,7 +542,7 @@ update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix
 	if (rc < 0) { return rc; }
 
 	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key);
-			set == 0 && rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
+			rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
 			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
 		// First check if the object is expired.
 		if (!restore && ed_expired_at(cache->idx.epoch, key->exp, now)) {
@@ -567,6 +569,10 @@ update_expiry(EdCache *cache, const void *k, size_t klen, EdTime exp, EdTimeUnix
 		}
 
 		ed_blk_unmap(hdr, key->count, block_size);
+
+		if (set == 1) {
+			break;
+		}
 	}
 
 	if (set == 1) {
