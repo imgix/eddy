@@ -1176,7 +1176,7 @@ struct EdPgIdx {
 	EdPgnoV      gc_head;          /**< Page pointer for the garbage collector head */
 	EdPgnoV      gc_tail;          /**< Page pointer for the garbage collector tail */
 	union {
-		uint64_t vtree;            /**< Atomic CAS value for the trees */
+		uint64_t vtree;            /**< Atomic CAS value for the first 2 trees */
 		EdPgno   tree[4];          /**< Page pointer for the key and slab b+trees */
 	};
 	EdTxnIdV     xid;              /**< Global transaction ID */
