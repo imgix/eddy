@@ -834,37 +834,25 @@ ed_list_next(EdList *list, const EdObject **objp)
 			goto done;
 		}
 
-		EdBlkno no = vcur % block_count;
-		EdBlkno need = no + block_need > block_count ?
-			block_count - no : block_need;
+		const EdBlkno no = vcur % block_count;
 
-		// If we are at the end of the slab, use the index to find the next position.
-		if (need < block_need) {
-			rc = ed_bpt_find(list->txn, ED_DB_BLOCKS, no, NULL);
-			if (rc < 0) { goto done; }
-			if (rc == 0) {
-				EdEntryBlock *block;
-				rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, (void **)&block);
-				if (rc < 0) { goto done; }
-				// Add the number of virtual blocks we skipped over.
-				if (block->no < no) {
-					list->vcur += block->no + (block_count - no);
-				}
-				else {
-					list->vcur += no - block->no;
-				}
-				no = block->no;
-			}
-		}
-
-		hdr = ed_blk_map(cache->idx.slabfd, no, need, block_size, true);
+		hdr = ed_blk_map(cache->idx.slabfd, no, block_need, block_size, true);
 		if (hdr == MAP_FAILED) {
 			rc = ED_ERRNO;
 			goto done;
 		}
 
 		obj_init_basic(&list->obj, list->cache, hdr, vcur, true, hdr->exp);
-		list->vcur += list->obj.nblcks;
+
+		EdEntryBlock *block;
+		rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, (void **)&block);
+		if (rc < 0) { goto done; }
+		if (block->no < no) {
+			list->vcur += block->no + (block_count - no);
+		}
+		else {
+			list->vcur += block->no - no;
+		}
 
 		if (!list->inc) {
 			list->inc = true;
