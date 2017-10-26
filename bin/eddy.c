@@ -156,9 +156,6 @@ ed_opt(int argc, char *const *argv, const EdCommand *cmd)
 static void
 ed_help(int argc, char *const *argv, const EdCommand *cmds)
 {
-	prog = strrchr(argv[0], '/');
-	prog = prog ? prog + 1 : argv[0];
-
 	argc -= optind;
 	argv += optind;
 
@@ -380,6 +377,9 @@ static const EdCommand commands[] = {
 int
 main(int argc, char *const *argv)
 {
+	prog = strrchr(argv[0], '/');
+	prog = prog ? prog + 1 : argv[0];
+
 	int rc = ed_cmd(argc, argv, commands);
 #if ED_MMAP_DEBUG
 	if (ed_pg_check() > 0) { return EXIT_FAILURE; }
