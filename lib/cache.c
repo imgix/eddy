@@ -751,6 +751,7 @@ ed_list_open(EdCache *cache, EdList **listp, const char *id)
 	EdBlkno vmin = 0, vmax;
 	const EdBlkno block_count = cache->slab_block_count;
 
+	// If an id is not provided, start from the oldest entry.
 	if (id != NULL) {
 		char *end;
 		xmin = strtoul(id, &end, 16);
@@ -776,13 +777,17 @@ ed_list_open(EdCache *cache, EdList **listp, const char *id)
 		list->inc = true;
 	}
 
-	EdEntryBlock *block;
-	rc = ed_bpt_find(list->txn, ED_DB_BLOCKS, vmin % block_count, (void **)&block);
+	// Move to the next entry block position if needed.
+	rc = ed_bpt_find(list->txn, ED_DB_BLOCKS, vmin % block_count, NULL);
+	if (rc < 0) { goto error; }
 	if (rc == 0) {
-		rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, NULL);
+		EdEntryBlock *block;
+		rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, (void **)&block);
+		if (rc < 0) { goto error; }
+		vmin = block->no + vmin/block_count * block_count;
+		xmin = block->xid;
 		list->inc = true;
 	}
-	if (rc < 0) { goto error; }
 
 	list->cache = cache;
 	list->now = ed_now_unix();
@@ -829,9 +834,30 @@ ed_list_next(EdList *list, const EdObject **objp)
 			goto done;
 		}
 
-		hdr = ed_blk_map(cache->idx.slabfd,
-				vcur % block_count, block_need, block_size, true);
+		EdBlkno no = vcur % block_count;
+		EdBlkno need = no + block_need > block_count ?
+			block_count - no : block_need;
 
+		// If we are at the end of the slab, use the index to find the next position.
+		if (need < block_need) {
+			rc = ed_bpt_find(list->txn, ED_DB_BLOCKS, no, NULL);
+			if (rc < 0) { goto done; }
+			if (rc == 0) {
+				EdEntryBlock *block;
+				rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, (void **)&block);
+				if (rc < 0) { goto done; }
+				// Add the number of virtual blocks we skipped over.
+				if (block->no < no) {
+					list->vcur += block->no + (block_count - no);
+				}
+				else {
+					list->vcur += no - block->no;
+				}
+				no = block->no;
+			}
+		}
+
+		hdr = ed_blk_map(cache->idx.slabfd, no, need, block_size, true);
 		if (hdr == MAP_FAILED) {
 			rc = ED_ERRNO;
 			goto done;
