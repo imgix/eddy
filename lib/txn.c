@@ -220,7 +220,7 @@ ed_txn_commit(EdTxn **txnp, uint64_t flags)
 	txn->npgused = 0;
 
 	// Collect tree root page updates.
-	union { uint64_t vtree; EdPgno tree[2]; } update;
+	union { uint64_t vtree; EdPgno tree[ed_len(txn->db)]; } update;
 	for (unsigned i = 0; i < ed_len(txn->db); i++) {
 		EdNode *root = txn->db[i].root;
 		update.tree[i] = root && root->page ? root->page->no : ED_PG_NONE;
