@@ -1073,7 +1073,7 @@ struct EdObject {
 	size_t       nbytes;
 	EdTime       exp;
 	bool         rdonly;
-	char         id[18];
+	char         id[34];
 	uint8_t      newkey[1];
 };
 
