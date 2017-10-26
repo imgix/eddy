@@ -1,7 +1,7 @@
 #include "../lib/eddy-private.h"
 
 static const EdUsage get_usage = {
-	"Sets the contents of an object in the cache from stdin or a file.",
+	"Writes the contents of an object to stdout.",
 	(const char *[]) {
 		"[-u] [-m] index key [2>meta] >file",
 		"[-u] -i index key [key ...]",
