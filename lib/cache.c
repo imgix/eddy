@@ -847,6 +847,10 @@ ed_list_next(EdList *list, const EdObject **objp)
 		EdEntryBlock *block;
 		rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, (void **)&block);
 		if (rc < 0) { goto done; }
+		if (ed_bpt_loop(list->txn, ED_DB_BLOCKS) > 1) {
+			rc = 0;
+			goto done;
+		}
 		if (block->no < no) {
 			list->vcur += block->no + (block_count - no);
 		}
