@@ -1214,12 +1214,6 @@ struct EdObjectHdr {
 	uint32_t     datacrc;          /**< Optional CRC-32c of the object body data */
 };
 
-struct EdObjectMsg {
-	EdBlkno blck;
-	EdObjectHdr hdr;
-	uint8_t key[1];
-};
-
 /**
  * @brief  Page type for b+tree branches and leaves
  *
