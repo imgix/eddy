@@ -57,9 +57,9 @@ new_ram(const EdConfig *cfg, uid_t uid, gid_t gid)
 		path = pbuf;
 	}
 
-	int rc = mknod(path, S_IFBLK|0660, makedev(1, 1));
+	int rc = mknod(path, S_IFBLK|0600, makedev(1, 1));
 	if (rc < 0) { err(1, "mknod failed"); }
-	rc = chmod(path, 0660);
+	rc = chmod(path, 0600);
 	if (rc < 0) { err(1, "chmod failed"); }
 
 	int fd = open(path, O_DIRECT|O_WRONLY);
