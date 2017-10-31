@@ -3,6 +3,10 @@
 
 #include <pwd.h>
 
+#if __linux__
+# define WITH_RAM 1
+#endif
+
 static const EdUsage new_usage = {
 	"Creates a new cache index and slab.",
 	(const char *[]) {
@@ -29,8 +33,51 @@ static EdOption new_opts[] = {
 	{"checksum",   NULL,   0, 'c', "track crc32 checksums"},
 	{"keep-old",   NULL,   0, 'k', "don't mark replaced objects as expired"},
 	{"page-align", NULL,   0, 'p', "force file data to be page aligned"},
+#if WITH_RAM
+	{"ram",        NULL,   0, 'R', "create the slab as a RAM-backed device"},
+#endif
 	{0, 0, 0, 0, 0}
 };
+
+#if WITH_RAM
+static void
+new_ram(const EdConfig *cfg, uid_t uid, gid_t gid)
+{
+	const char *path;
+	char pbuf[4096];
+
+	if (cfg->slab_path) {
+		path = cfg->slab_path;
+	}
+	else {
+		size_t len = strnlen(cfg->index_path, sizeof(pbuf));
+		if (len >= sizeof(pbuf) - sizeof("-slab")) { errx(1, "index path too long"); }
+		memcpy(pbuf, cfg->index_path, len);
+		memcpy(pbuf+len, "-slab", sizeof("-slab"));
+		path = pbuf;
+	}
+
+	int rc = mknod(path, S_IFBLK|0660, makedev(1, 1));
+	if (rc < 0) { err(1, "mknod failed"); }
+	rc = chmod(path, 0660);
+	if (rc < 0) { err(1, "chmod failed"); }
+
+	int fd = open(path, O_DIRECT|O_WRONLY);
+	if (fd < 0) { err(1, "open failed"); }
+
+	char zbuf[4096];
+	memset(zbuf, 0, sizeof(zbuf));
+	for (long long n = cfg->slab_size; n > 0; n -= sizeof(zbuf)) {
+		size_t len = n >= (long long)sizeof(zbuf) ? sizeof(zbuf) : (size_t)n;
+		ssize_t n = write(fd, zbuf, len);
+		if (n < 0) { err(1, "write failed"); }
+	}
+	close(fd);
+
+	rc = chown(path, uid, gid);
+	if (rc < 0) { err(1, "chown failed"); }
+}
+#endif
 
 static int
 new_run(const EdCommand *cmd, int argc, char *const *argv)
@@ -52,6 +99,9 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 	long long val;
 	unsigned long long uval;
 	EdConfig cfg = { .flags = ED_FCREATE|ED_FALLOCATE, .slab_block_size = 4096 };
+#if WITH_RAM
+	bool ram = false;
+#endif
 
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
@@ -61,6 +111,9 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 		case 'c': cfg.flags |= ED_FCHECKSUM; break;
 		case 'k': cfg.flags |= ED_FKEEPOLD; break;
 		case 'p': cfg.flags |= ED_FPAGEALIGN; break;
+#if WITH_RAM
+		case 'R': ram = true; break;
+#endif
 		case 's': size_arg = optarg; break;
 		case 'S': cfg.slab_path = optarg; break;
 		case 'b':
@@ -90,6 +143,12 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 
 	if (argc == 0) { errx(1, "index file path not provided"); }
 	cfg.index_path = argv[0];
+
+#if WITH_RAM
+	if (ram) {
+		new_ram(&cfg, uid, gid);
+	}
+#endif
 
 	setgid(gid);
 	setuid(uid);
