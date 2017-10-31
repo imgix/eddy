@@ -421,7 +421,7 @@ done:
 		int vrc = obj_verify(obj, flags);
 		if (vrc < 0) { rc = vrc; }
 	}
-	if (rc < 0) {
+	if (rc <= 0) {
 		free(obj);
 		obj = NULL;
 	}
