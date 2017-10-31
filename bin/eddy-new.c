@@ -1,6 +1,8 @@
 #include "../lib/eddy-private.h"
 #define DEFAULT_SIZE "4096p"
 
+#include <pwd.h>
+
 static const EdUsage new_usage = {
 	"Creates a new cache index and slab.",
 	(const char *[]) {
@@ -33,11 +35,23 @@ static EdOption new_opts[] = {
 static int
 new_run(const EdCommand *cmd, int argc, char *const *argv)
 {
+	uid_t uid = getuid();
+	gid_t gid = getgid();
+	if (uid == 0) {
+		const char *user = getenv("SUDO_USER");
+		if (user) {
+			struct passwd *pwd = getpwnam(user);
+			if (pwd == NULL) { err(1, "user name '%s' failed", user); }
+			uid = pwd->pw_uid;
+			gid = pwd->pw_gid;
+		}
+	}
+
 	char *size_arg = DEFAULT_SIZE;
 	char *end;
 	long long val;
 	unsigned long long uval;
-	EdConfig cfg = { .flags = ED_FCREATE|ED_FALLOCATE };
+	EdConfig cfg = { .flags = ED_FCREATE|ED_FALLOCATE, .slab_block_size = 4096 };
 
 	int ch;
 	while ((ch = ed_opt(argc, argv, cmd)) != -1) {
@@ -71,11 +85,14 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 	argv += optind;
 
 	if (!ed_parse_size(size_arg, &cfg.slab_size, cfg.slab_block_size)) {
-		errx(1, "-s must be a valid positive number");
+		errx(1, "size must be a valid positive number");
 	}
 
 	if (argc == 0) { errx(1, "index file path not provided"); }
 	cfg.index_path = argv[0];
+
+	setgid(gid);
+	setuid(uid);
 
 	EdCache *cache;
 	int rc = ed_cache_open(&cache, &cfg);
