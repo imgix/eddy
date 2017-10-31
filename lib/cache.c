@@ -784,9 +784,15 @@ ed_list_open(EdCache *cache, EdList **listp, const char *id)
 		EdEntryBlock *block;
 		rc = ed_bpt_next(list->txn, ED_DB_BLOCKS, (void **)&block);
 		if (rc < 0) { goto error; }
-		vmin = block->no + vmin/block_count * block_count;
-		xmin = block->xid;
-		list->inc = true;
+		if (rc == 0) {
+			xmin = xmax;
+			vmin = vmax;
+		}
+		else {
+			vmin = block->no + vmin/block_count * block_count;
+			xmin = block->xid;
+			list->inc = true;
+		}
 	}
 
 	list->cache = cache;
