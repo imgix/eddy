@@ -17,7 +17,7 @@ static const EdUsage mime_usage = {
 	NULL
 };
 static EdOption mime_opts[] = {
-	{"db",      "pgno", 0, 'd', "path to mime.cache database file"},
+	{"db",      "path", 0, 'd', "path to mime.cache database file"},
 	{"parents", NULL,   0, 'p', "include parent mime types"},
 	{"list",    NULL,   0, 'l', "list all mime types with magic matches and exit"},
 	{0, 0, 0, 0, 0}
