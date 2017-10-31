@@ -150,11 +150,13 @@ new_run(const EdCommand *cmd, int argc, char *const *argv)
 	}
 #endif
 
-	setgid(gid);
-	setuid(uid);
+	int rc = setgid(gid);
+	if (rc < 0) { err(1, "failed to set group id"); }
+	rc = setuid(uid);
+	if (rc < 0) { err(1, "failed to set user id"); }
 
 	EdCache *cache;
-	int rc = ed_cache_open(&cache, &cfg);
+	rc = ed_cache_open(&cache, &cfg);
 	if (rc < 0) {
 		fprintf(stderr, "failed to open cache: %s\n", ed_strerror(rc));
 		return EXIT_FAILURE;
