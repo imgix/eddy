@@ -3,9 +3,6 @@
 The file format is highly volatile right now. Be sure to re-create the index/slab
 files when update versions.
 
-I didn't want to name this eddy2, so I started this branch over here. We can move
-it back to imgix/eddy when it won't be a conflict.
-
 # Eddy
 
 High-performance, maintenence-light, caching library and tools.
