@@ -927,11 +927,11 @@ print_tree_branches(FILE *out, bool *stack, int top)
 {
 	for (int i = 0; i < top; i++) {
 		if (stack[i]) {
-			static const char s[] = "   ";
+			static const char s[] = "  ";
 			fwrite(s, 1, sizeof(s)-1, out);
 		}
 		else {
-			static const char s[] = "│  ";
+			static const char s[] = "│ ";
 			fwrite(s, 1, sizeof(s)-1, out);
 		}
 	}
@@ -942,11 +942,11 @@ print_tree(FILE *out, bool *stack, int top)
 {
 	print_tree_branches(out, stack, top);
 	if (stack[top]) {
-		static const char s[] = "└─ ";
+		static const char s[] = "└ ";
 		fwrite(s, 1, sizeof(s)-1, out);
 	}
 	else {
-		static const char s[] = "├─ ";
+		static const char s[] = "├ ";
 		fwrite(s, 1, sizeof(s)-1, out);
 	}
 }
