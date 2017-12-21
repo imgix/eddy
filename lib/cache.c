@@ -818,7 +818,7 @@ ed_list_open(EdCache *cache, EdList **listp, const char *id)
 	// If an id is not provided, start from the oldest entry.
 	if (id != NULL) {
 		rc = obj_id(id, &xmin, &vmin);
-		if (id != 0) { return rc; }
+		if (rc != 0) { return rc; }
 	}
 
 	EdList *list = calloc(1, sizeof(*list));
