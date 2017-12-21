@@ -31,7 +31,7 @@ ED_EXPORT const char *
 ed_mime_file_type(const EdMime *, const char *path, bool fallback);
 
 ED_EXPORT const char *
-ed_mime_fallback(const EdMime *, const void *data, size_t len);
+ed_mime_basic(const EdMime *, const void *data, size_t len);
 
 ED_EXPORT const char *
 ed_mime_alias(const EdMime *, const char *mime);

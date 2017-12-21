@@ -424,7 +424,7 @@ ed_mime_type(const EdMime *db, const void *data, size_t len, bool fallback)
 	}
 
 	if (mime == NULL && fallback) {
-		mime = ed_mime_fallback(db, data, len);
+		mime = ed_mime_basic(db, data, len);
 	}
 
 	return mime;
@@ -572,7 +572,7 @@ maybe_text(const uint8_t *p, size_t len)
 }
 
 const char *
-ed_mime_fallback(const EdMime *db, const void *data, size_t len)
+ed_mime_basic(const EdMime *db, const void *data, size_t len)
 {
 	static const char *fallback[] = {
 		[ED_CHARSET_BINARY] = "application/octet-stream",
@@ -625,7 +625,7 @@ ed_mime_file_type(const EdMime *db, const char *path, bool fallback)
 	mime = ed_mime_type(db, data, st.st_size, false);
 	// TODO: glob check
 	if (mime == NULL && fallback) {
-		mime = ed_mime_fallback(db, data, st.st_size);
+		mime = ed_mime_basic(db, data, st.st_size);
 	}
 
 	munmap((void *)data, st.st_size);
