@@ -12,7 +12,7 @@
 
 #define ED_MAX_KEY 1024
 
-/** @defgroup  flags  EdConfig and ed_cache_open flags
+/** @defgroup  cacheflags  EdConfig and ed_cache_open flags
  * @{
  */
 #define ED_FCHECKSUM     UINT32_C(        0x00000001) /** Calculate checksums for entries. */
@@ -31,6 +31,12 @@
 #define ED_FRDONLY       UINT64_C(0x0000200000000000) /** The operation does not need to write. */
 #define ED_FNOVERIFY     UINT64_C(0x0000400000000000) /** Disable verifying checksums if they are enabled. */
 #define ED_FRESET        UINT64_C(0x8000000000000000) /** Reset the transaction when closing. */
+/** @} */
+
+/** @defgroup  openflags  ed_open flags
+ * @{
+ */
+#define ED_OID           (1<<0) /** Open using an object ID instead of key. */
 /** @} */
 
 /** @brief  Seconds in UNIX time */
@@ -83,7 +89,7 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags);
 
 
 ED_EXPORT int
-ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len);
+ed_open(EdCache *cache, EdObject **objp, const void *key, size_t len, int flags);
 
 ED_EXPORT int
 ed_create(EdCache *cache, EdObject **objp, const EdObjectAttr *attr);

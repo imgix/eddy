@@ -1,6 +1,17 @@
 #include "eddy-private.h"
 
 static int
+obj_id(const char *id, EdTxnId *xid, EdBlkno *vno)
+{
+	char *end;
+	*xid = strtoul(id, &end, 16);
+	if (*end != ':') { return ED_EOBJECT_ID; }
+	*vno = strtoul(end+1, &end, 16);
+	if (*end != '\0') { return ED_EOBJECT_ID; }
+	return 0;
+}
+
+static int
 obj_new(EdObject **objp, const void *k, size_t klen, bool rdonly)
 {
 	EdObject *obj = calloc(1, sizeof(*obj) + (rdonly ? 0 : klen));
@@ -109,13 +120,14 @@ obj_verify(const EdObject *obj, const uint64_t flags)
 	return 0;
 }
 
-static void
+static int64_t
 obj_write(void *dst, const void *src, size_t len, uint32_t *crc, uint64_t flags)
 {
 	if (flags & ED_FCHECKSUM) {
 		*crc = ed_crc32c(*crc, src, len);
 	}
 	memcpy(dst, src, len);
+	return len;
 }
 
 static void
@@ -354,27 +366,16 @@ ed_cache_stat(EdCache *cache, FILE *out, uint64_t flags)
 	return 0;
 }
 
-int
-ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
+static int
+open_key(EdCache *cache, EdTxn *txn, EdObject *obj, const void *k, size_t klen, uint64_t flags)
 {
-	EdObject *obj = NULL;
-	int rc = obj_new(&obj, NULL, 0, true);
-	if (rc < 0) { return rc; }
-	assert(obj != NULL);
-
 	const uint64_t h = ed_hash(k, klen, cache->idx.seed);
 	const uint16_t block_size = cache->slab_block_size;
 	const EdBlkno block_count = cache->slab_block_count;
-	const uint64_t flags = cache->idx.flags;
 	const EdTimeUnix now = ed_now_unix();
-	EdTxn *const txn = cache->txn;
 
-	int set = 0;
 	EdEntryKey *key;
-
-	rc = ed_txn_open(txn, flags|ED_FRDONLY);
-	if (rc < 0) { goto done; }
-
+	int rc;
 	for (rc = ed_bpt_find(txn, ED_DB_KEYS, h, (void **)&key);
 			rc == 1 && ed_bpt_loop(txn, ED_DB_KEYS) == 0;
 			rc = ed_bpt_next(txn, ED_DB_KEYS, (void **)&key)) {
@@ -397,15 +398,14 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		if (hdr == MAP_FAILED) {
 			rc = ED_ERRNO;
 			ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, flags);
-			break;
+			return rc;
 		}
 
 		// Resolve any hash collisions with a full key comparison. This will *very*
 		// likely match. If it does, set up the object and end the loop.
 		if (hdr->keylen == klen && memcmp(obj_key(hdr), k, klen) == 0) {
-			set = 1;
 			obj_init(obj, cache, hdr, key->vno, true, key->exp);
-			break;
+			return 1;
 		}
 
 		// We have a hash collision so unlock and unmap the slab region and continue
@@ -413,10 +413,73 @@ ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen)
 		ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, flags);
 		ed_blk_unmap(hdr, key->count, block_size);
 	}
+	return 0;
+}
+
+static int
+open_id(EdCache *cache, EdTxn *txn, EdObject *obj, const char *id, uint64_t flags)
+{
+	EdTxnId xid;
+	EdBlkno vno;
+	const uint16_t block_size = cache->slab_block_size;
+	const EdBlkno block_count = cache->slab_block_count;
+	int rc = obj_id(id, &xid, &vno);
+	if (rc < 0) { return rc; }
+	if (xid > cache->idx.conn->xid || vno > ed_txn_vno(txn)) {
+		return 0;
+	}
+
+	EdEntryBlock *entry;
+	rc = ed_bpt_find(txn, ED_DB_BLOCKS, vno % block_count, (void **)&entry);
+	if (rc <= 0) { return rc; }
+	if (entry->xid != xid) { return 0; }
+
+	off_t off = entry->no * block_size;
+	off_t len = entry->count * block_size;
+
+	// Try to get a shared lock on the slab region. If it cannot be locked, a
+	// writer is replacing this slab location.
+	if (ed_flck(cache->idx.slabfd, ED_LCK_SH, off, len, flags|ED_FNOBLOCK) < 0) {
+		return 0;
+	}
+
+	// Map the slab object.
+	EdObjectHdr *hdr = ed_blk_map(cache->idx.slabfd, entry->no, entry->count, block_size, false);
+	if (hdr == MAP_FAILED) {
+		rc = ED_ERRNO;
+		ed_flck(cache->idx.slabfd, ED_LCK_UN, off, len, flags);
+		return rc;
+	}
+
+	obj_init(obj, cache, hdr, vno, true, hdr->exp);
+	return 1;
+}
+
+int
+ed_open(EdCache *cache, EdObject **objp, const void *k, size_t klen, int oflags)
+{
+	(void)oflags;
+	EdObject *obj = NULL;
+	int rc = obj_new(&obj, NULL, 0, true);
+	if (rc < 0) { return rc; }
+	assert(obj != NULL);
+
+	const uint64_t flags = cache->idx.flags;
+	EdTxn *const txn = cache->txn;
+
+	rc = ed_txn_open(txn, flags|ED_FRDONLY);
+	if (rc < 0) { goto done; }
+
+	if (oflags & ED_OID) {
+		rc = open_id(cache, txn, obj, k, flags);
+	}
+	else {
+		rc = open_key(cache, txn, obj, k, klen, flags);
+	}
 
 done:
 	ed_txn_close(&cache->txn, flags|ED_FRESET);
-	if (set == 1) {
+	if (rc == 1) {
 		madvise(obj->hdr, obj->nbytes, MADV_SEQUENTIAL);
 		int vrc = obj_verify(obj, flags);
 		if (vrc < 0) { rc = vrc; }
@@ -426,7 +489,7 @@ done:
 		obj = NULL;
 	}
 	*objp = obj;
-	return rc < 0 ? rc : set;
+	return rc;
 }
 
 int
@@ -750,20 +813,18 @@ ed_list_open(EdCache *cache, EdList **listp, const char *id)
 	EdTxnId xmin = 0, xmax;
 	EdBlkno vmin = 0, vmax;
 	const EdBlkno block_count = cache->slab_block_count;
+	int rc = 0;
 
 	// If an id is not provided, start from the oldest entry.
 	if (id != NULL) {
-		char *end;
-		xmin = strtoul(id, &end, 16);
-		if (*end != ':') { return ED_EOBJECT_ID; }
-		vmin = strtoul(end+1, &end, 16);
-		if (*end != '\0') { return ED_EOBJECT_ID; }
+		rc = obj_id(id, &xmin, &vmin);
+		if (id != 0) { return rc; }
 	}
 
 	EdList *list = calloc(1, sizeof(*list));
 	if (list == NULL) { return ED_ERRNO; }
 
-	int rc = ed_txn_new(&list->txn, &cache->idx);
+	rc = ed_txn_new(&list->txn, &cache->idx);
 	if (rc < 0) { goto error; }
 
 	rc = ed_txn_open(list->txn, cache->idx.flags|ED_FRDONLY);
